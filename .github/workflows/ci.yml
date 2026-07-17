@@ -72,13 +72,29 @@ jobs:
       - name: Publish self-contained Windows package
         shell: pwsh
         run: |
-          $packageRoot = '.\artifacts\protheus-pulse-0.1.2-win-x64'
+          $packageRoot = '.\artifacts\protheus-pulse-0.1.3-win-x64'
           dotnet clean .\src\ProtheusPulse.Service --configuration Release --runtime win-x64
-          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.2 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
+          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.3 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
           Copy-Item .\scripts\install-service.ps1, .\scripts\install.cmd, .\scripts\uninstall-service.ps1, .\docs\PILOT-CHECKLIST.md, .\LICENSE -Destination $packageRoot
           Compress-Archive -LiteralPath $packageRoot -DestinationPath "$packageRoot.zip" -CompressionLevel Optimal
           $hash = (Get-FileHash -LiteralPath "$packageRoot.zip" -Algorithm SHA256).Hash
-          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.2-win-x64.zip`r`n")
+          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.3-win-x64.zip`r`n")
+
+      - name: Smoke test Windows service installer
+        shell: pwsh
+        run: |
+          $packageRoot = '.\artifacts\protheus-pulse-0.1.3-win-x64'
+          $dataRoot = Join-Path $env:RUNNER_TEMP 'ProtheusPulseData'
+          try {
+            .\scripts\install-service.ps1 -SourceDirectory "$packageRoot\app" -DataDirectory $dataRoot
+            $service = Get-CimInstance Win32_Service -Filter "Name='ProtheusPulse'"
+            if ($service.State -ne 'Running' -or $service.StartName -notmatch 'LocalService') {
+              throw "Serviço instalado em estado ou conta inesperados."
+            }
+          }
+          finally {
+            .\scripts\uninstall-service.ps1 -DataDirectory $dataRoot -RemoveData -Confirm:$false
+          }
 
       - name: Upload test results
         if: always()
@@ -95,5 +111,5 @@ jobs:
         with:
           name: protheus-pulse-win-x64
           path: |
-            artifacts/protheus-pulse-0.1.2-win-x64.zip
-            artifacts/protheus-pulse-0.1.2-win-x64.zip.sha256
+            artifacts/protheus-pulse-0.1.3-win-x64.zip
+            artifacts/protheus-pulse-0.1.3-win-x64.zip.sha256

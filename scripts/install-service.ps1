@@ -88,6 +88,7 @@ $dataPath = Resolve-ManagedDirectory $DataDirectory 'DataDirectory'
 $sourcePath = [IO.Path]::GetFullPath($SourceDirectory).TrimEnd([IO.Path]::DirectorySeparatorChar)
 $secretDirectory = Join-Path $dataPath 'secrets'
 $keyDirectory = Join-Path $dataPath 'keys'
+$logDirectory = Join-Path $dataPath 'logs'
 $jwtKeyPath = Join-Path $secretDirectory 'jwt.key'
 $sourceExecutable = Join-Path $sourcePath 'ProtheusPulse.Service.exe'
 
@@ -105,27 +106,43 @@ if (Test-ServiceExists $ServiceName) {
     $service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromSeconds(30))
 }
 
-New-Item -ItemType Directory -Path $installPath, $dataPath, $secretDirectory, $keyDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $installPath, $dataPath, $secretDirectory, $keyDirectory, $logDirectory -Force | Out-Null
 Initialize-InstallDirectoryAcl $installPath
+Invoke-Icacls @($dataPath, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)M', '/T', '/C')
+Invoke-Icacls @($secretDirectory, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)R', '/T', '/C')
+Invoke-Icacls @($keyDirectory, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)M', '/T', '/C')
+
+$deploymentPath = $installPath
 if (-not [string]::Equals($sourcePath, $installPath, [StringComparison]::OrdinalIgnoreCase)) {
-    & ([IO.Path]::Combine($systemDirectory, 'robocopy.exe')) $sourcePath $installPath '*.*' /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NP /NFL /NDL /NJH /NJS | Out-Null
+    $sourceVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($sourceExecutable).FileVersion
+    if ([string]::IsNullOrWhiteSpace($sourceVersion)) {
+        $sourceVersion = 'unknown'
+    }
+    $safeVersion = [Text.RegularExpressions.Regex]::Replace($sourceVersion, '[^0-9A-Za-z._-]', '_')
+    $deploymentName = '{0}-{1}-{2}' -f $safeVersion, [DateTime]::UtcNow.ToString('yyyyMMddHHmmss'), [Guid]::NewGuid().ToString('N').Substring(0, 8)
+    $deploymentPath = [IO.Path]::Combine($installPath, 'releases', $deploymentName)
+    New-Item -ItemType Directory -Path $deploymentPath -Force | Out-Null
+
+    $writeProbePath = [IO.Path]::Combine($deploymentPath, '.write-test')
+    [IO.File]::WriteAllText($writeProbePath, 'ok')
+    Remove-Item -LiteralPath $writeProbePath -Force
+
+    $copyLogPath = [IO.Path]::Combine($logDirectory, 'install-copy.log')
+    & ([IO.Path]::Combine($systemDirectory, 'robocopy.exe')) $sourcePath $deploymentPath '*.*' /E /COPY:DAT /DCOPY:DAT /R:3 /W:2 /NP /NFL /NDL /TEE "/LOG:$copyLogPath" | Out-Null
     $robocopyExitCode = $LASTEXITCODE
     if ($robocopyExitCode -gt 7) {
-        throw "Falha ao copiar o payload com robocopy (código $robocopyExitCode)."
+        throw "Falha ao copiar o payload com robocopy (código $robocopyExitCode). Consulte $copyLogPath."
     }
 }
 
-Get-ChildItem -LiteralPath $installPath -Recurse -File -Force | Unblock-File -ErrorAction SilentlyContinue
+Get-ChildItem -LiteralPath $deploymentPath -Recurse -File -Force | Unblock-File -ErrorAction SilentlyContinue
 
-$executablePath = Join-Path $installPath 'ProtheusPulse.Service.exe'
+$executablePath = Join-Path $deploymentPath 'ProtheusPulse.Service.exe'
 if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
     throw "O executável do serviço não foi encontrado em $installPath."
 }
 
 Invoke-Icacls @($installPath, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)RX', '/T', '/C', '/Q')
-Invoke-Icacls @($dataPath, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)M', '/T', '/C')
-Invoke-Icacls @($secretDirectory, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)R', '/T', '/C')
-Invoke-Icacls @($keyDirectory, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)M', '/T', '/C')
 
 if (-not (Test-Path -LiteralPath $jwtKeyPath -PathType Leaf)) {
     $buffer = New-Object byte[] 64

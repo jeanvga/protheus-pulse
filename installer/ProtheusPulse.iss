@@ -1,8 +1,8 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.2"
+  #define MyAppVersion "0.1.3"
 #endif
 #ifndef SourceDirectory
-  #define SourceDirectory "..\artifacts\release\protheus-pulse-0.1.2-win-x64\app"
+  #define SourceDirectory "..\artifacts\release\protheus-pulse-0.1.3-win-x64\app"
 #endif
 #ifndef OutputDirectory
   #define OutputDirectory "..\artifacts\release"

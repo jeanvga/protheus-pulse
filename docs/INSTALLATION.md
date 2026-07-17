@@ -26,16 +26,16 @@ A publicação é self-contained e não exige instalação separada do .NET. Par
 ## Instalar pelo ZIP
 
 ```powershell
-$package = 'C:\Pacotes\protheus-pulse-0.1.2-win-x64.zip'
+$package = 'C:\Pacotes\protheus-pulse-0.1.3-win-x64.zip'
 (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
 # Compare visualmente com o arquivo .sha256 obtido por canal confiável.
 
-Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.2'
-Set-Location 'C:\Pacotes\ProtheusPulse-0.1.2\protheus-pulse-0.1.2-win-x64'
+Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.3'
+Set-Location 'C:\Pacotes\ProtheusPulse-0.1.3\protheus-pulse-0.1.3-win-x64'
 .\install.cmd
 ```
 
-`install.cmd` solicita elevação e aplica bypass do PowerShell somente ao processo de instalação. O script para o serviço anterior em atualizações, repara as ACLs da pasta gerenciada, copia somente o payload com `robocopy`, preserva dados, cria a chave JWT caso ainda não exista, registra recuperação automática, inicia o serviço e valida `/health/ready`.
+`install.cmd` solicita elevação e aplica bypass do PowerShell somente ao processo de instalação. O script para o serviço anterior em atualizações, repara as ACLs da pasta gerenciada, copia o payload para uma nova pasta versionada, preserva dados, cria a chave JWT caso ainda não exista, registra recuperação automática, inicia o serviço e valida `/health/ready`. O diagnóstico da cópia fica em `C:\ProgramData\ProtheusPulse\logs\install-copy.log`.
 
 Para visualizar as ações sem executá-las:
 
