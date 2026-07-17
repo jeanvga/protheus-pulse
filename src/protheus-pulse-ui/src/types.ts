@@ -1,6 +1,8 @@
 export type HealthStatus = 'Healthy' | 'Warning' | 'Critical' | 'Unknown' | 'Maintenance'
 export type AlertSeverity = 'Info' | 'Warning' | 'Critical'
 export type AlertState = 'Active' | 'Acknowledged' | 'Resolved' | 'Silenced'
+export type EnvironmentKind = 'Production' | 'Homologation' | 'Development' | 'Custom'
+export type ComponentType = 'AppServer' | 'Broker' | 'Worker' | 'Rest' | 'WebApp' | 'DbAccess' | 'LicenseServer' | 'Tss' | 'Job' | 'HttpEndpoint' | 'WindowsService' | 'Generic'
 
 export interface DashboardTotals {
   installations: number
@@ -17,6 +19,7 @@ export interface ComponentSnapshot {
   id: string
   installationId: string
   installationName: string
+  installationEnvironment: EnvironmentKind
   name: string
   type: string
   status: HealthStatus
@@ -63,4 +66,26 @@ export interface AuthToken {
   username: string
   displayName: string
   role: string
+}
+
+export interface CreateInstallationInput {
+  name: string
+  environment: EnvironmentKind
+  customEnvironmentName?: string
+  tags: string[]
+  components: Array<{
+    name: string
+    type: ComponentType
+    isRequired: boolean
+  }>
+}
+
+export interface InstallationCreated {
+  id: string
+  name: string
+  environment: EnvironmentKind
+  customEnvironmentName?: string
+  tags: string[]
+  componentCount: number
+  status: HealthStatus
 }

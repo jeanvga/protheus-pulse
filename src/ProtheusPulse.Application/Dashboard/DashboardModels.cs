@@ -24,6 +24,7 @@ public sealed record ComponentSnapshot(
     Guid Id,
     Guid InstallationId,
     string InstallationName,
+    EnvironmentKind InstallationEnvironment,
     string Name,
     ComponentType Type,
     HealthStatus Status,

@@ -15,6 +15,7 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Health checks, Swagger, Serilog rotativo e cabeçalhos de segurança.
 - Testes xUnit, Vitest, Playwright e CI para Windows.
 - Documentação de arquitetura, instalação, privacidade e threat model.
+- Cadastro manual de instalações e componentes com validação, autorização administrativa e auditoria sanitizada.
 
 ### Security
 

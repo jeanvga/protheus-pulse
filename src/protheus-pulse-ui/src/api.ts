@@ -1,6 +1,6 @@
 import * as signalR from '@microsoft/signalr'
 import { demoSummary } from './demoData'
-import type { AuthStatus, AuthToken, DashboardSummary } from './types'
+import type { AuthStatus, AuthToken, CreateInstallationInput, DashboardSummary, InstallationCreated } from './types'
 
 const staticDemo = import.meta.env.VITE_DEMO_STATIC === 'true'
 const tokenKey = 'pulse.accessToken'
@@ -20,8 +20,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...init, headers })
   if (response.status === 401) session.token = null
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({ message: 'Falha inesperada na comunicação.' }))
-    throw new Error(payload.message ?? `A API retornou ${response.status}.`)
+    const payload = await response.json().catch(() => ({ message: 'Falha inesperada na comunicação.' })) as {
+      message?: string
+      errors?: Record<string, string[]>
+    }
+    const validationMessage = Object.values(payload.errors ?? {}).flat()[0]
+    throw new Error(payload.message ?? validationMessage ?? `A API retornou ${response.status}.`)
   }
   return response.json() as Promise<T>
 }
@@ -43,6 +47,11 @@ export async function setup(username: string, displayName: string, password: str
 export async function getDashboard(): Promise<DashboardSummary> {
   if (staticDemo) return demoSummary
   return request<DashboardSummary>('/api/v1/dashboard/summary')
+}
+
+export async function createInstallation(input: CreateInstallationInput): Promise<InstallationCreated> {
+  if (staticDemo) throw new Error('O cadastro persistente não está disponível na demonstração estática.')
+  return request<InstallationCreated>('/api/v1/installations', { method: 'POST', body: JSON.stringify(input) })
 }
 
 export function connectLiveUpdates(onUpdate: () => void): () => void {

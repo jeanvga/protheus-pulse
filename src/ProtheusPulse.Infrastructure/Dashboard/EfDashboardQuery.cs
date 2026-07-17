@@ -64,6 +64,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
                 component.Id,
                 component.InstallationId,
                 component.Installation.Name,
+                component.Installation.Environment,
                 component.Name,
                 component.Type,
                 component.Status,

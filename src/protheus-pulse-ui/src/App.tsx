@@ -6,8 +6,8 @@ import {
   Plus, RefreshCw, Search, Server, Settings, ShieldCheck, Sun, TerminalSquare, UserRound, X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { connectLiveUpdates, getAuthStatus, getDashboard, login, session, setup } from './api'
-import type { AlertSnapshot, AuthStatus, ComponentSnapshot, DashboardSummary, HealthStatus } from './types'
+import { connectLiveUpdates, createInstallation, getAuthStatus, getDashboard, login, session, setup } from './api'
+import type { AlertSnapshot, AuthStatus, ComponentSnapshot, ComponentType, DashboardSummary, EnvironmentKind, HealthStatus } from './types'
 
 type Page = 'overview' | 'installations' | 'logs' | 'jobs' | 'alerts' | 'settings' | 'audit' | 'diagnostics'
 
@@ -36,6 +36,21 @@ const pageTitles: Record<Page, { title: string; eyebrow: string }> = {
   diagnostics: { title: 'Diagnóstico', eyebrow: 'Saúde interna e permissões' },
 }
 
+const componentTypeOptions: Array<{ value: ComponentType; label: string }> = [
+  { value: 'AppServer', label: 'AppServer' },
+  { value: 'Rest', label: 'REST / WebApp' },
+  { value: 'Broker', label: 'Broker' },
+  { value: 'Worker', label: 'Worker' },
+  { value: 'Job', label: 'Job / integração' },
+  { value: 'Tss', label: 'TSS' },
+  { value: 'DbAccess', label: 'DBAccess' },
+  { value: 'LicenseServer', label: 'License Server' },
+  { value: 'HttpEndpoint', label: 'Endpoint HTTP(S)' },
+  { value: 'WindowsService', label: 'Serviço Windows' },
+  { value: 'WebApp', label: 'Aplicação web' },
+  { value: 'Generic', label: 'Genérico' },
+]
+
 export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
   const [authenticated, setAuthenticated] = useState(Boolean(session.token))
@@ -44,6 +59,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mobileMenu, setMobileMenu] = useState(false)
+  const [installationDialog, setInstallationDialog] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('pulse.theme') ?? 'dark')
 
   useEffect(() => {
@@ -87,6 +103,12 @@ export default function App() {
     setSummary(null)
   }
 
+  const installationCreated = async () => {
+    setInstallationDialog(false)
+    setPage('installations')
+    await loadSummary()
+  }
+
   if (loading) return <Splash />
   if (!authenticated) return <LoginScreen status={authStatus} onAuthenticated={onAuthenticated} error={error} />
 
@@ -112,9 +134,10 @@ export default function App() {
         </header>
 
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => void loadSummary()}><RefreshCw size={15} /> Tentar novamente</button></div>}
-        {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} />}
+        {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} addInstallation={() => setInstallationDialog(true)} />}
         <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 0.1.0 · produto independente</span></footer>
       </main>
+      {installationDialog && <InstallationDialog close={() => setInstallationDialog(false)} onCreated={installationCreated} />}
     </div>
   )
 }
@@ -193,10 +216,10 @@ function LoginScreen({ status, onAuthenticated, error: initialError }: { status:
   </div>
 }
 
-function PageContent({ page, summary, refresh }: { page: Page; summary: DashboardSummary; refresh: () => Promise<void> }) {
+function PageContent({ page, summary, refresh, addInstallation }: { page: Page; summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void }) {
   switch (page) {
-    case 'overview': return <Overview summary={summary} refresh={refresh} />
-    case 'installations': return <Installations summary={summary} />
+    case 'overview': return <Overview summary={summary} refresh={refresh} addInstallation={addInstallation} />
+    case 'installations': return <Installations summary={summary} addInstallation={addInstallation} />
     case 'logs': return <LogsPage />
     case 'jobs': return <JobsPage components={summary.components} />
     case 'alerts': return <AlertsPage alerts={summary.alerts} />
@@ -206,10 +229,10 @@ function PageContent({ page, summary, refresh }: { page: Page; summary: Dashboar
   }
 }
 
-function Overview({ summary, refresh }: { summary: DashboardSummary; refresh: () => Promise<void> }) {
+function Overview({ summary, refresh, addInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void }) {
   const updated = formatRelative(summary.generatedAt)
   return <div className="page-body">
-    <section className="intro-row"><div><h2>Panorama dos ambientes</h2><p>Última consolidação {updated}. Os dados críticos aparecem primeiro.</p></div><div className="intro-actions"><button className="secondary-button" onClick={() => void refresh()}><RefreshCw size={16} /> Atualizar</button><button className="primary-button"><Plus size={16} /> Adicionar instalação</button></div></section>
+    <section className="intro-row"><div><h2>Panorama dos ambientes</h2><p>Última consolidação {updated}. Os dados críticos aparecem primeiro.</p></div><div className="intro-actions"><button className="secondary-button" onClick={() => void refresh()}><RefreshCw size={16} /> Atualizar</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
     <section className="metric-grid">
       <MetricCard icon={Server} label="Instalações" value={summary.totals.installations} detail="ambientes acompanhados" tone="blue" />
       <MetricCard icon={Boxes} label="Componentes" value={summary.totals.components} detail={`${summary.totals.healthy} operando normalmente`} tone="teal" />
@@ -255,12 +278,91 @@ function AlertList({ alerts }: { alerts: AlertSnapshot[] }) {
   return <div className="alert-list">{alerts.map(alert => <div className="alert-row" key={alert.id}><div className={`alert-symbol ${alert.severity.toLowerCase()}`}>{alert.state === 'Resolved' ? <Check size={17} /> : <AlertTriangle size={17} />}</div><div className="alert-main"><div><strong>{alert.ruleName}</strong><StatusBadge status={alert.state === 'Resolved' ? 'Healthy' : alert.severity === 'Critical' ? 'Critical' : 'Warning'} label={stateLabel(alert.state)} /></div><span>{alert.componentName} · {alert.installationName}</span><p>{alert.evidence}</p></div><div className="alert-time"><strong>{formatRelative(alert.startedAt)}</strong><span>#{alert.correlationId.slice(0, 8)}</span></div></div>)}</div>
 }
 
-function Installations({ summary }: { summary: DashboardSummary }) {
+function Installations({ summary, addInstallation }: { summary: DashboardSummary; addInstallation: () => void }) {
   const groups = useMemo(() => Object.entries(summary.components.reduce<Record<string, ComponentSnapshot[]>>((result, item) => {
     ;(result[item.installationName] ??= []).push(item)
     return result
   }, {})), [summary.components])
-  return <div className="page-body"><section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Componentes agrupados por instalação e impacto.</p></div><button className="primary-button"><Plus size={16} /> Adicionar instalação</button></section><div className="installation-grid">{groups.map(([name, components]) => <article className="panel installation-card" key={name}><header><div><span className="environment-tag">{name.includes('Produção') ? 'Produção' : 'Homologação'}</span><h3>{name}</h3></div><StatusBadge status={worstStatus(components ?? [])} /></header><div className="installation-stat"><span>{components?.length ?? 0} componentes</span><span>{components?.filter(item => item.status === 'Healthy').length ?? 0} saudáveis</span></div>{components?.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span></div><small>{component.summary}</small></div>)}</article>)}</div></div>
+  return <div className="page-body"><section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Componentes agrupados por instalação e impacto.</p></div><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></section><div className="installation-grid">{groups.map(([name, components]) => <article className="panel installation-card" key={name}><header><div><span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span><h3>{name}</h3></div><StatusBadge status={worstStatus(components ?? [])} /></header><div className="installation-stat"><span>{components?.length ?? 0} componentes</span><span>{components?.filter(item => item.status === 'Healthy').length ?? 0} saudáveis</span></div>{components?.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span></div><small>{component.summary}</small></div>)}</article>)}</div></div>
+}
+
+interface ComponentDraft {
+  key: number
+  name: string
+  type: ComponentType
+  isRequired: boolean
+}
+
+function InstallationDialog({ close, onCreated }: { close: () => void; onCreated: () => Promise<void> }) {
+  const [name, setName] = useState('')
+  const [environment, setEnvironment] = useState<EnvironmentKind>('Production')
+  const [customEnvironmentName, setCustomEnvironmentName] = useState('')
+  const [tags, setTags] = useState('')
+  const [components, setComponents] = useState<ComponentDraft[]>([{ key: 1, name: '', type: 'AppServer', isRequired: true }])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const updateComponent = (key: number, update: Partial<Omit<ComponentDraft, 'key'>>) => {
+    setComponents(current => current.map(item => item.key === key ? { ...item, ...update } : item))
+  }
+
+  const addComponent = () => {
+    setComponents(current => {
+      const key = Math.max(...current.map(item => item.key), 0) + 1
+      return [...current, { key, name: '', type: 'AppServer', isRequired: true }]
+    })
+  }
+
+  const removeComponent = (key: number) => {
+    setComponents(current => current.filter(item => item.key !== key))
+  }
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      await createInstallation({
+        name,
+        environment,
+        customEnvironmentName: environment === 'Custom' ? customEnvironmentName : undefined,
+        tags: tags.split(',').map(item => item.trim()).filter(Boolean),
+        components: components.map(item => ({ name: item.name, type: item.type, isRequired: item.isRequired })),
+      })
+      await onCreated()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível cadastrar a instalação.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop">
+    <section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="installation-dialog-title">
+      <header className="modal-header"><div><span>Fase 2 · Cadastro manual</span><h2 id="installation-dialog-title">Adicionar instalação</h2><p>Cadastre somente metadados técnicos. Nenhuma conexão será feita agora.</p></div><button className="icon-button" onClick={close} disabled={busy} aria-label="Fechar cadastro"><X size={18} /></button></header>
+      <form onSubmit={submit}>
+        {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+        <div className="form-grid">
+          <label>Nome da instalação<input aria-label="Nome da instalação" value={name} onChange={event => setName(event.target.value)} maxLength={160} placeholder="Ex.: ERP Produção" required /></label>
+          <label>Ambiente<select aria-label="Ambiente" value={environment} onChange={event => setEnvironment(event.target.value as EnvironmentKind)}><option value="Production">Produção</option><option value="Homologation">Homologação</option><option value="Development">Desenvolvimento</option><option value="Custom">Personalizado</option></select></label>
+          {environment === 'Custom' && <label>Nome do ambiente<input aria-label="Nome do ambiente personalizado" value={customEnvironmentName} onChange={event => setCustomEnvironmentName(event.target.value)} maxLength={80} required /></label>}
+          <label className={environment === 'Custom' ? '' : 'wide-field'}>Tags opcionais<input aria-label="Tags opcionais" value={tags} onChange={event => setTags(event.target.value)} placeholder="matriz, servidor-a" /></label>
+        </div>
+        <div className="component-editor">
+          <div className="component-editor-heading"><div><h3>Componentes</h3><p>Informe ao menos um item que será monitorado nas próximas etapas.</p></div><button type="button" className="secondary-button" onClick={addComponent}><Plus size={15} /> Adicionar componente</button></div>
+          {components.map((component, index) => <div className="component-editor-row" key={component.key}>
+            <span>{index + 1}</span>
+            <label>Nome<input aria-label={`Nome do componente ${index + 1}`} value={component.name} onChange={event => updateComponent(component.key, { name: event.target.value })} maxLength={160} placeholder="Ex.: AppServer REST" required /></label>
+            <label>Tipo<select aria-label={`Tipo do componente ${index + 1}`} value={component.type} onChange={event => updateComponent(component.key, { type: event.target.value as ComponentType })}>{componentTypeOptions.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
+            <label className="checkbox-label"><input type="checkbox" checked={component.isRequired} onChange={event => updateComponent(component.key, { isRequired: event.target.checked })} /> Obrigatório</label>
+            <button type="button" className="row-action remove-component" onClick={() => removeComponent(component.key)} disabled={components.length === 1} aria-label={`Remover componente ${index + 1}`}><X size={17} /></button>
+          </div>)}
+        </div>
+        <div className="modal-safety"><ShieldCheck size={18} /><span>Este cadastro não inicia, para ou consulta serviços e não lê arquivos do servidor.</span></div>
+        <footer className="modal-actions"><button type="button" className="secondary-button" onClick={close} disabled={busy}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}{busy ? 'Cadastrando…' : 'Cadastrar instalação'}</button></footer>
+      </form>
+    </section>
+  </div>
 }
 
 function LogsPage() {
@@ -313,6 +415,10 @@ function formatRelative(value?: string) {
 function typeLabel(type: string) {
   const labels: Record<string, string> = { Rest: 'REST / WebApp', Worker: 'Worker', Job: 'Job / integração', HttpEndpoint: 'Endpoint HTTPS', Broker: 'Broker', Generic: 'Fonte de log' }
   return labels[type] ?? type
+}
+
+function environmentLabel(environment?: EnvironmentKind) {
+  return ({ Production: 'Produção', Homologation: 'Homologação', Development: 'Desenvolvimento', Custom: 'Personalizado' } as const)[environment ?? 'Custom']
 }
 
 function stateLabel(state: AlertSnapshot['state']) {

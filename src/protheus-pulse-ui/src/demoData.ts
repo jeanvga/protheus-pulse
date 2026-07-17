@@ -17,27 +17,27 @@ export const demoSummary: DashboardSummary = {
   },
   components: [
     {
-      id: 'rest', installationId: 'prod', installationName: 'ERP Produção · DEMO', name: 'AppServer REST', type: 'Rest', status: 'Healthy',
+      id: 'rest', installationId: 'prod', installationName: 'ERP Produção · DEMO', installationEnvironment: 'Production', name: 'AppServer REST', type: 'Rest', status: 'Healthy',
       lastStateChangeAt: new Date(now - 37 * 3600000).toISOString(), summary: 'HTTP 200 em 84 ms; TCP e serviço disponíveis.', metricLabel: 'Latência', metricValue: 84, metricUnit: 'ms', isDemo: true,
     },
     {
-      id: 'worker', installationId: 'prod', installationName: 'ERP Produção · DEMO', name: 'Worker Financeiro', type: 'Worker', status: 'Warning',
+      id: 'worker', installationId: 'prod', installationName: 'ERP Produção · DEMO', installationEnvironment: 'Production', name: 'Worker Financeiro', type: 'Worker', status: 'Warning',
       lastStateChangeAt: new Date(now - 43 * 60000).toISOString(), summary: 'Memória acima do limite por 12 minutos; processo responsivo.', metricLabel: 'Memória', metricValue: 87, metricUnit: '%', isDemo: true,
     },
     {
-      id: 'job', installationId: 'prod', installationName: 'ERP Produção · DEMO', name: 'Job Fechamento', type: 'Job', status: 'Critical',
+      id: 'job', installationId: 'prod', installationName: 'ERP Produção · DEMO', installationEnvironment: 'Production', name: 'Job Fechamento', type: 'Job', status: 'Critical',
       lastStateChangeAt: new Date(now - 18 * 60000).toISOString(), summary: 'Heartbeat esperado há 18 minutos; tolerância excedida.', metricLabel: 'Atraso', metricValue: 18, metricUnit: 'min', isDemo: true,
     },
     {
-      id: 'portal', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', name: 'Portal HTTPS', type: 'HttpEndpoint', status: 'Warning',
+      id: 'portal', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', installationEnvironment: 'Homologation', name: 'Portal HTTPS', type: 'HttpEndpoint', status: 'Warning',
       lastStateChangeAt: new Date(now - 2 * 3600000).toISOString(), summary: 'Certificado válido, com vencimento em 9 dias.', metricLabel: 'Validade TLS', metricValue: 9, metricUnit: 'dias', isDemo: true,
     },
     {
-      id: 'broker', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', name: 'Broker de Integrações', type: 'Broker', status: 'Healthy',
+      id: 'broker', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', installationEnvironment: 'Homologation', name: 'Broker de Integrações', type: 'Broker', status: 'Healthy',
       lastStateChangeAt: new Date(now - 3 * 86400000).toISOString(), summary: 'Porta TCP disponível; latência dentro do esperado.', metricLabel: 'Latência', metricValue: 16, metricUnit: 'ms', isDemo: true,
     },
     {
-      id: 'console', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', name: 'Console de Integração', type: 'Generic', status: 'Warning',
+      id: 'console', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', installationEnvironment: 'Homologation', name: 'Console de Integração', type: 'Generic', status: 'Warning',
       lastStateChangeAt: new Date(now - 26 * 60000).toISOString(), summary: '8 erros semelhantes agrupados nos últimos 15 minutos.', metricLabel: 'Erros agrupados', metricValue: 8, metricUnit: 'eventos', isDemo: true,
     },
   ],

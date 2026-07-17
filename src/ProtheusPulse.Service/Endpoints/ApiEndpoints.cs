@@ -41,6 +41,7 @@ public static class ApiEndpoints
 
         api.MapGet("/installations", async (IDashboardQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.GetInstallationsAsync(cancellationToken))).RequireAuthorization("Viewer");
+        api.MapInstallationManagement();
 
         api.MapGet("/components", async (IDashboardQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.GetComponentsAsync(cancellationToken))).RequireAuthorization("Viewer");
