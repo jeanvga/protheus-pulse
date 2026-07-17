@@ -28,6 +28,9 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Canais HTTPS para Webhook, Teams, Slack e Discord com URL protegida e payload sem topologia/evidência.
 - Job diário e execução administrativa de retenção, agregação horária e expurgo de histórico vencido.
 - Ação de reconhecimento de alerta no dashboard.
+- Heartbeats autenticados com token de uso único, hash SHA-256, rotação, janelas diárias e detecção de atraso.
+- Pacote Windows self-contained, scripts idempotentes de instalação/desinstalação e fonte Inno Setup.
+- Checklist operacional do piloto, health check pós-instalação e procedimentos atualizados de rollback.
 
 ### Security
 
@@ -36,3 +39,4 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Limites de corpo, rate limit de autenticação e CSP restritiva.
 - Conexões HTTP/TCP usam resolução própria e bloqueiam endereços link-local, multicast e não especificados.
 - Binário SQLite nativo atualizado para uma versão sem vulnerabilidades conhecidas na auditoria NuGet.
+- Serviço Windows sob `LocalService`, ACLs mínimas, chave JWT em arquivo restrito e Data Protection protegido por DPAPI.

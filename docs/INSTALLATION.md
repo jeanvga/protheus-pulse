@@ -1,62 +1,70 @@
 # Instalação no Windows Server
 
-## Estado atual
+## Pacote recomendado
 
-A Fase 1 produz binários publicáveis e compatíveis com Windows Service. O instalador Inno Setup e os scripts assináveis completos pertencem à Fase 5. Até lá, use o procedimento manual abaixo apenas em laboratório.
+Use o ZIP self-contained `protheus-pulse-<versão>-win-x64.zip` ou o instalador Inno Setup da mesma versão. Valide o SHA-256 recebido por um canal confiável antes de executar qualquer arquivo.
+
+O padrão seguro instala:
+
+- binários em `C:\Program Files\Protheus Pulse`;
+- banco, logs e chaves em `C:\ProgramData\ProtheusPulse`;
+- serviço `ProtheusPulse`, automático atrasado, sob `NT AUTHORITY\LocalService`;
+- endpoint somente em `http://127.0.0.1:5058`.
+
+O aplicativo é independente do Protheus e não altera serviços, INI, RPO, banco ou arquivos monitorados.
 
 ## Pré-requisitos
 
-- Windows Server suportado pelo .NET 8.
-- ASP.NET Core Runtime 8 x64 ou publicação self-contained.
-- Conta de serviço dedicada e sem privilégio administrativo, quando possível.
-- Permissão de modificação em `C:\ProgramData\ProtheusPulse`.
-- Apenas leitura nas futuras raízes locais/UNC monitoradas.
+- Windows Server x64 com PowerShell 5.1 ou mais recente;
+- sessão administrativa apenas durante instalação/atualização;
+- porta local 5058 livre;
+- acesso de leitura da conta do serviço aos recursos monitorados;
+- espaço e política de backup para `C:\ProgramData\ProtheusPulse`.
 
-Para UNC, conceda acesso tanto no compartilhamento quanto no NTFS à conta do serviço. Não dependa de unidades mapeadas e não grave credenciais de compartilhamento em configuração.
+A publicação é self-contained e não exige instalação separada do .NET. Para UNC, conceda leitura no compartilhamento e no NTFS à identidade do computador (`DOMINIO\SERVIDOR$`) ou use uma conta de serviço corporativa aprovada em uma instalação customizada. Não use unidade mapeada e não grave credenciais no Pulse.
 
-## Publicar
-
-```powershell
-npm ci
-npm run ui:build
-dotnet publish .\src\ProtheusPulse.Service `
-  --configuration Release `
-  --runtime win-x64 `
-  --self-contained false `
-  --output .\artifacts\publish `
-  /p:SkipFrontendBuild=true
-```
-
-Copie o conteúdo publicado para `C:\Program Files\Protheus Pulse`. Crie `C:\ProgramData\ProtheusPulse` e proteja suas ACLs.
-
-## Configuração segura
-
-Defina `PULSE_JWT_SIGNING_KEY` no ambiente da conta de serviço, com um segredo aleatório de pelo menos 32 caracteres. O bind padrão é `127.0.0.1:5058`.
-
-Para acesso pela LAN:
-
-1. configure explicitamente o endpoint Kestrel;
-2. configure HTTPS com certificado confiável;
-3. restrinja firewall à rede administrativa;
-4. revise reverse proxy e encaminhamento de cabeçalhos;
-5. nunca exponha diretamente à internet.
-
-## Registro manual do serviço (laboratório)
+## Instalar pelo ZIP
 
 ```powershell
-sc.exe create ProtheusPulse binPath= '"C:\Program Files\Protheus Pulse\ProtheusPulse.Service.exe"' start= delayed-auto
-sc.exe description ProtheusPulse "Monitoramento técnico local e somente leitura"
-sc.exe start ProtheusPulse
+$package = 'C:\Pacotes\protheus-pulse-0.1.0-win-x64.zip'
+(Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
+# Compare visualmente com o arquivo .sha256 obtido por canal confiável.
+
+Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.0'
+Set-Location 'C:\Pacotes\ProtheusPulse-0.1.0\protheus-pulse-0.1.0-win-x64'
+.\install-service.ps1
 ```
 
-Configure a conta dedicada pelo painel de Serviços ou por sua ferramenta corporativa. Não use `LocalSystem` sem necessidade comprovada.
+O script para o serviço anterior em atualizações, copia somente o payload, preserva dados, aplica ACLs, cria a chave JWT caso ainda não exista, registra recuperação automática, inicia o serviço e valida `/health/ready`.
 
-## Dados
+Para visualizar as ações sem executá-las:
 
-Fora de desenvolvimento/demo, o padrão é:
+```powershell
+.\install-service.ps1 -WhatIf
+```
 
-- banco e configuração: `C:\ProgramData\ProtheusPulse`;
-- logs internos: `C:\ProgramData\ProtheusPulse\logs`;
-- binários: `C:\Program Files\Protheus Pulse`.
+## Instalar pelo `.exe`
 
-O serviço não cria regra de firewall automaticamente.
+Execute o instalador como administrador e preserve o diretório padrão. O instalador chama o mesmo script de registro e health check. Em distribuição corporativa, assine Authenticode tanto o instalador quanto os scripts e valide a cadeia de assinatura.
+
+## Primeiro acesso
+
+Abra [http://127.0.0.1:5058](http://127.0.0.1:5058) no próprio servidor e crie o primeiro administrador. Use uma senha exclusiva e guarde-a no cofre corporativo.
+
+Para acesso remoto, coloque um reverse proxy HTTPS autenticado/restrito diante do bind local. Não altere o bind para LAN sem certificado confiável, firewall restrito e revisão dos cabeçalhos de proxy. O instalador não abre firewall.
+
+## Segredos e permissões
+
+O instalador cria `C:\ProgramData\ProtheusPulse\secrets\jwt.key` com aleatoriedade criptográfica. O serviço lê o arquivo por `PULSE_JWT_SIGNING_KEY_FILE`; o valor não entra em `appsettings.json`, logs ou registro. Não exiba nem copie esse arquivo.
+
+As chaves do ASP.NET Core Data Protection são protegidas por DPAPI da máquina e por ACL. Banco, chaves, logs e backup devem continuar restritos a administradores, `SYSTEM` e à conta do serviço.
+
+## Desinstalação
+
+A desinstalação normal remove serviço e binários, mas preserva `C:\ProgramData\ProtheusPulse`. Para apagar permanentemente banco, logs, chave JWT e chaves DPAPI, faça backup e execute explicitamente:
+
+```powershell
+& 'C:\Program Files\Protheus Pulse\scripts\uninstall-service.ps1' -RemoveData
+```
+
+Essa operação é irreversível após a confirmação.

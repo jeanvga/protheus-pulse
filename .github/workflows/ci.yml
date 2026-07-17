@@ -54,8 +54,16 @@ jobs:
       - name: End-to-end test
         run: npm run ui:e2e
 
-      - name: Publish Windows artifact
-        run: dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained false --output .\artifacts\win-x64 /p:SkipFrontendBuild=true
+      - name: Publish self-contained Windows package
+        shell: pwsh
+        run: |
+          $packageRoot = '.\artifacts\protheus-pulse-0.1.0-win-x64'
+          dotnet clean .\src\ProtheusPulse.Service --configuration Release --runtime win-x64
+          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.0 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
+          Copy-Item .\scripts\install-service.ps1, .\scripts\uninstall-service.ps1, .\docs\PILOT-CHECKLIST.md, .\LICENSE -Destination $packageRoot
+          Compress-Archive -LiteralPath $packageRoot -DestinationPath "$packageRoot.zip" -CompressionLevel Optimal
+          $hash = (Get-FileHash -LiteralPath "$packageRoot.zip" -Algorithm SHA256).Hash
+          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.0-win-x64.zip`r`n")
 
       - name: Upload test results
         if: always()
@@ -71,4 +79,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: protheus-pulse-win-x64
-          path: artifacts/win-x64
+          path: |
+            artifacts/protheus-pulse-0.1.0-win-x64.zip
+            artifacts/protheus-pulse-0.1.0-win-x64.zip.sha256

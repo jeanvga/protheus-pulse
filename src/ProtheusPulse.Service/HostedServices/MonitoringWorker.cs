@@ -111,6 +111,7 @@ public sealed partial class MonitoringWorker(
             .Include(item => item.TcpChecks)
             .Include(item => item.HttpChecks)
             .Include(item => item.LogSources)
+            .Include(item => item.HeartbeatDefinitions)
             .SingleAsync(item => item.Id == componentId, cancellationToken);
         var observations = new List<(ProbeType Type, ProbeObservation Observation)>();
         foreach (var collector in serviceProvider.GetServices<IProbeCollector>().Where(item => item.CanCollect(component)))

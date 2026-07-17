@@ -70,9 +70,13 @@ builder.Host.UseSerilog((_, _, configuration) => configuration
 var connectionString = builder.Configuration.GetConnectionString("PulseDb") ?? "Data Source={DataDirectory}/pulse.db;Cache=Shared";
 connectionString = connectionString.Replace("{DataDirectory}", dataDirectory.Replace("\\", "/"), StringComparison.Ordinal);
 builder.Services.AddPulseInfrastructure(connectionString);
-builder.Services.AddDataProtection()
+var dataProtection = builder.Services.AddDataProtection()
     .SetApplicationName("ProtheusPulse")
     .PersistKeysToFileSystem(new DirectoryInfo(keysDirectory));
+if (OperatingSystem.IsWindows())
+{
+    dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
+}
 builder.Services.AddSingleton(pulseOptions);
 builder.Services.AddSingleton(new ProbeCollectorOptions
 {
@@ -82,12 +86,14 @@ builder.Services.AddSingleton(new ProbeCollectorOptions
 });
 
 var securityOptions = builder.Configuration.GetSection(SecurityOptions.SectionName).Get<SecurityOptions>() ?? new SecurityOptions();
-securityOptions.JwtSigningKey = Environment.GetEnvironmentVariable("PULSE_JWT_SIGNING_KEY") ?? securityOptions.JwtSigningKey;
+securityOptions.JwtSigningKey = Environment.GetEnvironmentVariable("PULSE_JWT_SIGNING_KEY")
+    ?? ReadJwtSigningKeyFile(Environment.GetEnvironmentVariable("PULSE_JWT_SIGNING_KEY_FILE"))
+    ?? securityOptions.JwtSigningKey;
 if (string.IsNullOrWhiteSpace(securityOptions.JwtSigningKey))
 {
     if (!demoMode && !builder.Environment.IsDevelopment())
     {
-        throw new InvalidOperationException("Defina PULSE_JWT_SIGNING_KEY com pelo menos 32 caracteres antes de executar fora do modo demo/desenvolvimento.");
+        throw new InvalidOperationException("Defina PULSE_JWT_SIGNING_KEY ou PULSE_JWT_SIGNING_KEY_FILE com pelo menos 32 bytes antes de executar fora do modo demo/desenvolvimento.");
     }
 
     securityOptions.JwtSigningKey = "DEMO-ONLY-Protheus-Pulse-signing-key-2026-change-me";
@@ -136,16 +142,34 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("Operator", policy => policy.RequireRole(UserRole.Operator.ToString(), UserRole.Administrator.ToString()))
     .AddPolicy("Administrator", policy => policy.RequireRole(UserRole.Administrator.ToString()));
 
-builder.Services.AddRateLimiter(options => options.AddPolicy("authentication", context =>
-    RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "local",
-        _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 10,
-            QueueLimit = 0,
-            Window = TimeSpan.FromMinutes(1),
-            AutoReplenishment = true
-        })));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("authentication", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "local",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("heartbeat", context =>
+    {
+        var origin = context.Connection.RemoteIpAddress?.ToString() ?? "local";
+        var jobKey = context.Request.RouteValues["jobKey"]?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"{origin}:{jobKey}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+                AutoReplenishment = true
+            });
+    });
+});
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 string[] readinessTags = ["ready"];
@@ -235,5 +259,32 @@ app.UseStaticFiles();
 app.MapFallbackToFile("index.html").AllowAnonymous();
 
 await app.RunAsync();
+
+static string? ReadJwtSigningKeyFile(string? configuredPath)
+{
+    if (string.IsNullOrWhiteSpace(configuredPath))
+    {
+        return null;
+    }
+
+    try
+    {
+        var path = Path.GetFullPath(configuredPath);
+        var file = new FileInfo(path);
+        if (!file.Exists || file.Length is < 32 or > 1_024 || (file.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidOperationException("O arquivo configurado em PULSE_JWT_SIGNING_KEY_FILE é inválido.");
+        }
+
+        var value = File.ReadAllText(path, Encoding.UTF8).Trim();
+        return string.IsNullOrEmpty(value)
+            ? throw new InvalidOperationException("O arquivo configurado em PULSE_JWT_SIGNING_KEY_FILE está vazio.")
+            : value;
+    }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+    {
+        throw new InvalidOperationException("Não foi possível ler com segurança o arquivo configurado em PULSE_JWT_SIGNING_KEY_FILE.", exception);
+    }
+}
 
 public partial class Program;

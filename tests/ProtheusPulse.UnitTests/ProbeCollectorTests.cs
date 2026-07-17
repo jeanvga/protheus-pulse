@@ -137,6 +137,52 @@ public sealed class ProbeCollectorTests
         Assert.True(SafeNetworkConnector.IsAllowed(IPAddress.Parse("10.0.0.10")));
     }
 
+    [Fact]
+    public async Task HeartbeatCollectorReportsDelayWithoutExposingDefinitionDetails()
+    {
+        var component = CreateComponent();
+        component.HeartbeatDefinitions.Add(new HeartbeatDefinition
+        {
+            Name = "Job sintético",
+            JobKey = "job_synthetic_test",
+            TokenHash = new string('A', 64),
+            ExpectedIntervalSeconds = 300,
+            ToleranceSeconds = 60,
+            LastHeartbeatAt = Clock.UtcNow.AddMinutes(-20)
+        });
+        var collector = new HeartbeatProbeCollector(Clock);
+
+        var observation = await collector.CollectAsync(component, CancellationToken.None);
+
+        Assert.Equal(HealthStatus.Critical, observation.Status);
+        Assert.Contains(observation.Metrics ?? [], item => item.Name == "heartbeatDelay" && item.Value == 20);
+        Assert.DoesNotContain("job_synthetic_test", observation.SanitizedEvidence, StringComparison.Ordinal);
+        Assert.DoesNotContain("Job sintético", observation.SanitizedEvidence, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HeartbeatCollectorDoesNotAlertOutsideConfiguredWindow()
+    {
+        var localTime = TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(Clock.UtcNow, TimeZoneInfo.Local).DateTime);
+        var component = CreateComponent();
+        component.HeartbeatDefinitions.Add(new HeartbeatDefinition
+        {
+            Name = "Job com janela",
+            JobKey = "job_window_test",
+            ExpectedIntervalSeconds = 60,
+            ToleranceSeconds = 0,
+            LastHeartbeatAt = Clock.UtcNow.AddDays(-1),
+            WindowStart = localTime.AddHours(1),
+            WindowEnd = localTime.AddHours(2)
+        });
+        var collector = new HeartbeatProbeCollector(Clock);
+
+        var observation = await collector.CollectAsync(component, CancellationToken.None);
+
+        Assert.Equal(HealthStatus.Healthy, observation.Status);
+        Assert.Null(observation.Metrics);
+    }
+
     private static Component CreateComponent() => new()
     {
         InstallationId = Guid.NewGuid(),

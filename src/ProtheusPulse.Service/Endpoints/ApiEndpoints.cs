@@ -13,7 +13,6 @@ namespace ProtheusPulse.Service.Endpoints;
 public static class ApiEndpoints
 {
     private static readonly string[] DiagnosticNotes = ["Nenhum caminho monitorado ou segredo é exposto neste diagnóstico."];
-    private static readonly string[] PostMethods = ["POST"];
     private static readonly string[] UsernameRequired = ["Informe o nome de usuário."];
 
     public static IEndpointRouteBuilder MapPulseApi(this IEndpointRouteBuilder endpoints, bool demoMode)
@@ -46,6 +45,7 @@ public static class ApiEndpoints
         api.MapInstallationImport();
         api.MapDiscovery();
         api.MapOperations();
+        api.MapHeartbeats();
 
         api.MapGet("/components", async (IDashboardQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.GetComponentsAsync(cancellationToken))).RequireAuthorization("Viewer");
@@ -106,12 +106,6 @@ public static class ApiEndpoints
             var processedComponents = await worker.RunNowAsync(cancellationToken);
             return Results.Ok(new { processedComponents, completedAt = DateTimeOffset.UtcNow });
         }).RequireAuthorization("Administrator");
-
-        api.MapMethods("/heartbeats/{jobKey}", PostMethods, (string jobKey) => Results.Json(new
-        {
-            jobKey,
-            message = "A ingestão autenticada de heartbeats será habilitada na Fase 5."
-        }, statusCode: StatusCodes.Status501NotImplemented)).AllowAnonymous();
 
         return endpoints;
     }

@@ -9,7 +9,8 @@ O Pulse funciona localmente e não envia telemetria a nuvem. O administrador da 
 - ocorrências de alerta e correlação;
 - usuários locais, papéis e hashes de senha;
 - eventos de auditoria;
-- cursores de leitura de log.
+- cursores de leitura de log;
+- definições e hash SHA-256 de tokens de heartbeat;
 - URLs de canais protegidas com ASP.NET Core Data Protection.
 
 Não devem ser persistidos: senhas em claro, tokens, conteúdo integral de INI, corpos HTTP potencialmente sensíveis ou grandes trechos de log.

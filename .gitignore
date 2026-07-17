@@ -37,6 +37,7 @@ src/ProtheusPulse.Service/wwwroot/index.html
 .vs/
 playwright-report/
 test-results/
+artifacts/
 *.tsbuildinfo
 src/protheus-pulse-ui/vite.config.js
 src/protheus-pulse-ui/vite.config.d.ts

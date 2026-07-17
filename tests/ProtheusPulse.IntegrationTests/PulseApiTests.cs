@@ -535,6 +535,7 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         var componentId = Guid.NewGuid();
         var logSourceId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
+        var oldHour = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero).AddDays(-8);
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
@@ -553,8 +554,8 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
                 Components = [component]
             });
             dbContext.MetricSamples.AddRange(
-                new MetricSample { ComponentId = componentId, Name = "latency", Unit = "ms", Value = 10, ObservedAt = now.AddDays(-8) },
-                new MetricSample { ComponentId = componentId, Name = "latency", Unit = "ms", Value = 30, ObservedAt = now.AddDays(-8).AddMinutes(10) });
+                new MetricSample { ComponentId = componentId, Name = "latency", Unit = "ms", Value = 10, ObservedAt = oldHour.AddMinutes(5) },
+                new MetricSample { ComponentId = componentId, Name = "latency", Unit = "ms", Value = 30, ObservedAt = oldHour.AddMinutes(10) });
             dbContext.ProbeResults.Add(new ProbeResult
             {
                 ComponentId = componentId,
@@ -590,6 +591,83 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         Assert.Equal(TimeSpan.FromHours(1), aggregate.AggregationWindow);
     }
 
+    [Fact]
+    public async Task HeartbeatTokenIsShownOnceHashedRotatedAndRequiredForIngestion()
+    {
+        var componentId = Guid.NewGuid();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            dbContext.Installations.Add(new Installation
+            {
+                Name = $"Heartbeat {Guid.NewGuid():N}",
+                Environment = EnvironmentKind.Development,
+                CreatedAt = DateTimeOffset.UtcNow,
+                Components =
+                [
+                    new Component
+                    {
+                        Id = componentId,
+                        Name = "Job sintético",
+                        Type = ComponentType.Job
+                    }
+                ]
+            });
+            await dbContext.SaveChangesAsync();
+        }
+
+        var administratorToken = await AuthenticateDemoAdministratorAsync();
+        using var createRequest = AuthorizedPost("/api/v1/heartbeat-definitions", administratorToken, new
+        {
+            componentId,
+            name = "Rotina agendada sintética",
+            expectedIntervalSeconds = 300,
+            toleranceSeconds = 60
+        });
+        var createResponse = await client.SendAsync(createRequest);
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<HeartbeatTokenResponse>();
+        Assert.NotNull(created);
+        Assert.True(created.TokenShownOnce);
+
+        await using (var verificationScope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = verificationScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var stored = await dbContext.HeartbeatDefinitions.AsNoTracking().SingleAsync(item => item.Id == created.Id);
+            Assert.Equal(64, stored.TokenHash?.Length);
+            Assert.DoesNotContain(created.Token, stored.TokenHash, StringComparison.Ordinal);
+        }
+
+        var invalid = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/heartbeats/{created.JobKey}", UriKind.Relative));
+        invalid.Headers.Add("X-Pulse-Heartbeat-Token", "invalid-synthetic-token-value");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(invalid)).StatusCode);
+
+        using var accepted = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/heartbeats/{created.JobKey}", UriKind.Relative));
+        accepted.Headers.Add("X-Pulse-Heartbeat-Token", created.Token);
+        Assert.Equal(HttpStatusCode.Accepted, (await client.SendAsync(accepted)).StatusCode);
+
+        using var rotateRequest = AuthorizedPost($"/api/v1/heartbeat-definitions/{created.Id}/rotate", administratorToken, new { });
+        var rotateResponse = await client.SendAsync(rotateRequest);
+        rotateResponse.EnsureSuccessStatusCode();
+        var rotated = await rotateResponse.Content.ReadFromJsonAsync<HeartbeatTokenResponse>();
+        Assert.NotNull(rotated);
+        Assert.NotEqual(created.Token, rotated.Token);
+
+        using var rejectedOldToken = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/heartbeats/{created.JobKey}", UriKind.Relative));
+        rejectedOldToken.Headers.Add("X-Pulse-Heartbeat-Token", created.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(rejectedOldToken)).StatusCode);
+
+        using var acceptedNewToken = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/heartbeats/{created.JobKey}", UriKind.Relative));
+        acceptedNewToken.Headers.Add("X-Pulse-Heartbeat-Token", rotated.Token);
+        Assert.Equal(HttpStatusCode.Accepted, (await client.SendAsync(acceptedNewToken)).StatusCode);
+
+        await using var finalScope = factory.Services.CreateAsyncScope();
+        var finalDb = finalScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+        var definition = await finalDb.HeartbeatDefinitions.AsNoTracking().SingleAsync(item => item.Id == created.Id);
+        Assert.NotNull(definition.LastHeartbeatAt);
+        Assert.Equal(2, await finalDb.ProbeResults.CountAsync(item => item.ComponentId == componentId && item.ProbeType == ProbeType.Heartbeat));
+    }
+
     private static HttpRequestMessage AuthorizedPost(string path, string token, object content)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
@@ -622,6 +700,7 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record ComponentPayload(string Name, string Type, bool IsRequired = true);
     private sealed record InstallationResponse(Guid Id, string Name, string Environment, int ComponentCount, string Status);
     private sealed record IdResponse(Guid Id);
+    private sealed record HeartbeatTokenResponse(Guid Id, string JobKey, string Token, bool TokenShownOnce);
 }
 
 public sealed class PulseWebApplicationFactory : WebApplicationFactory<Program>

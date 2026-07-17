@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddSingleton<IProbeCollector, TlsCertificateProbeCollector>();
         services.AddSingleton<IProbeCollector, FileProbeCollector>();
         services.AddSingleton<IProbeCollector, DiskProbeCollector>();
+        services.AddSingleton<IProbeCollector, HeartbeatProbeCollector>();
         services.AddSingleton<IIncrementalLogCollector, IncrementalLogCollector>();
         return services;
     }

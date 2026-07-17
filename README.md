@@ -2,7 +2,7 @@
 
 Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
 
-> **Estado do projeto:** Fases 1 a 4 concluídas. Cadastro, descoberta, coletores, alertas, manutenção, notificações e retenção estão funcionais. Instalador e hardening final entram na Fase 5.
+> **Estado do projeto:** MVP 0.1.0 concluído e pronto para piloto controlado. Cadastro, descoberta, coletores, alertas, heartbeats, retenção e instalação Windows estão funcionais.
 
 ![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
 
@@ -33,6 +33,9 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Coletores somente leitura de serviço/processo Windows, TCP, HTTP/TLS, arquivo, disco e logs incrementais sanitizados.
 - Regras automáticas/customizadas, falhas consecutivas, cooldown, reconhecimento, resolução e janelas de manutenção.
 - Webhooks HTTPS com configuração protegida e payload mínimo; retenção automática com agregação horária.
+- Heartbeats com token aleatório exibido uma vez, somente hash no banco, rotação, janela operacional e rate limit.
+- Serviço Windows sob `LocalService`, chave JWT em arquivo restrito, DPAPI, ACLs mínimas e recuperação automática.
+- ZIP self-contained e instalador Inno Setup reproduzíveis, com SHA-256 e health check pós-instalação.
 
 ## Executar a demonstração
 
@@ -61,7 +64,7 @@ $env:PULSE_JWT_SIGNING_KEY = '<segredo-aleatorio-com-pelo-menos-32-caracteres>'
 dotnet run --project .\src\ProtheusPulse.Service
 ```
 
-Na primeira abertura, a API oferece a criação do administrador inicial. Nunca use a chave demonstrativa em produção.
+Na instalação Windows, o script gera um arquivo secreto e define `PULSE_JWT_SIGNING_KEY_FILE`; não é necessário expor a chave no ambiente interativo. Na primeira abertura, a API oferece a criação do administrador inicial. Nunca use a chave demonstrativa em produção.
 
 ## Arquitetura
 
@@ -72,7 +75,7 @@ flowchart LR
     App --> Domain["Domain: entidades e regras"]
     Host --> Infra["Infrastructure: EF Core, auth e demo"]
     Infra --> DB[("SQLite local")]
-    Collectors["Coletores somente leitura — próximas fases"] -.-> App
+    Collectors["Coletores somente leitura"] --> App
 ```
 
 O domínio não referencia APIs do Windows. Coletores implementam `IProbeCollector`, recebem `CancellationToken` e devolvem um estado padronizado (`Healthy`, `Warning`, `Critical`, `Unknown` ou `Maintenance`). A regra de agregação impede que um componente seja saudável quando uma verificação obrigatória está crítica.
@@ -94,8 +97,8 @@ tests/
   protheus-pulse-ui-tests/
 samples/                         somente dados sintéticos
 docs/                            arquitetura, operação e segurança
-installer/                       reservado à Fase 5
-scripts/                         build e execução local
+installer/                       fonte reproduzível do Inno Setup
+scripts/                         build, release, instalação e execução local
 ```
 
 ## Verificar o projeto
@@ -116,9 +119,7 @@ npm audit --audit-level=moderate
 - [x] Fase 2 — cadastro manual, importação, descoberta segura e parser INI sanitizado.
 - [x] Fase 3 — coletores de serviço/processo, TCP/HTTP, arquivo/disco e logs incrementais.
 - [x] Fase 4 — motor completo de regras, notificações, retenção e agregação.
-- [ ] Fase 5 — heartbeats autenticados, instalador Inno Setup, PowerShell e hardening final.
-
-Endpoints ainda pertencentes a fases futuras respondem `501 Not Implemented` de forma explícita; não simulam sucesso.
+- [x] Fase 5 — heartbeats autenticados, instalador Inno Setup, PowerShell e hardening final.
 
 ## Documentação
 
@@ -127,7 +128,9 @@ Endpoints ainda pertencentes a fases futuras respondem `501 Not Implemented` de 
 - [Cadastro de instalações](docs/ADDING-INSTALLATIONS.md)
 - [Coletores e ciclo de monitoramento](docs/MONITORING.md)
 - [Alertas, manutenção e notificações](docs/ALERTING.md)
+- [Heartbeats autenticados](docs/HEARTBEATS.md)
 - [Privacidade e retenção](docs/PRIVACY-RETENTION.md)
+- [Checklist do piloto](docs/PILOT-CHECKLIST.md)
 - [Threat model](docs/THREAT-MODEL.md)
 - [Como contribuir](CONTRIBUTING.md)
 - [Política de segurança](SECURITY.md)

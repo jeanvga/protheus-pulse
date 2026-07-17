@@ -20,4 +20,4 @@ Não inclua dumps de clientes nem execute testes destrutivos em ambientes de ter
 
 ## Padrão esperado
 
-Contribuições devem manter bind local por padrão, somente leitura, sanitização antes de persistência, timeout/cancelamento, menor privilégio e nenhuma execução automática de binários monitorados.
+Contribuições devem manter bind local por padrão, somente leitura, sanitização antes de persistência, timeout/cancelamento, menor privilégio e nenhuma execução automática de binários monitorados. Pacotes de release devem publicar SHA-256 e, em distribuição corporativa, assinatura Authenticode verificável.

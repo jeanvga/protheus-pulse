@@ -2,7 +2,7 @@
 
 ## Escopo e objetivos
 
-O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs internos e leituras futuras de recursos Protheus. O objetivo principal é observar sem ampliar materialmente o risco do ambiente monitorado.
+O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs internos e leituras dos recursos Protheus configurados. O objetivo principal é observar sem ampliar materialmente o risco do ambiente monitorado.
 
 ## Ativos
 
@@ -10,7 +10,7 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 - caminhos, topologia e metadados técnicos do Protheus;
 - trechos sanitizados de logs e resultados de probes;
 - contas, papéis, hashes de senha e tokens de sessão;
-- chaves de heartbeat e configuração de notificações futuras;
+- hashes de tokens de heartbeat e configuração protegida de notificações;
 - histórico, alertas e auditoria local.
 
 ## Atores
@@ -42,7 +42,8 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 | Regex catastrófica | CPU/DoS | Tamanho, timeout e regras aprovadas; engine segura quando disponível |
 | Vazamento de segredo | Comprometimento de ERP/canais | Lista extensível de chaves, redaction de logs/HTTP, nunca enviar INI integral |
 | Roubo do SQLite | Exposição de histórico e hashes | ACL mínima, backups protegidos, conta dedicada; criptografia em repouso conforme política do host |
-| Token JWT forjado | Elevação de privilégio | HMAC >= 256 bits, segredo fora do arquivo, validação de issuer/audience/expiração |
+| Token JWT forjado | Elevação de privilégio | HMAC >= 256 bits, segredo em arquivo com ACL, validação de issuer/audience/expiração |
+| Token de heartbeat roubado ou tentativas em massa | Evento falso e ocultação de atraso | Token aleatório exibido uma vez, somente hash no banco, comparação constante, rotação e rate limit por job/origem |
 | Abuso de SignalR | Consumo de conexão/dados | Autenticação no hub, mensagens sem payload sensível e limites do host |
 | Coletor bloqueado | Exaustão de threads/recursos | Async, `CancellationToken`, timeout e concorrência limitada |
 | Conta de serviço privilegiada | Movimento lateral | Nunca exigir LocalSystem; conceder somente leitura nos alvos |
@@ -50,14 +51,14 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 
 ## Segredos
 
-Na Fase 1, a chave JWT de produção vem de `PULSE_JWT_SIGNING_KEY`; não é persistida pelo aplicativo. Senhas são armazenadas apenas como PBKDF2-SHA256. Na evolução, segredos persistentes serão protegidos com Windows DPAPI sob a identidade do serviço.
+A chave JWT de produção vem de `PULSE_JWT_SIGNING_KEY_FILE`, criado pelo instalador com aleatoriedade criptográfica e ACL restrita. Senhas usam PBKDF2-SHA256. Tokens de heartbeat são armazenados somente como SHA-256. URLs de notificação e chaves do Data Protection são protegidas com DPAPI da máquina e ACL do diretório.
 
-## Riscos residuais da Fase 1
+## Riscos residuais do MVP
 
-- Não há ainda bloqueio SSRF porque checagens HTTP reais não estão ativas.
-- Retenção automática e DPAPI para canais serão entregues antes de uso real dessas funções.
-- O instalador ainda não configura ACL/conta; o guia manual exige revisão explícita.
-- Windows Authentication está fora do MVP inicial.
+- Um administrador local ou comprometimento da conta do serviço permanece dentro do limite de confiança do host.
+- SQLite não oferece criptografia nativa; backup e volume dependem da proteção do Windows/BitLocker e dos controles corporativos.
+- `LocalService` acessa UNC como a conta da máquina, o que exige concessão externa cuidadosamente limitada.
+- Windows Authentication e assinatura automática de artefatos ficam a cargo da infraestrutura corporativa.
 
 ## Regras de segurança invariantes
 

@@ -24,6 +24,7 @@ Cada componente recebe um escopo isolado do SQLite. Mudanças de estado são per
 - **Arquivo:** verifica existência e sinaliza reparse points; não altera nem interpreta o conteúdo.
 - **Disco:** calcula o menor percentual livre entre os volumes dos alvos cadastrados.
 - **Log:** lê somente bytes novos, mantém cursor local, limita volume/linha, mascara segredos e agrupa mensagens equivalentes.
+- **Heartbeat:** compara o último evento autenticado com intervalo e tolerância; respeita janela diária no horário local e nunca aceita horário fornecido pelo cliente.
 
 ## Estados
 
