@@ -1,0 +1,49 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtheusPulse.Domain", "src\ProtheusPulse.Domain\ProtheusPulse.Domain.csproj", "{06AAEB6E-104C-463F-9FDF-2905E2662F0C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtheusPulse.Application", "src\ProtheusPulse.Application\ProtheusPulse.Application.csproj", "{3BBDAA40-EA54-4A40-882C-E25B97BDBF3E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtheusPulse.Infrastructure", "src\ProtheusPulse.Infrastructure\ProtheusPulse.Infrastructure.csproj", "{621AB943-DA8A-49EB-8117-6E3CB6170DBB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtheusPulse.Service", "src\ProtheusPulse.Service\ProtheusPulse.Service.csproj", "{69A4E6E7-F68E-4E86-A6F9-287332BFBA81}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtheusPulse.UnitTests", "tests\ProtheusPulse.UnitTests\ProtheusPulse.UnitTests.csproj", "{E7833392-6B1D-44B5-A403-F8650373D896}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtheusPulse.IntegrationTests", "tests\ProtheusPulse.IntegrationTests\ProtheusPulse.IntegrationTests.csproj", "{374754E8-3E60-44B2-97AE-510B5915066A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{06AAEB6E-104C-463F-9FDF-2905E2662F0C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{06AAEB6E-104C-463F-9FDF-2905E2662F0C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{06AAEB6E-104C-463F-9FDF-2905E2662F0C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{06AAEB6E-104C-463F-9FDF-2905E2662F0C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3BBDAA40-EA54-4A40-882C-E25B97BDBF3E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3BBDAA40-EA54-4A40-882C-E25B97BDBF3E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3BBDAA40-EA54-4A40-882C-E25B97BDBF3E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3BBDAA40-EA54-4A40-882C-E25B97BDBF3E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{621AB943-DA8A-49EB-8117-6E3CB6170DBB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{621AB943-DA8A-49EB-8117-6E3CB6170DBB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{621AB943-DA8A-49EB-8117-6E3CB6170DBB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{621AB943-DA8A-49EB-8117-6E3CB6170DBB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{69A4E6E7-F68E-4E86-A6F9-287332BFBA81}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{69A4E6E7-F68E-4E86-A6F9-287332BFBA81}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{69A4E6E7-F68E-4E86-A6F9-287332BFBA81}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{69A4E6E7-F68E-4E86-A6F9-287332BFBA81}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E7833392-6B1D-44B5-A403-F8650373D896}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E7833392-6B1D-44B5-A403-F8650373D896}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E7833392-6B1D-44B5-A403-F8650373D896}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E7833392-6B1D-44B5-A403-F8650373D896}.Release|Any CPU.Build.0 = Release|Any CPU
+		{374754E8-3E60-44B2-97AE-510B5915066A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{374754E8-3E60-44B2-97AE-510B5915066A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{374754E8-3E60-44B2-97AE-510B5915066A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{374754E8-3E60-44B2-97AE-510B5915066A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

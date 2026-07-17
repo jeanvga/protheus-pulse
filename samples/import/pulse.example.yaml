@@ -1,0 +1,17 @@
+schemaVersion: 1
+installations:
+  - name: Producao ERP Exemplo
+    environment: production
+    components:
+      - name: AppServer REST Exemplo
+        type: appserver
+        windowsServiceName: PulseExemploAppServer
+        executablePath: 'D:\Exemplo\AppServer\appserver-rest.exe'
+        iniPath: 'D:\Exemplo\AppServer\appserver-rest.ini'
+        logPaths:
+          - 'D:\Exemplo\Logs\appserver-rest.log'
+        tcpChecks:
+          - host: 127.0.0.1
+            port: 18080
+        httpChecks:
+          - url: 'http://127.0.0.1:18080/health'

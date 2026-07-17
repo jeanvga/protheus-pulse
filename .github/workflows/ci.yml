@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Restore frontend
+        run: npm ci
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Test and build frontend
+        run: |
+          npm run ui:test
+          npm run ui:build
+
+      - name: Restore backend
+        run: dotnet restore ProtheusPulse.sln
+
+      - name: Build backend
+        run: dotnet build ProtheusPulse.sln --configuration Release --no-restore
+
+      - name: Test backend
+        run: dotnet test ProtheusPulse.sln --configuration Release --no-build --logger "trx;LogFileName=tests.trx"
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end test
+        run: npm run ui:e2e
+
+      - name: Publish Windows artifact
+        run: dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained false --output .\artifacts\win-x64 /p:SkipFrontendBuild=true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/TestResults/*.trx
+            playwright-report/
+          if-no-files-found: ignore
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: protheus-pulse-win-x64
+          path: artifacts/win-x64

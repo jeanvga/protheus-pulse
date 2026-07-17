@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "installations": [
+    {
+      "name": "Homologacao ERP Exemplo",
+      "environment": "homologation",
+      "components": [
+        {
+          "name": "Endpoint REST Exemplo",
+          "type": "httpEndpoint",
+          "httpChecks": [
+            {
+              "url": "https://127.0.0.1:18443/health",
+              "method": "GET",
+              "expectedStatusMin": 200,
+              "expectedStatusMax": 299
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
