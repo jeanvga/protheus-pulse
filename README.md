@@ -2,7 +2,7 @@
 
 Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
 
-> **Estado do projeto:** MVP 0.1.0 concluído e pronto para piloto controlado. Cadastro, descoberta, coletores, alertas, heartbeats, retenção e instalação Windows estão funcionais.
+> **Estado do projeto:** MVP 0.1.1 concluído e pronto para piloto controlado. Cadastro, descoberta, coletores, alertas, heartbeats, retenção e instalação Windows estão funcionais.
 
 ![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
 

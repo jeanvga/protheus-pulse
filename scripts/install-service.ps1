@@ -45,6 +45,16 @@ function Test-ServiceExists([string]$Name) {
     return $null -ne (Get-Service -Name $Name -ErrorAction SilentlyContinue)
 }
 
+function Initialize-InstallDirectoryAcl([string]$Path) {
+    & "$env:SystemRoot\System32\takeown.exe" /F $Path /A /R /D Y | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Falha ao assumir a propriedade da pasta de instalação (código $LASTEXITCODE)."
+    }
+
+    Invoke-Icacls @($Path, '/reset', '/T', '/C', '/Q')
+    Invoke-Icacls @($Path, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)RX', '/T', '/C', '/Q')
+}
+
 Assert-Administrator
 $installPath = Resolve-ManagedDirectory $InstallDirectory 'InstallDirectory'
 $dataPath = Resolve-ManagedDirectory $DataDirectory 'DataDirectory'
@@ -52,6 +62,11 @@ $sourcePath = [IO.Path]::GetFullPath($SourceDirectory).TrimEnd([IO.Path]::Direct
 $secretDirectory = Join-Path $dataPath 'secrets'
 $keyDirectory = Join-Path $dataPath 'keys'
 $jwtKeyPath = Join-Path $secretDirectory 'jwt.key'
+$sourceExecutable = Join-Path $sourcePath 'ProtheusPulse.Service.exe'
+
+if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
+    throw 'O pacote não contém ProtheusPulse.Service.exe no diretório app.'
+}
 
 if (-not $PSCmdlet.ShouldProcess($installPath, 'Instalar o Protheus Pulse e registrar o serviço')) {
     return
@@ -64,22 +79,23 @@ if (Test-ServiceExists $ServiceName) {
 }
 
 New-Item -ItemType Directory -Path $installPath, $dataPath, $secretDirectory, $keyDirectory -Force | Out-Null
+Initialize-InstallDirectoryAcl $installPath
 if (-not [string]::Equals($sourcePath, $installPath, [StringComparison]::OrdinalIgnoreCase)) {
-    if (-not (Test-Path -LiteralPath (Join-Path $sourcePath 'ProtheusPulse.Service.exe') -PathType Leaf)) {
-        throw 'O pacote não contém ProtheusPulse.Service.exe no diretório app.'
-    }
-
-    Get-ChildItem -LiteralPath $sourcePath -Force | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination $installPath -Recurse -Force
+    & "$env:SystemRoot\System32\robocopy.exe" $sourcePath $installPath '*.*' /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NP /NFL /NDL /NJH /NJS | Out-Null
+    $robocopyExitCode = $LASTEXITCODE
+    if ($robocopyExitCode -gt 7) {
+        throw "Falha ao copiar o payload com robocopy (código $robocopyExitCode)."
     }
 }
+
+Get-ChildItem -LiteralPath $installPath -Recurse -File -Force | Unblock-File -ErrorAction SilentlyContinue
 
 $executablePath = Join-Path $installPath 'ProtheusPulse.Service.exe'
 if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
     throw "O executável do serviço não foi encontrado em $installPath."
 }
 
-Invoke-Icacls @($installPath, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)RX', '/T', '/C')
+Invoke-Icacls @($installPath, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)RX', '/T', '/C', '/Q')
 Invoke-Icacls @($dataPath, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)M', '/T', '/C')
 Invoke-Icacls @($secretDirectory, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)R', '/T', '/C')
 Invoke-Icacls @($keyDirectory, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)M', '/T', '/C')

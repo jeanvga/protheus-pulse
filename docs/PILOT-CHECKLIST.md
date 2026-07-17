@@ -13,7 +13,7 @@ Use dados sintéticos na primeira validação. Não envie ao repositório senhas
 
 ## 2. Instalar
 
-- [ ] Executar `install-service.ps1` em PowerShell elevado.
+- [ ] Executar `install.cmd` do ZIP e aprovar a elevação solicitada.
 - [ ] Confirmar serviço `ProtheusPulse` em execução como `LocalService`.
 - [ ] Confirmar `http://127.0.0.1:5058/health/live` com HTTP 200.
 - [ ] Confirmar `http://127.0.0.1:5058/health/ready` com HTTP 200.

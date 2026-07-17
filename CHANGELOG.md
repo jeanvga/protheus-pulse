@@ -4,6 +4,10 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- Instalador Windows agora recupera propriedade e ACL da pasta gerenciada antes da atualização, usa `robocopy` e inclui iniciador elevado que evita bloqueio por marca de download.
+
 ### Added
 
 - Fundação modular em .NET 8 com Domain, Application, Infrastructure e Service.

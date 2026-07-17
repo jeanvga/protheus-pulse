@@ -1,8 +1,8 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.1.1"
 #endif
 #ifndef SourceDirectory
-  #define SourceDirectory "..\artifacts\release\protheus-pulse-0.1.0-win-x64\app"
+  #define SourceDirectory "..\artifacts\release\protheus-pulse-0.1.1-win-x64\app"
 #endif
 #ifndef OutputDirectory
   #define OutputDirectory "..\artifacts\release"
@@ -36,6 +36,7 @@ SetupLogging=yes
 [Files]
 Source: "{#SourceDirectory}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\scripts\install-service.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
+Source: "..\scripts\install.cmd"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "..\scripts\uninstall-service.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "..\docs\PILOT-CHECKLIST.md"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
@@ -55,4 +56,14 @@ begin
   if RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\ProtheusPulse') then
     Exec(ExpandConstant('{sys}\net.exe'), 'stop ProtheusPulse /y', '', SW_HIDE,
       ewWaitUntilTerminated, ResultCode);
+  if DirExists(ExpandConstant('{app}')) then
+  begin
+    Exec(ExpandConstant('{sys}\takeown.exe'), '/F "' + ExpandConstant('{app}') + '" /A /R /D Y',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{sys}\icacls.exe'), '"' + ExpandConstant('{app}') + '" /reset /T /C /Q',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{sys}\icacls.exe'), '"' + ExpandConstant('{app}') +
+      '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F *S-1-5-19:(OI)(CI)RX /T /C /Q',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
 end;
