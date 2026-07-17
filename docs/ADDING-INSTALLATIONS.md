@@ -1,6 +1,6 @@
 # Cadastro de instalações
 
-O cadastro manual é o primeiro incremento funcional da Fase 2. A fundação permite múltiplas instalações e componentes de tipos variados, sem nomes fixos de serviço ou executável. Importação e descoberta permanecem planejadas para os próximos incrementos.
+A Fase 2 oferece cadastro manual, importação versionada e descoberta somente leitura. A aplicação permite múltiplas instalações e componentes de tipos variados, sem nomes fixos de serviço ou executável.
 
 ## Cadastro manual
 
@@ -32,17 +32,50 @@ Exemplo:
 }
 ```
 
-## Modos planejados
+## Importação JSON/YAML
 
-- descoberta somente leitura por serviços Windows;
-- cadastro manual com apenas os metadados necessários;
-- busca limitada a raízes autorizadas, profundidade, quantidade e tempo;
-- importação JSON/YAML com prévia e validação de schema;
-- CLI com descoberta em `--dry-run` por padrão.
+O fluxo possui duas chamadas administrativas:
 
-Até o incremento de descoberta, os endpoints correspondentes retornam `501 Not Implemented`; não varrem discos nem modificam o servidor.
+- `POST /api/v1/installations/import/preview`: valida e resume sem persistir;
+- `POST /api/v1/installations/import`: repete a validação e só persiste com `confirm: true`.
 
-Exemplos sintéticos estão em [samples/import](../samples/import). Não substitua os valores por caminhos, IPs ou nomes reais de clientes ao contribuir.
+O corpo usa `format` (`json`, `yaml` ou `yml`) e `content`. O limite é 512 KiB, `schemaVersion` deve ser `1` e propriedades desconhecidas são rejeitadas. O schema aceita alvos de serviço Windows, processo, INI, log, TCP e HTTP. Não há campos de senha ou token.
+
+Exemplo de prévia:
+
+```json
+{
+  "format": "json",
+  "content": "{\"schemaVersion\":1,\"installations\":[]}",
+  "confirm": false
+}
+```
+
+Use os documentos sintéticos de [samples/import](../samples/import) como base. Revise a prévia antes de repetir o conteúdo com `confirm: true`.
+
+## Descoberta em modo de prévia
+
+- `GET /api/v1/discovery/services?nameContains=AppServer&limit=100` lista candidatos no Windows;
+- `POST /api/v1/discovery/paths` procura nomes exatos em até cinco raízes explícitas;
+- `POST /api/v1/discovery/ini` inspeciona um único INI contido em uma raiz autorizada.
+
+A descoberta de caminhos recusa raiz de disco/compartilhamento, curingas e reparse points. Profundidade máxima é 8, resultados são limitados a 200 e o timeout máximo é 15 segundos. Todos os endpoints são `dry-run`: candidatos descobertos não são cadastrados automaticamente.
+
+Exemplo:
+
+```json
+{
+  "roots": ["D:\\TOTVS\\Protheus"],
+  "fileNames": ["appserver.ini", "appserver.exe"],
+  "maxDepth": 4,
+  "maxResults": 100,
+  "timeoutSeconds": 10
+}
+```
+
+Para o INI, envie `root` e `path`. Comentários não são retornados e propriedades com nomes como `Password`, `Token`, `Secret`, `Credential`, `PrivateKey` e equivalentes recebem o valor `[REDACTED]` antes de sair do processo.
+
+Não substitua os exemplos versionados por caminhos, IPs ou nomes reais de clientes ao contribuir.
 
 ## Regras que permanecerão invariantes
 

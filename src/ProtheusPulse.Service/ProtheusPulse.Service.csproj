@@ -20,6 +20,8 @@
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" />
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
   <Target Name="BuildFrontendForPublish" BeforeTargets="ComputeFilesToPublish" Condition="'$(SkipFrontendBuild)' != 'true'">
     <Exec WorkingDirectory="..\.." Command="npm ci" />

@@ -11,7 +11,9 @@ namespace ProtheusPulse.IntegrationTests;
 
 public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
 {
+    private static readonly string[] IniFileNames = ["appserver.ini"];
     private static readonly string[] PilotTags = ["piloto", "servidor-a"];
+    private static readonly string[] SampleWindowsRoots = ["C:\\TOTVS"];
     private readonly HttpClient client;
     private readonly PulseWebApplicationFactory factory;
 
@@ -165,6 +167,180 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task YamlImportRequiresPreviewAndPersistsConfiguredTargets()
+    {
+        var installationName = $"ERP Importado {Guid.NewGuid():N}";
+        var yaml = $$"""
+            schemaVersion: 1
+            installations:
+              - name: {{installationName}}
+                environment: production
+                tags:
+                  - piloto
+                components:
+                  - name: AppServer REST
+                    type: appserver
+                    windowsServiceName: PulsePilotAppServer
+                    executablePath: 'D:\PulsePilot\appserver.exe'
+                    iniPath: 'D:\PulsePilot\appserver.ini'
+                    logPaths:
+                      - 'D:\PulsePilot\logs\console.log'
+                    tcpChecks:
+                      - host: 127.0.0.1
+                        port: 18080
+                    httpChecks:
+                      - url: 'http://127.0.0.1:18080/health'
+                        expectedStatusMax: 299
+            """;
+        var token = await AuthenticateDemoAdministratorAsync();
+
+        using var previewRequest = AuthorizedPost("/api/v1/installations/import/preview", token, new
+        {
+            format = "yaml",
+            content = yaml
+        });
+        var previewResponse = await client.SendAsync(previewRequest);
+        previewResponse.EnsureSuccessStatusCode();
+        var preview = await previewResponse.Content.ReadAsStringAsync();
+        Assert.Contains("\"valid\":true", preview, StringComparison.Ordinal);
+        Assert.Contains("\"componentCount\":1", preview, StringComparison.Ordinal);
+
+        using var unconfirmedRequest = AuthorizedPost("/api/v1/installations/import", token, new
+        {
+            format = "yaml",
+            content = yaml,
+            confirm = false
+        });
+        var unconfirmedResponse = await client.SendAsync(unconfirmedRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, unconfirmedResponse.StatusCode);
+
+        using var importRequest = AuthorizedPost("/api/v1/installations/import", token, new
+        {
+            format = "yaml",
+            content = yaml,
+            confirm = true
+        });
+        var importResponse = await client.SendAsync(importRequest);
+        Assert.Equal(HttpStatusCode.Created, importResponse.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+        var installation = await dbContext.Installations
+            .AsNoTracking()
+            .Include(item => item.Components)
+            .SingleAsync(item => item.Name == installationName);
+        var componentId = Assert.Single(installation.Components).Id;
+        Assert.Equal(1, await dbContext.WindowsServiceTargets.CountAsync(item => item.ComponentId == componentId));
+        Assert.Equal(1, await dbContext.ProcessTargets.CountAsync(item => item.ComponentId == componentId));
+        Assert.Equal(1, await dbContext.TcpChecks.CountAsync(item => item.ComponentId == componentId));
+        Assert.Equal(1, await dbContext.HttpChecks.CountAsync(item => item.ComponentId == componentId));
+        Assert.Equal(1, await dbContext.LogSources.CountAsync(item => item.ComponentId == componentId));
+
+        var audit = await dbContext.AuditEvents
+            .AsNoTracking()
+            .OrderByDescending(item => item.OccurredAt)
+            .FirstAsync(item => item.Action == "InstallationsImported");
+        Assert.DoesNotContain(installationName, audit.SanitizedDetailsJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("D:\\PulsePilot", audit.SanitizedDetailsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImportPreviewRejectsUnknownFieldsWithoutEchoingTheirValues()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        const string marker = "sensitive-value-must-not-return";
+        var content = $$"""
+            {
+              "schemaVersion": 1,
+              "unexpectedSecret": "{{marker}}",
+              "installations": []
+            }
+            """;
+        using var request = AuthorizedPost("/api/v1/installations/import/preview", token, new
+        {
+            format = "json",
+            content
+        });
+
+        var response = await client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"valid\":false", responseContent, StringComparison.Ordinal);
+        Assert.DoesNotContain(marker, responseContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PathDiscoveryAndIniInspectionStayInsideAuthorizedRootAndRedactSecrets()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "protheus-pulse-discovery-tests", Guid.NewGuid().ToString("N"));
+        var nested = Path.Combine(root, "appserver");
+        Directory.CreateDirectory(nested);
+        var iniPath = Path.Combine(nested, "appserver.ini");
+        var outsidePath = Path.Combine(Path.GetTempPath(), $"outside-{Guid.NewGuid():N}.ini");
+        const string fixtureValue = "synthetic-value-must-never-return";
+        await File.WriteAllTextAsync(iniPath, $"[Network]{Environment.NewLine}Port=18080{Environment.NewLine}[Secrets]{Environment.NewLine}Password={fixtureValue}");
+        await File.WriteAllTextAsync(outsidePath, "Port=1");
+
+        try
+        {
+            var token = await AuthenticateDemoAdministratorAsync();
+            using var discoveryRequest = AuthorizedPost("/api/v1/discovery/paths", token, new
+            {
+                roots = new[] { root },
+                fileNames = IniFileNames,
+                maxDepth = 2,
+                maxResults = 10,
+                timeoutSeconds = 5
+            });
+            var discoveryResponse = await client.SendAsync(discoveryRequest);
+            discoveryResponse.EnsureSuccessStatusCode();
+            var discovery = await discoveryResponse.Content.ReadAsStringAsync();
+            Assert.Contains("\"dryRun\":true", discovery, StringComparison.Ordinal);
+            Assert.Contains("appserver.ini", discovery, StringComparison.Ordinal);
+
+            using var inspectRequest = AuthorizedPost("/api/v1/discovery/ini", token, new { root, path = iniPath });
+            var inspectResponse = await client.SendAsync(inspectRequest);
+            inspectResponse.EnsureSuccessStatusCode();
+            var inspection = await inspectResponse.Content.ReadAsStringAsync();
+            Assert.Contains("[REDACTED]", inspection, StringComparison.Ordinal);
+            Assert.Contains("\"redactedCount\":1", inspection, StringComparison.Ordinal);
+            Assert.DoesNotContain(fixtureValue, inspection, StringComparison.Ordinal);
+
+            using var traversalRequest = AuthorizedPost("/api/v1/discovery/ini", token, new { root, path = outsidePath });
+            var traversalResponse = await client.SendAsync(traversalRequest);
+            Assert.Equal(HttpStatusCode.BadRequest, traversalResponse.StatusCode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            File.Delete(outsidePath);
+        }
+    }
+
+    [Fact]
+    public async Task DiscoveryRejectsAnonymousRequests()
+    {
+        var response = await client.PostAsJsonAsync(new Uri("/api/v1/discovery/paths", UriKind.Relative), new
+        {
+            roots = SampleWindowsRoots,
+            fileNames = IniFileNames
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    private static HttpRequestMessage AuthorizedPost(string path, string token, object content)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
+        {
+            Content = JsonContent.Create(content)
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return request;
     }
 
     private async Task<string> AuthenticateDemoAdministratorAsync()

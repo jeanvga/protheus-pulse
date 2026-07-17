@@ -42,6 +42,8 @@ public static class ApiEndpoints
         api.MapGet("/installations", async (IDashboardQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.GetInstallationsAsync(cancellationToken))).RequireAuthorization("Viewer");
         api.MapInstallationManagement();
+        api.MapInstallationImport();
+        api.MapDiscovery();
 
         api.MapGet("/components", async (IDashboardQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.GetComponentsAsync(cancellationToken))).RequireAuthorization("Viewer");
@@ -83,9 +85,6 @@ public static class ApiEndpoints
             jobKey,
             message = "A ingestão autenticada de heartbeats será habilitada na Fase 5."
         }, statusCode: StatusCodes.Status501NotImplemented)).AllowAnonymous();
-
-        api.MapGet("/discovery/services", DiscoveryNotImplemented).RequireAuthorization("Administrator");
-        api.MapGet("/discovery/paths", DiscoveryNotImplemented).RequireAuthorization("Administrator");
 
         return endpoints;
     }
@@ -187,12 +186,6 @@ public static class ApiEndpoints
         await dbContext.SaveChangesAsync(cancellationToken);
         return Results.Ok(tokenService.Create(user));
     }
-
-    private static IResult DiscoveryNotImplemented() => Results.Json(new
-    {
-        message = "Descoberta somente leitura será implementada na Fase 2.",
-        safeDefault = "dry-run"
-    }, statusCode: StatusCodes.Status501NotImplemented);
 
     public sealed record LoginRequest(string? Username, string? Password);
     public sealed record SetupRequest(string? Username, string? DisplayName, string? Password);

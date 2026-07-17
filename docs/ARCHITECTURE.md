@@ -50,3 +50,11 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 - Dados demonstrativos persistidos e marcados com `IsDemo`.
 - Endpoints de fases futuras retornam `501`, evitando uma aparência enganosa de funcionalidade.
 - Inno Setup foi reservado para a Fase 5 por ser a alternativa mais simples e reproduzível para serviço único.
+
+## Decisões da Fase 2
+
+- Importações usam schema versionado e rejeitam propriedades desconhecidas, reduzindo configuração ambígua e entrada acidental de segredos.
+- A prévia nunca persiste; a aplicação exige `confirm: true` e grava instalações, alvos e auditoria em uma única operação.
+- Descoberta de arquivos recebe raízes e nomes exatos, recusa raiz de volume/compartilhamento, ignora reparse points e limita profundidade, resultados e duração.
+- Descoberta de serviços exige filtro textual e retorna apenas nome, nome de exibição e estado; não lê linha de comando nem altera o serviço.
+- A inspeção de INI só aceita arquivo contido em raiz autorizada e remove comentários, limita tamanho/linhas e mascara chaves sensíveis antes da resposta.

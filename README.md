@@ -2,7 +2,7 @@
 
 Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
 
-> **Estado do projeto:** Fase 1 concluída e Fase 2 em andamento. A fundação, o banco local, a API autenticada, o dashboard, o serviço Windows, o SignalR, o modo demonstração e o cadastro manual de instalações estão funcionais. Importação e descoberta segura são os próximos incrementos; coletores reais entram na Fase 3.
+> **Estado do projeto:** Fases 1 e 2 concluídas. Além da fundação, o cadastro manual, a importação JSON/YAML, a descoberta limitada e a inspeção sanitizada de INI estão funcionais. Coletores reais entram na Fase 3.
 
 ![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
 
@@ -27,6 +27,8 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Serilog com rotação diária, limite de tamanho e retenção de 14 arquivos.
 - Testes xUnit, Vitest e Playwright; CI reproduzível em `windows-latest`.
 - Cadastro manual de instalações e componentes com autorização administrativa, validação e auditoria sanitizada.
+- Importação JSON/YAML com prévia, schema estrito e confirmação explícita.
+- Descoberta de serviços, caminhos e INI em modo somente leitura, com limites e mascaramento de segredos.
 
 ## Executar a demonstração
 
@@ -107,7 +109,7 @@ npm audit --audit-level=moderate
 ## Roadmap verificável
 
 - [x] Fase 1 — fundação, banco, serviço, API, frontend e demo.
-- [ ] Fase 2 — cadastro manual concluído; importação, descoberta segura e parser INI sanitizado pendentes.
+- [x] Fase 2 — cadastro manual, importação, descoberta segura e parser INI sanitizado.
 - [ ] Fase 3 — coletores de serviço/processo, TCP/HTTP, arquivo/disco e logs incrementais.
 - [ ] Fase 4 — motor completo de regras, notificações, retenção e agregação.
 - [ ] Fase 5 — heartbeats autenticados, instalador Inno Setup, PowerShell e hardening final.

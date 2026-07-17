@@ -16,6 +16,9 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Testes xUnit, Vitest, Playwright e CI para Windows.
 - Documentação de arquitetura, instalação, privacidade e threat model.
 - Cadastro manual de instalações e componentes com validação, autorização administrativa e auditoria sanitizada.
+- Importação JSON/YAML com schema estrito, prévia e confirmação explícita.
+- Descoberta somente leitura de serviços e caminhos com filtros, limites, timeout e proteção contra reparse points.
+- Inspeção de INI restrita a raiz autorizada, com limites e mascaramento de valores sensíveis.
 
 ### Security
 
