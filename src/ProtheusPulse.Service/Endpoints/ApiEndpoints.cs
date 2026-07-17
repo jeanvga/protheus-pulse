@@ -5,6 +5,7 @@ using ProtheusPulse.Application.Security;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Demo;
 using ProtheusPulse.Infrastructure.Persistence;
+using ProtheusPulse.Service.HostedServices;
 using ProtheusPulse.Service.Security;
 
 namespace ProtheusPulse.Service.Endpoints;
@@ -61,8 +62,22 @@ public static class ApiEndpoints
             return Results.Ok(dashboard.Alerts);
         }).RequireAuthorization("Viewer");
 
-        api.MapGet("/log-events", () => Results.Ok(new { items = Array.Empty<object>(), phase = 3, message = "Coleta incremental será habilitada na Fase 3." }))
-            .RequireAuthorization("Viewer");
+        api.MapGet("/log-events", async (PulseDbContext db, CancellationToken cancellationToken) => Results.Ok(await db.LogEvents
+            .AsNoTracking()
+            .OrderByDescending(item => item.ObservedAt)
+            .Take(200)
+            .Select(item => new
+            {
+                item.Id,
+                item.ComponentId,
+                InstallationName = item.Component.Installation.Name,
+                ComponentName = item.Component.Name,
+                item.ObservedAt,
+                item.Level,
+                item.Message,
+                item.OccurrenceCount
+            })
+            .ToListAsync(cancellationToken))).RequireAuthorization("Viewer");
 
         api.MapGet("/maintenance-windows", async (PulseDbContext db, CancellationToken cancellationToken) => Results.Ok(await db.MaintenanceWindows
             .AsNoTracking()
@@ -79,6 +94,17 @@ public static class ApiEndpoints
             version = typeof(ApiEndpoints).Assembly.GetName().Version?.ToString() ?? "development",
             notes = DiagnosticNotes
         })).RequireAuthorization("Administrator");
+
+        api.MapPost("/diagnostics/collect-now", async (MonitoringWorker worker, CancellationToken cancellationToken) =>
+        {
+            if (demoMode)
+            {
+                return Results.Conflict(new { message = "A coleta real fica desabilitada no modo demonstração." });
+            }
+
+            var processedComponents = await worker.RunNowAsync(cancellationToken);
+            return Results.Ok(new { processedComponents, completedAt = DateTimeOffset.UtcNow });
+        }).RequireAuthorization("Administrator");
 
         api.MapMethods("/heartbeats/{jobKey}", PostMethods, (string jobKey) => Results.Json(new
         {

@@ -29,7 +29,14 @@ public interface IDemoDataSeeder
 public interface IProbeCollector
 {
     ProbeType Type { get; }
+    bool CanCollect(Component component);
     Task<ProbeObservation> CollectAsync(Component component, CancellationToken cancellationToken);
+}
+
+public interface IIncrementalLogCollector
+{
+    bool CanCollect(Component component);
+    Task<LogCollectionResult> CollectAsync(Component component, CancellationToken cancellationToken);
 }
 
 public sealed record ProbeObservation(
@@ -37,4 +44,27 @@ public sealed record ProbeObservation(
     DateTimeOffset ObservedAt,
     TimeSpan Duration,
     string Message,
-    string? SanitizedEvidence);
+    string? SanitizedEvidence,
+    bool IsRequired = true,
+    IReadOnlyList<MetricObservation>? Metrics = null);
+
+public sealed record MetricObservation(string Name, double Value, string Unit);
+
+public sealed record LogEventObservation(
+    Guid LogSourceId,
+    DateTimeOffset ObservedAt,
+    string Level,
+    string Message,
+    string Fingerprint,
+    int OccurrenceCount);
+
+public sealed record LogCollectionResult(
+    ProbeObservation Observation,
+    IReadOnlyList<LogEventObservation> Events);
+
+public sealed class ProbeCollectorOptions
+{
+    public int MaximumLogBytesPerCycle { get; init; } = 262_144;
+    public double DiskWarningPercent { get; init; } = 15;
+    public double DiskCriticalPercent { get; init; } = 5;
+}

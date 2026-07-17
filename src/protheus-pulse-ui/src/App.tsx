@@ -388,7 +388,7 @@ function AuditPage() {
 }
 
 function DiagnosticsPage({ demo }: { demo: boolean }) {
-  return <div className="page-body"><div className="diagnostic-grid"><Diagnostic title="Serviço web" status="Healthy" detail="Respondendo em 127.0.0.1:5058" /><Diagnostic title="Banco local" status="Healthy" detail="SQLite disponível e migration aplicada" /><Diagnostic title="Atualização em tempo real" status="Healthy" detail="Hub SignalR ativo" /><Diagnostic title="Coletores Windows" status="Unknown" detail="Aguardando implementação da Fase 3" /></div>{demo && <div className="demo-notice"><HeartPulse size={22} /><div><strong>Modo demonstração ativo</strong><p>Todos os alvos e eventos exibidos são sintéticos e claramente marcados.</p></div></div>}</div>
+  return <div className="page-body"><div className="diagnostic-grid"><Diagnostic title="Serviço web" status="Healthy" detail="Respondendo em 127.0.0.1:5058" /><Diagnostic title="Banco local" status="Healthy" detail="SQLite disponível e migration aplicada" /><Diagnostic title="Atualização em tempo real" status="Healthy" detail="Hub SignalR ativo" /><Diagnostic title="Coletores reais" status={demo ? "Unknown" : "Healthy"} detail={demo ? "Desativados no modo demonstração" : "Agendador somente leitura ativo"} /></div>{demo && <div className="demo-notice"><HeartPulse size={22} /><div><strong>Modo demonstração ativo</strong><p>Todos os alvos e eventos exibidos são sintéticos e claramente marcados.</p></div></div>}</div>
 }
 
 function Diagnostic({ title, status, detail }: { title: string; status: HealthStatus; detail: string }) {

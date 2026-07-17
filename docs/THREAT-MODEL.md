@@ -37,7 +37,7 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 | Acesso não autorizado ao dashboard | Exposição de topologia e incidentes | Bind loopback, JWT, RBAC, hash forte, rate limit e auditoria |
 | CSRF | Ação em nome do usuário | Token em `Authorization`, sem cookie de autenticação |
 | XSS por log/INI | Roubo de sessão ou ação indevida | React escapa texto, CSP, sanitização antes de persistir e DTOs limitados |
-| SSRF em checagem HTTP | Acesso a metadados/serviços internos | Allowlist de hosts/URLs, resolução validada, bloqueio de esquemas e redirects controlados na Fase 3 |
+| SSRF em checagem HTTP | Acesso a metadados/serviços internos | Alvos administrativos explícitos, resolução e conexão no IP aprovado, bloqueio de link-local/metadados, somente HTTP/HTTPS e sem redirects |
 | Path traversal/junction loop | Leitura fora da raiz ou DoS | Raízes explícitas, canonicalização, recusa de raiz de volume, limites e proteção contra reparse points |
 | Regex catastrófica | CPU/DoS | Tamanho, timeout e regras aprovadas; engine segura quando disponível |
 | Vazamento de segredo | Comprometimento de ERP/canais | Lista extensível de chaves, redaction de logs/HTTP, nunca enviar INI integral |

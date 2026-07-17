@@ -138,6 +138,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
         "heartbeatDelay" => "Atraso",
         "certificateDays" => "Validade TLS",
         "latency" => "Latência",
+        "diskFree" => "Disco livre",
         "errors" => "Erros agrupados",
         _ => name
     };

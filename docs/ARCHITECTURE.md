@@ -58,3 +58,11 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 - Descoberta de arquivos recebe raízes e nomes exatos, recusa raiz de volume/compartilhamento, ignora reparse points e limita profundidade, resultados e duração.
 - Descoberta de serviços exige filtro textual e retorna apenas nome, nome de exibição e estado; não lê linha de comando nem altera o serviço.
 - A inspeção de INI só aceita arquivo contido em raiz autorizada e remove comentários, limita tamanho/linhas e mascara chaves sensíveis antes da resposta.
+
+## Decisões da Fase 3
+
+- Um único worker agenda componentes não demonstrativos; cada componente usa escopo de banco isolado, timeout por coletor e concorrência global limitada.
+- Os coletores devolvem um contrato comum e não recebem operações de escrita no alvo. Apenas resultados, métricas e cursores locais são alterados.
+- TCP e HTTP conectam no endereço IP previamente resolvido e aprovado. Loopback e redes privadas são permitidos; link-local/metadados, multicast e endereços não especificados são bloqueados.
+- HTTP aceita somente `GET`/`HEAD`, não segue redirects e lê no máximo 64 KiB quando precisa validar conteúdo.
+- Logs são lidos a partir de cursor persistido, no máximo 256 KiB por ciclo por padrão. Linhas são limitadas, redigidas e agrupadas por fingerprint antes da persistência.

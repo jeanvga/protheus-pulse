@@ -94,6 +94,20 @@ public sealed class LogSource : Entity
     public string? FileIdentity { get; set; }
     public DateTimeOffset? LastReadAt { get; set; }
     public Component Component { get; set; } = null!;
+    public ICollection<LogEvent> Events { get; set; } = new List<LogEvent>();
+}
+
+public sealed class LogEvent : Entity
+{
+    public Guid ComponentId { get; set; }
+    public Guid LogSourceId { get; set; }
+    public DateTimeOffset ObservedAt { get; set; }
+    public required string Level { get; set; }
+    public required string Message { get; set; }
+    public required string Fingerprint { get; set; }
+    public int OccurrenceCount { get; set; } = 1;
+    public Component Component { get; set; } = null!;
+    public LogSource LogSource { get; set; } = null!;
 }
 
 public sealed class HeartbeatDefinition : Entity

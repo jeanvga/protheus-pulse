@@ -24,7 +24,19 @@ var builder = WebApplication.CreateBuilder(args);
 var demoMode = args.Any(item => string.Equals(item, "--demo", StringComparison.OrdinalIgnoreCase))
     || builder.Configuration.GetValue<bool>("Pulse:DemoMode");
 
-var configuredDataDirectory = builder.Configuration["Pulse:DataDirectory"];
+var pulseOptions = builder.Configuration.GetSection(PulseOptions.SectionName).Get<PulseOptions>() ?? new PulseOptions();
+if (pulseOptions.CollectionIntervalSeconds is < 10 or > 3_600
+    || pulseOptions.CollectorTimeoutSeconds is < 1 or > 120
+    || pulseOptions.MaximumConcurrentCollectors is < 1 or > 16
+    || pulseOptions.MaximumLogBytesPerCycle is < 4_096 or > 1_048_576
+    || pulseOptions.DiskCriticalPercent is < 0 or > 100
+    || pulseOptions.DiskWarningPercent is < 0 or > 100
+    || pulseOptions.DiskCriticalPercent >= pulseOptions.DiskWarningPercent)
+{
+    throw new InvalidOperationException("A seção Pulse possui limites de coleta inválidos.");
+}
+
+var configuredDataDirectory = pulseOptions.DataDirectory;
 var dataDirectory = !string.IsNullOrWhiteSpace(configuredDataDirectory)
     ? Path.GetFullPath(configuredDataDirectory)
     : builder.Environment.IsDevelopment() || demoMode
@@ -51,6 +63,13 @@ builder.Host.UseSerilog((_, _, configuration) => configuration
 var connectionString = builder.Configuration.GetConnectionString("PulseDb") ?? "Data Source={DataDirectory}/pulse.db;Cache=Shared";
 connectionString = connectionString.Replace("{DataDirectory}", dataDirectory.Replace("\\", "/"), StringComparison.Ordinal);
 builder.Services.AddPulseInfrastructure(connectionString);
+builder.Services.AddSingleton(pulseOptions);
+builder.Services.AddSingleton(new ProbeCollectorOptions
+{
+    MaximumLogBytesPerCycle = pulseOptions.MaximumLogBytesPerCycle,
+    DiskWarningPercent = pulseOptions.DiskWarningPercent,
+    DiskCriticalPercent = pulseOptions.DiskCriticalPercent
+});
 
 var securityOptions = builder.Configuration.GetSection(SecurityOptions.SectionName).Get<SecurityOptions>() ?? new SecurityOptions();
 securityOptions.JwtSigningKey = Environment.GetEnvironmentVariable("PULSE_JWT_SIGNING_KEY") ?? securityOptions.JwtSigningKey;
@@ -122,6 +141,7 @@ builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializ
 string[] readinessTags = ["ready"];
 builder.Services.AddHealthChecks().AddDbContextCheck<PulseDbContext>("sqlite", tags: readinessTags);
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSingleton<MonitoringWorker>();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
@@ -147,6 +167,10 @@ builder.Services.AddSwaggerGen(options =>
 if (demoMode)
 {
     builder.Services.AddHostedService<DemoPulseWorker>();
+}
+else
+{
+    builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<MonitoringWorker>());
 }
 
 var app = builder.Build();

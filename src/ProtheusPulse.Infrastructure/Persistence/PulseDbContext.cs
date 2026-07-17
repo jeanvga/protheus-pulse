@@ -14,6 +14,7 @@ public sealed class PulseDbContext(DbContextOptions<PulseDbContext> options) : D
     public DbSet<TcpCheck> TcpChecks => Set<TcpCheck>();
     public DbSet<HttpCheck> HttpChecks => Set<HttpCheck>();
     public DbSet<LogSource> LogSources => Set<LogSource>();
+    public DbSet<LogEvent> LogEvents => Set<LogEvent>();
     public DbSet<HeartbeatDefinition> HeartbeatDefinitions => Set<HeartbeatDefinition>();
     public DbSet<ProbeResult> ProbeResults => Set<ProbeResult>();
     public DbSet<MetricSample> MetricSamples => Set<MetricSample>();
@@ -102,6 +103,17 @@ public sealed class PulseDbContext(DbContextOptions<PulseDbContext> options) : D
             entity.Property(item => item.EncodingName).HasMaxLength(32);
             entity.Property(item => item.FileIdentity).HasMaxLength(300);
             entity.HasOne(item => item.Component).WithMany(item => item.LogSources).HasForeignKey(item => item.ComponentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<LogEvent>(entity =>
+        {
+            entity.Property(item => item.Level).HasMaxLength(20);
+            entity.Property(item => item.Message).HasMaxLength(1_000);
+            entity.Property(item => item.Fingerprint).HasMaxLength(64);
+            entity.HasIndex(item => new { item.ComponentId, item.ObservedAt });
+            entity.HasIndex(item => new { item.LogSourceId, item.Fingerprint, item.ObservedAt });
+            entity.HasOne(item => item.Component).WithMany().HasForeignKey(item => item.ComponentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.LogSource).WithMany(item => item.Events).HasForeignKey(item => item.LogSourceId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<HeartbeatDefinition>(entity =>

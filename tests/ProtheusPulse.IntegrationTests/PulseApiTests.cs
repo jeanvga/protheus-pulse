@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
+using ProtheusPulse.Service.HostedServices;
 
 namespace ProtheusPulse.IntegrationTests;
 
@@ -331,6 +333,75 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DemoModeDisablesRealCollectionAndExposesSanitizedLogEndpoint()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        using var collectRequest = AuthorizedPost("/api/v1/diagnostics/collect-now", token, new { });
+        var collectResponse = await client.SendAsync(collectRequest);
+        Assert.Equal(HttpStatusCode.Conflict, collectResponse.StatusCode);
+
+        using var logRequest = new HttpRequestMessage(HttpMethod.Get, new Uri("/api/v1/log-events", UriKind.Relative));
+        logRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var logResponse = await client.SendAsync(logRequest);
+        logResponse.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task MonitoringCyclePersistsRealProbeAndUpdatesComponentStatus()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "protheus-pulse-cycle-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var iniPath = Path.Combine(root, "appserver.ini");
+        await File.WriteAllTextAsync(iniPath, "[Environment]");
+        var componentId = Guid.NewGuid();
+        try
+        {
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+                dbContext.Installations.Add(new Installation
+                {
+                    Name = $"Ciclo real {Guid.NewGuid():N}",
+                    Environment = EnvironmentKind.Development,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    Components =
+                    [
+                        new Component
+                        {
+                            Id = componentId,
+                            Name = "AppServer local sintético",
+                            Type = ComponentType.AppServer,
+                            FileTargets =
+                            [
+                                new FileTarget { Path = iniPath, Kind = FileTargetKind.Ini }
+                            ]
+                        }
+                    ]
+                });
+                await dbContext.SaveChangesAsync();
+            }
+
+            var worker = factory.Services.GetRequiredService<MonitoringWorker>();
+            var processed = await worker.RunNowAsync(CancellationToken.None);
+
+            await using var verificationScope = factory.Services.CreateAsyncScope();
+            var verificationDb = verificationScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var component = await verificationDb.Components.AsNoTracking().SingleAsync(item => item.Id == componentId);
+            var probes = await verificationDb.ProbeResults.AsNoTracking()
+                .Where(item => item.ComponentId == componentId)
+                .ToListAsync();
+            Assert.True(processed >= 1);
+            Assert.Equal(HealthStatus.Healthy, component.Status);
+            Assert.Contains(probes, item => item.ProbeType == ProbeType.File && item.Status == HealthStatus.Healthy);
+            Assert.Contains(probes, item => item.ProbeType == ProbeType.Disk && item.Status == HealthStatus.Healthy);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     private static HttpRequestMessage AuthorizedPost(string path, string token, object content)
