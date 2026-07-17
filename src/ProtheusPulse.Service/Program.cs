@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -16,6 +17,7 @@ using ProtheusPulse.Service.Configuration;
 using ProtheusPulse.Service.Endpoints;
 using ProtheusPulse.Service.HostedServices;
 using ProtheusPulse.Service.Hubs;
+using ProtheusPulse.Service.Monitoring;
 using ProtheusPulse.Service.Security;
 using Serilog;
 using Serilog.Events;
@@ -25,7 +27,10 @@ var demoMode = args.Any(item => string.Equals(item, "--demo", StringComparison.O
     || builder.Configuration.GetValue<bool>("Pulse:DemoMode");
 
 var pulseOptions = builder.Configuration.GetSection(PulseOptions.SectionName).Get<PulseOptions>() ?? new PulseOptions();
-if (pulseOptions.CollectionIntervalSeconds is < 10 or > 3_600
+if (pulseOptions.HistoryRetentionDays is < 1 or > 365
+    || pulseOptions.MetricAggregationAfterDays is < 1
+    || pulseOptions.MetricAggregationAfterDays > pulseOptions.HistoryRetentionDays
+    || pulseOptions.CollectionIntervalSeconds is < 10 or > 3_600
     || pulseOptions.CollectorTimeoutSeconds is < 1 or > 120
     || pulseOptions.MaximumConcurrentCollectors is < 1 or > 16
     || pulseOptions.MaximumLogBytesPerCycle is < 4_096 or > 1_048_576
@@ -44,6 +49,8 @@ var dataDirectory = !string.IsNullOrWhiteSpace(configuredDataDirectory)
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ProtheusPulse");
 Directory.CreateDirectory(dataDirectory);
 Directory.CreateDirectory(Path.Combine(dataDirectory, "logs"));
+var keysDirectory = Path.Combine(dataDirectory, "keys");
+Directory.CreateDirectory(keysDirectory);
 
 builder.Host.UseWindowsService(options => options.ServiceName = "ProtheusPulse");
 builder.Host.UseSerilog((_, _, configuration) => configuration
@@ -63,6 +70,9 @@ builder.Host.UseSerilog((_, _, configuration) => configuration
 var connectionString = builder.Configuration.GetConnectionString("PulseDb") ?? "Data Source={DataDirectory}/pulse.db;Cache=Shared";
 connectionString = connectionString.Replace("{DataDirectory}", dataDirectory.Replace("\\", "/"), StringComparison.Ordinal);
 builder.Services.AddPulseInfrastructure(connectionString);
+builder.Services.AddDataProtection()
+    .SetApplicationName("ProtheusPulse")
+    .PersistKeysToFileSystem(new DirectoryInfo(keysDirectory));
 builder.Services.AddSingleton(pulseOptions);
 builder.Services.AddSingleton(new ProbeCollectorOptions
 {
@@ -142,6 +152,11 @@ string[] readinessTags = ["ready"];
 builder.Services.AddHealthChecks().AddDbContextCheck<PulseDbContext>("sqlite", tags: readinessTags);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSingleton<MonitoringWorker>();
+builder.Services.AddSingleton<RetentionService>();
+builder.Services.AddSingleton<RetentionWorker>();
+builder.Services.AddScoped<AlertEngine>();
+builder.Services.AddSingleton<NotificationConfigurationProtector>();
+builder.Services.AddSingleton<NotificationDispatcher>();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
@@ -171,6 +186,7 @@ if (demoMode)
 else
 {
     builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<MonitoringWorker>());
+    builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<RetentionWorker>());
 }
 
 var app = builder.Build();

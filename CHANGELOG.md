@@ -23,6 +23,11 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Coletores passivos de serviço/processo Windows, TCP, HTTP sem redirects, TLS, arquivo e espaço em disco.
 - Leitura incremental de logs com cursor, agrupamento por fingerprint, limites e remoção de segredos.
 - Migration para eventos de log sanitizados e endpoint autenticado de consulta.
+- Motor de alertas com regras automáticas/customizadas, falhas consecutivas, cooldown e resolução automática.
+- Reconhecimento por operador, janelas de manutenção e supressão de incidentes durante manutenção.
+- Canais HTTPS para Webhook, Teams, Slack e Discord com URL protegida e payload sem topologia/evidência.
+- Job diário e execução administrativa de retenção, agregação horária e expurgo de histórico vencido.
+- Ação de reconhecimento de alerta no dashboard.
 
 ### Security
 

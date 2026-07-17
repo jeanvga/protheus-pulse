@@ -5,6 +5,7 @@ using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Configuration;
 using ProtheusPulse.Service.Hubs;
+using ProtheusPulse.Service.Monitoring;
 
 namespace ProtheusPulse.Service.HostedServices;
 
@@ -160,13 +161,22 @@ public sealed partial class MonitoringWorker(
             }
         }
 
-        var newStatus = HealthAggregator.Aggregate(observations.Select(item => (item.Observation.Status, item.Observation.IsRequired)));
+        var now = clock.UtcNow;
+        var maintenanceActive = await dbContext.MaintenanceWindows.AsNoTracking().AnyAsync(item =>
+            item.StartsAt <= now
+            && item.EndsAt > now
+            && (item.ComponentId == component.Id || item.InstallationId == component.InstallationId), cancellationToken);
+        var newStatus = maintenanceActive
+            ? HealthStatus.Maintenance
+            : HealthAggregator.Aggregate(observations.Select(item => (item.Observation.Status, item.Observation.IsRequired)));
         if (component.Status != newStatus)
         {
             component.Status = newStatus;
             component.LastStateChangeAt = clock.UtcNow;
         }
 
+        var alertEngine = serviceProvider.GetRequiredService<AlertEngine>();
+        var transitions = await alertEngine.EvaluateAsync(component, observations, maintenanceActive, cancellationToken);
         dbContext.MetricSamples.Add(new MetricSample
         {
             ComponentId = component.Id,
@@ -182,6 +192,7 @@ public sealed partial class MonitoringWorker(
             ObservedAt = clock.UtcNow
         });
         await dbContext.SaveChangesAsync(cancellationToken);
+        await serviceProvider.GetRequiredService<NotificationDispatcher>().DispatchAsync(transitions, cancellationToken);
         return observations.Count > 0;
     }
 

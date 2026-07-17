@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.HostedServices;
+using ProtheusPulse.Service.Monitoring;
 
 namespace ProtheusPulse.IntegrationTests;
 
@@ -404,6 +405,191 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         }
     }
 
+    [Fact]
+    public async Task MaintenanceSuppressesAlertThenFailureOpensAndRecoveryResolvesIt()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "protheus-pulse-alert-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var missingPath = Path.Combine(root, "required.ini");
+        var installationId = Guid.NewGuid();
+        var componentId = Guid.NewGuid();
+        try
+        {
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+                dbContext.Installations.Add(new Installation
+                {
+                    Id = installationId,
+                    Name = $"Alertas reais {Guid.NewGuid():N}",
+                    Environment = EnvironmentKind.Development,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    Components =
+                    [
+                        new Component
+                        {
+                            Id = componentId,
+                            Name = "Arquivo obrigatório sintético",
+                            Type = ComponentType.Generic,
+                            FileTargets = [new FileTarget { Path = missingPath, Kind = FileTargetKind.Ini }]
+                        }
+                    ]
+                });
+                await dbContext.SaveChangesAsync();
+            }
+
+            var token = await AuthenticateDemoAdministratorAsync();
+            using var maintenanceRequest = AuthorizedPost("/api/v1/maintenance-windows", token, new
+            {
+                installationId,
+                name = "Janela sintética",
+                startsAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+                endsAt = DateTimeOffset.UtcNow.AddMinutes(10),
+                reason = "Teste automatizado"
+            });
+            var maintenanceResponse = await client.SendAsync(maintenanceRequest);
+            maintenanceResponse.EnsureSuccessStatusCode();
+            var maintenance = await maintenanceResponse.Content.ReadFromJsonAsync<IdResponse>();
+            Assert.NotNull(maintenance);
+
+            var worker = factory.Services.GetRequiredService<MonitoringWorker>();
+            await worker.RunNowAsync(CancellationToken.None);
+            await using (var maintenanceScope = factory.Services.CreateAsyncScope())
+            {
+                var dbContext = maintenanceScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+                var component = await dbContext.Components.AsNoTracking().SingleAsync(item => item.Id == componentId);
+                Assert.Equal(HealthStatus.Maintenance, component.Status);
+                Assert.False(await dbContext.AlertOccurrences.AnyAsync(item => item.AlertRule.ComponentId == componentId));
+            }
+
+            using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, new Uri($"/api/v1/maintenance-windows/{maintenance.Id}", UriKind.Relative));
+            deleteRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var deleteResponse = await client.SendAsync(deleteRequest);
+            Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+            await worker.RunNowAsync(CancellationToken.None);
+            await worker.RunNowAsync(CancellationToken.None);
+            Guid occurrenceId;
+            await using (var alertScope = factory.Services.CreateAsyncScope())
+            {
+                var dbContext = alertScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+                var occurrence = await dbContext.AlertOccurrences.AsNoTracking()
+                    .SingleAsync(item => item.AlertRule.ComponentId == componentId
+                        && item.AlertRule.ProbeType == ProbeType.File
+                        && item.State == AlertState.Active);
+                occurrenceId = occurrence.Id;
+            }
+
+            using var acknowledgeRequest = AuthorizedPost($"/api/v1/alerts/{occurrenceId}/acknowledge", token, new { });
+            var acknowledgeResponse = await client.SendAsync(acknowledgeRequest);
+            Assert.Equal(HttpStatusCode.NoContent, acknowledgeResponse.StatusCode);
+
+            await File.WriteAllTextAsync(missingPath, "[Environment]");
+            await worker.RunNowAsync(CancellationToken.None);
+            await using var recoveryScope = factory.Services.CreateAsyncScope();
+            var recoveryDb = recoveryScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var resolved = await recoveryDb.AlertOccurrences.AsNoTracking().SingleAsync(item => item.Id == occurrenceId);
+            Assert.Equal(AlertState.Resolved, resolved.State);
+            Assert.NotNull(resolved.ResolvedAt);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task NotificationChannelConfigurationIsProtectedAndNeverReturned()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        const string endpoint = "https://notify.example.invalid/hooks/synthetic";
+        using var createRequest = AuthorizedPost("/api/v1/notification-channels", token, new
+        {
+            name = "Webhook sintético",
+            type = "Webhook",
+            url = endpoint,
+            enabled = false
+        });
+        var createResponse = await client.SendAsync(createRequest);
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<IdResponse>();
+        Assert.NotNull(created);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var channel = await dbContext.NotificationChannels.AsNoTracking().SingleAsync(item => item.Id == created.Id);
+            Assert.DoesNotContain(endpoint, channel.ProtectedConfiguration, StringComparison.Ordinal);
+        }
+
+        using var getRequest = new HttpRequestMessage(HttpMethod.Get, new Uri("/api/v1/notification-channels", UriKind.Relative));
+        getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var getResponse = await client.SendAsync(getRequest);
+        getResponse.EnsureSuccessStatusCode();
+        Assert.DoesNotContain(endpoint, await getResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RetentionAggregatesMetricsAndDeletesExpiredDetailedHistory()
+    {
+        var componentId = Guid.NewGuid();
+        var logSourceId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var component = new Component
+            {
+                Id = componentId,
+                Name = "Retenção sintética",
+                Type = ComponentType.Generic,
+                LogSources = [new LogSource { Id = logSourceId, Path = "D:\\Synthetic\\console.log" }]
+            };
+            dbContext.Installations.Add(new Installation
+            {
+                Name = $"Retenção {Guid.NewGuid():N}",
+                Environment = EnvironmentKind.Development,
+                CreatedAt = now,
+                Components = [component]
+            });
+            dbContext.MetricSamples.AddRange(
+                new MetricSample { ComponentId = componentId, Name = "latency", Unit = "ms", Value = 10, ObservedAt = now.AddDays(-8) },
+                new MetricSample { ComponentId = componentId, Name = "latency", Unit = "ms", Value = 30, ObservedAt = now.AddDays(-8).AddMinutes(10) });
+            dbContext.ProbeResults.Add(new ProbeResult
+            {
+                ComponentId = componentId,
+                ProbeType = ProbeType.File,
+                Status = HealthStatus.Healthy,
+                ObservedAt = now.AddDays(-31),
+                DurationMs = 1,
+                Message = "Histórico expirado"
+            });
+            dbContext.LogEvents.Add(new LogEvent
+            {
+                ComponentId = componentId,
+                LogSourceId = logSourceId,
+                ObservedAt = now.AddDays(-31),
+                Level = "Information",
+                Message = "Evento expirado",
+                Fingerprint = new string('A', 64)
+            });
+            await dbContext.SaveChangesAsync();
+        }
+
+        var retention = factory.Services.GetRequiredService<RetentionService>();
+        var result = await retention.RunAsync(CancellationToken.None);
+
+        await using var verificationScope = factory.Services.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+        Assert.True(result.DetailedMetricsAggregated >= 2);
+        Assert.False(await verificationDb.ProbeResults.AnyAsync(item => item.ComponentId == componentId));
+        Assert.False(await verificationDb.LogEvents.AnyAsync(item => item.ComponentId == componentId));
+        var aggregate = await verificationDb.MetricSamples.AsNoTracking()
+            .SingleAsync(item => item.ComponentId == componentId && item.AggregationWindow != null);
+        Assert.Equal(20, aggregate.Value);
+        Assert.Equal(TimeSpan.FromHours(1), aggregate.AggregationWindow);
+    }
+
     private static HttpRequestMessage AuthorizedPost(string path, string token, object content)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
@@ -435,6 +621,7 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record AuthStatusResponse(string DemoUsername, string DemoPassword);
     private sealed record ComponentPayload(string Name, string Type, bool IsRequired = true);
     private sealed record InstallationResponse(Guid Id, string Name, string Environment, int ComponentCount, string Status);
+    private sealed record IdResponse(Guid Id);
 }
 
 public sealed class PulseWebApplicationFactory : WebApplicationFactory<Program>

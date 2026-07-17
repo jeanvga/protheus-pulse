@@ -2,7 +2,7 @@
 
 Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
 
-> **Estado do projeto:** Fases 1 a 3 concluídas. Cadastro, descoberta e coletores reais de serviço, processo, rede, arquivos, disco e logs estão funcionais. Regras e retenção entram na Fase 4.
+> **Estado do projeto:** Fases 1 a 4 concluídas. Cadastro, descoberta, coletores, alertas, manutenção, notificações e retenção estão funcionais. Instalador e hardening final entram na Fase 5.
 
 ![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
 
@@ -31,6 +31,8 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Descoberta de serviços, caminhos e INI em modo somente leitura, com limites e mascaramento de segredos.
 - Agendador com concorrência e timeout limitados, execução manual administrativa e atualização por SignalR.
 - Coletores somente leitura de serviço/processo Windows, TCP, HTTP/TLS, arquivo, disco e logs incrementais sanitizados.
+- Regras automáticas/customizadas, falhas consecutivas, cooldown, reconhecimento, resolução e janelas de manutenção.
+- Webhooks HTTPS com configuração protegida e payload mínimo; retenção automática com agregação horária.
 
 ## Executar a demonstração
 
@@ -113,7 +115,7 @@ npm audit --audit-level=moderate
 - [x] Fase 1 — fundação, banco, serviço, API, frontend e demo.
 - [x] Fase 2 — cadastro manual, importação, descoberta segura e parser INI sanitizado.
 - [x] Fase 3 — coletores de serviço/processo, TCP/HTTP, arquivo/disco e logs incrementais.
-- [ ] Fase 4 — motor completo de regras, notificações, retenção e agregação.
+- [x] Fase 4 — motor completo de regras, notificações, retenção e agregação.
 - [ ] Fase 5 — heartbeats autenticados, instalador Inno Setup, PowerShell e hardening final.
 
 Endpoints ainda pertencentes a fases futuras respondem `501 Not Implemented` de forma explícita; não simulam sucesso.
@@ -124,6 +126,7 @@ Endpoints ainda pertencentes a fases futuras respondem `501 Not Implemented` de 
 - [Atualização e rollback](docs/UPDATE-ROLLBACK.md)
 - [Cadastro de instalações](docs/ADDING-INSTALLATIONS.md)
 - [Coletores e ciclo de monitoramento](docs/MONITORING.md)
+- [Alertas, manutenção e notificações](docs/ALERTING.md)
 - [Privacidade e retenção](docs/PRIVACY-RETENTION.md)
 - [Threat model](docs/THREAT-MODEL.md)
 - [Como contribuir](CONTRIBUTING.md)

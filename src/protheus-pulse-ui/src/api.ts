@@ -27,6 +27,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const validationMessage = Object.values(payload.errors ?? {}).flat()[0]
     throw new Error(payload.message ?? validationMessage ?? `A API retornou ${response.status}.`)
   }
+  if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
 
@@ -52,6 +53,11 @@ export async function getDashboard(): Promise<DashboardSummary> {
 export async function createInstallation(input: CreateInstallationInput): Promise<InstallationCreated> {
   if (staticDemo) throw new Error('O cadastro persistente não está disponível na demonstração estática.')
   return request<InstallationCreated>('/api/v1/installations', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export async function acknowledgeAlert(id: string): Promise<void> {
+  if (staticDemo) throw new Error('O reconhecimento não está disponível na demonstração estática.')
+  await request<void>(`/api/v1/alerts/${id}/acknowledge`, { method: 'POST', body: '{}' })
 }
 
 export function connectLiveUpdates(onUpdate: () => void): () => void {

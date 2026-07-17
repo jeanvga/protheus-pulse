@@ -6,7 +6,7 @@ import {
   Plus, RefreshCw, Search, Server, Settings, ShieldCheck, Sun, TerminalSquare, UserRound, X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { connectLiveUpdates, createInstallation, getAuthStatus, getDashboard, login, session, setup } from './api'
+import { acknowledgeAlert, connectLiveUpdates, createInstallation, getAuthStatus, getDashboard, login, session, setup } from './api'
 import type { AlertSnapshot, AuthStatus, ComponentSnapshot, ComponentType, DashboardSummary, EnvironmentKind, HealthStatus } from './types'
 
 type Page = 'overview' | 'installations' | 'logs' | 'jobs' | 'alerts' | 'settings' | 'audit' | 'diagnostics'
@@ -222,7 +222,7 @@ function PageContent({ page, summary, refresh, addInstallation }: { page: Page; 
     case 'installations': return <Installations summary={summary} addInstallation={addInstallation} />
     case 'logs': return <LogsPage />
     case 'jobs': return <JobsPage components={summary.components} />
-    case 'alerts': return <AlertsPage alerts={summary.alerts} />
+    case 'alerts': return <AlertsPage alerts={summary.alerts} refresh={refresh} />
     case 'settings': return <SettingsPage />
     case 'audit': return <AuditPage />
     case 'diagnostics': return <DiagnosticsPage demo={summary.demoMode} />
@@ -274,8 +274,8 @@ function ComponentTable({ components }: { components: ComponentSnapshot[] }) {
   return <div className="table-wrap"><table><thead><tr><th>Componente</th><th>Instalação</th><th>Estado</th><th>Evidência atual</th><th>Métrica</th><th /></tr></thead><tbody>{components.map(item => <tr key={item.id}><td><div className="component-name"><span><TerminalSquare size={17} /></span><div><strong>{item.name}</strong><small>{typeLabel(item.type)}</small></div></div></td><td><div className="installation-name">{item.installationName}<small>{item.isDemo ? 'Dado demonstrativo' : 'Monitoramento real'}</small></div></td><td><StatusBadge status={item.status} /></td><td><div className="evidence">{item.summary}<small>desde {formatRelative(item.lastStateChangeAt)}</small></div></td><td><div className="metric-value">{item.metricValue ?? '—'} <small>{item.metricUnit}</small><span>{item.metricLabel}</span></div></td><td><button className="row-action"><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table>{components.length === 0 && <div className="empty-state"><Check size={22} /> Nenhum componente pede atenção agora.</div>}</div>
 }
 
-function AlertList({ alerts }: { alerts: AlertSnapshot[] }) {
-  return <div className="alert-list">{alerts.map(alert => <div className="alert-row" key={alert.id}><div className={`alert-symbol ${alert.severity.toLowerCase()}`}>{alert.state === 'Resolved' ? <Check size={17} /> : <AlertTriangle size={17} />}</div><div className="alert-main"><div><strong>{alert.ruleName}</strong><StatusBadge status={alert.state === 'Resolved' ? 'Healthy' : alert.severity === 'Critical' ? 'Critical' : 'Warning'} label={stateLabel(alert.state)} /></div><span>{alert.componentName} · {alert.installationName}</span><p>{alert.evidence}</p></div><div className="alert-time"><strong>{formatRelative(alert.startedAt)}</strong><span>#{alert.correlationId.slice(0, 8)}</span></div></div>)}</div>
+function AlertList({ alerts, acknowledge, busyId }: { alerts: AlertSnapshot[]; acknowledge?: (id: string) => void; busyId?: string | null }) {
+  return <div className="alert-list">{alerts.map(alert => <div className="alert-row" key={alert.id}><div className={`alert-symbol ${alert.severity.toLowerCase()}`}>{alert.state === 'Resolved' ? <Check size={17} /> : <AlertTriangle size={17} />}</div><div className="alert-main"><div><strong>{alert.ruleName}</strong><StatusBadge status={alert.state === 'Resolved' ? 'Healthy' : alert.severity === 'Critical' ? 'Critical' : 'Warning'} label={stateLabel(alert.state)} /></div><span>{alert.componentName} · {alert.installationName}</span><p>{alert.evidence}</p></div><div className="alert-time"><strong>{formatRelative(alert.startedAt)}</strong><span>#{alert.correlationId.slice(0, 8)}</span>{alert.state === 'Active' && acknowledge && <button className="secondary-button alert-action" disabled={busyId === alert.id} onClick={() => acknowledge(alert.id)}>{busyId === alert.id ? 'Salvando…' : 'Reconhecer'}</button>}</div></div>)}</div>
 }
 
 function Installations({ summary, addInstallation }: { summary: DashboardSummary; addInstallation: () => void }) {
@@ -374,12 +374,26 @@ function JobsPage({ components }: { components: ComponentSnapshot[] }) {
   return <div className="page-body"><section className="intro-row"><div><h2>Heartbeats de jobs</h2><p>Frequência, duração e atraso sem exigir customização do ERP.</p></div><button className="secondary-button"><CircleHelp size={16} /> Como integrar</button></section>{jobs.map(job => <article className="panel job-card" key={job.id}><div className="job-icon"><BriefcaseBusiness size={21} /></div><div><span>{job.installationName}</span><h3>{job.name}</h3><p>{job.summary}</p></div><div className="job-metrics"><div><span>Último sinal</span><strong>há {job.metricValue} min</strong></div><div><span>Tolerância</span><strong>5 min</strong></div><StatusBadge status={job.status} /></div></article>)}</div>
 }
 
-function AlertsPage({ alerts }: { alerts: AlertSnapshot[] }) {
-  return <div className="page-body"><section className="summary-chips"><button className="active">Ativos <strong>{alerts.filter(item => item.state === 'Active').length}</strong></button><button>Reconhecidos <strong>{alerts.filter(item => item.state === 'Acknowledged').length}</strong></button><button>Resolvidos <strong>{alerts.filter(item => item.state === 'Resolved').length}</strong></button><button>Silenciados <strong>0</strong></button></section><article className="panel"><AlertList alerts={alerts} /></article></div>
+function AlertsPage({ alerts, refresh }: { alerts: AlertSnapshot[]; refresh: () => Promise<void> }) {
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const acknowledge = async (id: string) => {
+    setBusyId(id)
+    setError(null)
+    try {
+      await acknowledgeAlert(id)
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível reconhecer o alerta.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+  return <div className="page-body">{error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}<section className="summary-chips"><button className="active">Ativos <strong>{alerts.filter(item => item.state === 'Active').length}</strong></button><button>Reconhecidos <strong>{alerts.filter(item => item.state === 'Acknowledged').length}</strong></button><button>Resolvidos <strong>{alerts.filter(item => item.state === 'Resolved').length}</strong></button><button>Silenciados <strong>{alerts.filter(item => item.state === 'Silenced').length}</strong></button></section><article className="panel"><AlertList alerts={alerts} acknowledge={id => void acknowledge(id)} busyId={busyId} /></article></div>
 }
 
 function SettingsPage() {
-  const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard local ativo · SMTP e webhook preparados' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
+  const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
   return <div className="page-body"><div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div><ChevronDown size={17} /></article>)}</div><div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Princípio de menor privilégio</strong><p>O Pulse não inicia, para ou reinicia serviços e não escreve nas pastas monitoradas.</p></div></div></div>
 }
 

@@ -3,7 +3,7 @@ using System.Net.Sockets;
 
 namespace ProtheusPulse.Infrastructure.Monitoring;
 
-internal static class SafeNetworkConnector
+public static class SafeNetworkConnector
 {
     public static async Task<Stream> ConnectStreamAsync(
         string host,

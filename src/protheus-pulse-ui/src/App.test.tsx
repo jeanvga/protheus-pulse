@@ -10,12 +10,13 @@ vi.mock('./api', () => ({
   getAuthStatus: vi.fn().mockResolvedValue({ requiresSetup: false, demoMode: true }),
   getDashboard: vi.fn().mockResolvedValue(demoSummary),
   createInstallation: vi.fn(),
+  acknowledgeAlert: vi.fn(),
   login: vi.fn(),
   setup: vi.fn(),
   connectLiveUpdates: vi.fn(() => () => undefined),
 }))
 
-import { createInstallation } from './api'
+import { acknowledgeAlert, createInstallation } from './api'
 import App from './App'
 
 describe('App', () => {
@@ -32,6 +33,7 @@ describe('App', () => {
       componentCount: 1,
       status: 'Unknown',
     })
+    vi.mocked(acknowledgeAlert).mockReset().mockResolvedValue(undefined)
   })
 
   it('exibe o resumo demonstrativo depois da autenticação', async () => {
@@ -62,5 +64,16 @@ describe('App', () => {
     }))
     expect(await screen.findByText('Ambientes cadastrados')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('permite reconhecer um alerta ativo', async () => {
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Alertas/ }))
+    const acknowledgeButtons = await screen.findAllByRole('button', { name: 'Reconhecer' })
+    fireEvent.click(acknowledgeButtons[0])
+
+    await waitFor(() => expect(acknowledgeAlert).toHaveBeenCalled())
   })
 })

@@ -66,3 +66,11 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 - TCP e HTTP conectam no endereço IP previamente resolvido e aprovado. Loopback e redes privadas são permitidos; link-local/metadados, multicast e endereços não especificados são bloqueados.
 - HTTP aceita somente `GET`/`HEAD`, não segue redirects e lê no máximo 64 KiB quando precisa validar conteúdo.
 - Logs são lidos a partir de cursor persistido, no máximo 256 KiB por ciclo por padrão. Linhas são limitadas, redigidas e agrupadas por fingerprint antes da persistência.
+
+## Decisões da Fase 4
+
+- O primeiro ciclo cria uma regra padrão por tipo de probe; por padrão, duas falhas consecutivas abrem o incidente e cinco minutos de cooldown evitam reabertura imediata.
+- Regras customizadas podem escolher estados de falha, severidade, quantidade consecutiva e cooldown. Recuperação resolve automaticamente; operador pode reconhecer sem alterar o alvo.
+- Manutenção continua coletando evidência, mas marca o componente como `Maintenance` e silencia ocorrências até o fim da janela.
+- Configuração de webhook é protegida pelo ASP.NET Core Data Protection e nunca volta pela API. Notificações externas contêm apenas tipo de evento, correlação, severidade e estado.
+- Métricas detalhadas com mais de sete dias são agregadas por hora. Probes, logs, métricas agregadas, alertas resolvidos e janelas expiradas são removidos após a retenção configurada.
