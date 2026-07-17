@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
-    [string]$Version = '0.1.1',
+    [string]$Version = '0.1.2',
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
     [switch]$SkipTests,
@@ -56,10 +56,13 @@ try {
     [IO.File]::WriteAllText("$zipPath.sha256", "$zipHash  $([IO.Path]::GetFileName($zipPath))`r`n")
 
     if (-not $SkipInstaller) {
-        $compilerCandidates = @(
-            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
-            (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
-        ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) }
+        $programDirectories = @(
+            [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86),
+            [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
+        ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        $compilerCandidates = $programDirectories |
+            ForEach-Object { [IO.Path]::Combine($_, 'Inno Setup 6\ISCC.exe') } |
+            Where-Object { Test-Path -LiteralPath $_ }
         $compiler = $compilerCandidates | Select-Object -First 1
         if ($null -ne $compiler) {
             & $compiler "/DMyAppVersion=$Version" "/DSourceDirectory=$applicationRoot" "/DOutputDirectory=$releaseRoot" .\installer\ProtheusPulse.iss

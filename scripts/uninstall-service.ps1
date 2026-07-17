@@ -1,12 +1,27 @@
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 param(
-    [string]$DataDirectory = (Join-Path $env:ProgramData 'ProtheusPulse'),
+    [string]$DataDirectory,
     [string]$ServiceName = 'ProtheusPulse',
     [switch]$RemoveData
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+if ([string]::IsNullOrWhiteSpace($DataDirectory)) {
+    $commonDataDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)
+    if ([string]::IsNullOrWhiteSpace($commonDataDirectory)) {
+        throw 'O Windows não informou a pasta de dados compartilhados.'
+    }
+
+    $DataDirectory = [IO.Path]::Combine($commonDataDirectory, 'ProtheusPulse')
+}
+
+$windowsDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
+if ([string]::IsNullOrWhiteSpace($windowsDirectory)) {
+    throw 'O Windows não informou a pasta do sistema.'
+}
+$systemDirectory = [IO.Path]::Combine($windowsDirectory, 'System32')
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -21,7 +36,7 @@ if ($null -ne $service -and $PSCmdlet.ShouldProcess($ServiceName, 'Parar e remov
         $service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromSeconds(30))
     }
 
-    & "$env:SystemRoot\System32\sc.exe" delete $ServiceName | Out-Null
+    & ([IO.Path]::Combine($systemDirectory, 'sc.exe')) delete $ServiceName | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Falha ao remover o serviço (código $LASTEXITCODE)."
     }

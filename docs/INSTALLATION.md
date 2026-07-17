@@ -26,12 +26,12 @@ A publicação é self-contained e não exige instalação separada do .NET. Par
 ## Instalar pelo ZIP
 
 ```powershell
-$package = 'C:\Pacotes\protheus-pulse-0.1.1-win-x64.zip'
+$package = 'C:\Pacotes\protheus-pulse-0.1.2-win-x64.zip'
 (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
 # Compare visualmente com o arquivo .sha256 obtido por canal confiável.
 
-Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.1'
-Set-Location 'C:\Pacotes\ProtheusPulse-0.1.1\protheus-pulse-0.1.1-win-x64'
+Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.2'
+Set-Location 'C:\Pacotes\ProtheusPulse-0.1.2\protheus-pulse-0.1.2-win-x64'
 .\install.cmd
 ```
 

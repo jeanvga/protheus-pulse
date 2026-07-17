@@ -1,8 +1,8 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$SourceDirectory = (Join-Path $PSScriptRoot 'app'),
-    [string]$InstallDirectory = (Join-Path $env:ProgramFiles 'Protheus Pulse'),
-    [string]$DataDirectory = (Join-Path $env:ProgramData 'ProtheusPulse'),
+    [string]$SourceDirectory,
+    [string]$InstallDirectory,
+    [string]$DataDirectory,
     [string]$ServiceName = 'ProtheusPulse',
     [ValidateSet('NT AUTHORITY\LocalService')]
     [string]$ServiceAccount = 'NT AUTHORITY\LocalService',
@@ -11,6 +11,33 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+$scriptDirectory = if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    [IO.Path]::GetDirectoryName($MyInvocation.MyCommand.Path)
+}
+else {
+    $PSScriptRoot
+}
+$programFilesDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
+$commonDataDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)
+$windowsDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
+if ([string]::IsNullOrWhiteSpace($scriptDirectory) -or
+    [string]::IsNullOrWhiteSpace($programFilesDirectory) -or
+    [string]::IsNullOrWhiteSpace($commonDataDirectory) -or
+    [string]::IsNullOrWhiteSpace($windowsDirectory)) {
+    throw 'O Windows não informou uma ou mais pastas especiais necessárias para a instalação.'
+}
+
+if ([string]::IsNullOrWhiteSpace($SourceDirectory)) {
+    $SourceDirectory = [IO.Path]::Combine($scriptDirectory, 'app')
+}
+if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
+    $InstallDirectory = [IO.Path]::Combine($programFilesDirectory, 'Protheus Pulse')
+}
+if ([string]::IsNullOrWhiteSpace($DataDirectory)) {
+    $DataDirectory = [IO.Path]::Combine($commonDataDirectory, 'ProtheusPulse')
+}
+$systemDirectory = [IO.Path]::Combine($windowsDirectory, 'System32')
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -35,7 +62,7 @@ function Resolve-ManagedDirectory([string]$Path, [string]$Label) {
 }
 
 function Invoke-Icacls([string[]]$Arguments) {
-    & "$env:SystemRoot\System32\icacls.exe" @Arguments | Out-Null
+    & ([IO.Path]::Combine($systemDirectory, 'icacls.exe')) @Arguments | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Falha ao aplicar ACL com icacls (código $LASTEXITCODE)."
     }
@@ -46,7 +73,7 @@ function Test-ServiceExists([string]$Name) {
 }
 
 function Initialize-InstallDirectoryAcl([string]$Path) {
-    & "$env:SystemRoot\System32\takeown.exe" /F $Path /A /R /D Y | Out-Null
+    & ([IO.Path]::Combine($systemDirectory, 'takeown.exe')) /F $Path /A /R /D Y | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Falha ao assumir a propriedade da pasta de instalação (código $LASTEXITCODE)."
     }
@@ -81,7 +108,7 @@ if (Test-ServiceExists $ServiceName) {
 New-Item -ItemType Directory -Path $installPath, $dataPath, $secretDirectory, $keyDirectory -Force | Out-Null
 Initialize-InstallDirectoryAcl $installPath
 if (-not [string]::Equals($sourcePath, $installPath, [StringComparison]::OrdinalIgnoreCase)) {
-    & "$env:SystemRoot\System32\robocopy.exe" $sourcePath $installPath '*.*' /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NP /NFL /NDL /NJH /NJS | Out-Null
+    & ([IO.Path]::Combine($systemDirectory, 'robocopy.exe')) $sourcePath $installPath '*.*' /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NP /NFL /NDL /NJH /NJS | Out-Null
     $robocopyExitCode = $LASTEXITCODE
     if ($robocopyExitCode -gt 7) {
         throw "Falha ao copiar o payload com robocopy (código $robocopyExitCode)."
@@ -118,18 +145,18 @@ Invoke-Icacls @($jwtKeyPath, '/inheritance:r', '/grant:r', '*S-1-5-18:F', '*S-1-
 
 $quotedExecutable = '"{0}"' -f $executablePath
 if (Test-ServiceExists $ServiceName) {
-    & "$env:SystemRoot\System32\sc.exe" config $ServiceName 'binPath=' $quotedExecutable 'start=' 'delayed-auto' 'obj=' $ServiceAccount | Out-Null
+    & ([IO.Path]::Combine($systemDirectory, 'sc.exe')) config $ServiceName 'binPath=' $quotedExecutable 'start=' 'delayed-auto' 'obj=' $ServiceAccount | Out-Null
 }
 else {
-    & "$env:SystemRoot\System32\sc.exe" create $ServiceName 'binPath=' $quotedExecutable 'start=' 'delayed-auto' 'obj=' $ServiceAccount | Out-Null
+    & ([IO.Path]::Combine($systemDirectory, 'sc.exe')) create $ServiceName 'binPath=' $quotedExecutable 'start=' 'delayed-auto' 'obj=' $ServiceAccount | Out-Null
 }
 if ($LASTEXITCODE -ne 0) {
     throw "Falha ao criar ou atualizar o serviço (código $LASTEXITCODE)."
 }
 
-& "$env:SystemRoot\System32\sc.exe" description $ServiceName 'Monitoramento técnico local e somente leitura do ambiente Protheus' | Out-Null
-& "$env:SystemRoot\System32\sc.exe" failure $ServiceName 'reset=' '86400' 'actions=' 'restart/5000/restart/15000/restart/60000' | Out-Null
-& "$env:SystemRoot\System32\sc.exe" failureflag $ServiceName '1' | Out-Null
+& ([IO.Path]::Combine($systemDirectory, 'sc.exe')) description $ServiceName 'Monitoramento técnico local e somente leitura do ambiente Protheus' | Out-Null
+& ([IO.Path]::Combine($systemDirectory, 'sc.exe')) failure $ServiceName 'reset=' '86400' 'actions=' 'restart/5000/restart/15000/restart/60000' | Out-Null
+& ([IO.Path]::Combine($systemDirectory, 'sc.exe')) failureflag $ServiceName '1' | Out-Null
 
 $serviceRegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
 $environment = @(

@@ -7,6 +7,7 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 ### Fixed
 
 - Instalador Windows agora recupera propriedade e ACL da pasta gerenciada antes da atualização, usa `robocopy` e inclui iniciador elevado que evita bloqueio por marca de download.
+- Diretórios do instalador não dependem mais de `Join-Path` com variáveis de ambiente durante a carga; o CMD passa caminhos explícitos e o PowerShell usa as pastas especiais do Windows como fallback validado.
 
 ### Added
 

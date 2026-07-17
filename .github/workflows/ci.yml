@@ -54,16 +54,31 @@ jobs:
       - name: End-to-end test
         run: npm run ui:e2e
 
+      - name: Validate PowerShell installer syntax
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem .\scripts\*.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            foreach ($parseError in $errors) {
+              Write-Error ('{0}: {1}' -f $_.FullName, $parseError.Message)
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
       - name: Publish self-contained Windows package
         shell: pwsh
         run: |
-          $packageRoot = '.\artifacts\protheus-pulse-0.1.1-win-x64'
+          $packageRoot = '.\artifacts\protheus-pulse-0.1.2-win-x64'
           dotnet clean .\src\ProtheusPulse.Service --configuration Release --runtime win-x64
-          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.1 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
+          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.2 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
           Copy-Item .\scripts\install-service.ps1, .\scripts\install.cmd, .\scripts\uninstall-service.ps1, .\docs\PILOT-CHECKLIST.md, .\LICENSE -Destination $packageRoot
           Compress-Archive -LiteralPath $packageRoot -DestinationPath "$packageRoot.zip" -CompressionLevel Optimal
           $hash = (Get-FileHash -LiteralPath "$packageRoot.zip" -Algorithm SHA256).Hash
-          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.1-win-x64.zip`r`n")
+          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.2-win-x64.zip`r`n")
 
       - name: Upload test results
         if: always()
@@ -80,5 +95,5 @@ jobs:
         with:
           name: protheus-pulse-win-x64
           path: |
-            artifacts/protheus-pulse-0.1.1-win-x64.zip
-            artifacts/protheus-pulse-0.1.1-win-x64.zip.sha256
+            artifacts/protheus-pulse-0.1.2-win-x64.zip
+            artifacts/protheus-pulse-0.1.2-win-x64.zip.sha256

@@ -8,7 +8,7 @@ if not "%errorlevel%"=="0" (
 )
 
 cd /d "%~dp0"
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0install-service.ps1"
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0install-service.ps1" -SourceDirectory "%~dp0app" -InstallDirectory "%ProgramFiles%\Protheus Pulse" -DataDirectory "%ProgramData%\ProtheusPulse"
 set "pulse_exit_code=%errorlevel%"
 
 if not "%pulse_exit_code%"=="0" (
