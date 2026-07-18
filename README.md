@@ -2,7 +2,7 @@
 
 Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
 
-> **Estado do projeto:** MVP 0.1.3 concluído e pronto para piloto controlado. Cadastro, descoberta, coletores, alertas, heartbeats, retenção e instalação Windows estão funcionais.
+> **Estado do projeto:** MVP 0.1.4 concluído e pronto para piloto controlado. Cadastro, descoberta, coletores, alertas, heartbeats, retenção e instalação Windows estão funcionais.
 
 ![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
 
@@ -35,7 +35,7 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Webhooks HTTPS com configuração protegida e payload mínimo; retenção automática com agregação horária.
 - Heartbeats com token aleatório exibido uma vez, somente hash no banco, rotação, janela operacional e rate limit.
 - Serviço Windows sob `LocalService`, chave JWT em arquivo restrito, DPAPI, ACLs mínimas e recuperação automática.
-- ZIP self-contained e instalador Inno Setup reproduzíveis, com SHA-256 e health check pós-instalação.
+- `setup.exe` self-contained em Inno Setup, sem PowerShell no fluxo normal, com SHA-256, serviço `LocalService` e health check pós-instalação.
 
 ## Executar a demonstração
 
@@ -64,7 +64,7 @@ $env:PULSE_JWT_SIGNING_KEY = '<segredo-aleatorio-com-pelo-menos-32-caracteres>'
 dotnet run --project .\src\ProtheusPulse.Service
 ```
 
-Na instalação Windows, o script gera um arquivo secreto e define `PULSE_JWT_SIGNING_KEY_FILE`; não é necessário expor a chave no ambiente interativo. Na primeira abertura, a API oferece a criação do administrador inicial. Nunca use a chave demonstrativa em produção.
+Na instalação Windows, o `setup.exe` gera um arquivo secreto e define `PULSE_JWT_SIGNING_KEY_FILE`; não é necessário expor a chave no ambiente interativo. Na primeira abertura, a API oferece a criação do administrador inicial. Nunca use a chave demonstrativa em produção.
 
 ## Arquitetura
 
@@ -119,7 +119,7 @@ npm audit --audit-level=moderate
 - [x] Fase 2 — cadastro manual, importação, descoberta segura e parser INI sanitizado.
 - [x] Fase 3 — coletores de serviço/processo, TCP/HTTP, arquivo/disco e logs incrementais.
 - [x] Fase 4 — motor completo de regras, notificações, retenção e agregação.
-- [x] Fase 5 — heartbeats autenticados, instalador Inno Setup, PowerShell e hardening final.
+- [x] Fase 5 — heartbeats autenticados, instalador EXE em Inno Setup e hardening final.
 
 ## Documentação
 

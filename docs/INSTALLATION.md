@@ -2,7 +2,7 @@
 
 ## Pacote recomendado
 
-Use o ZIP self-contained `protheus-pulse-<versão>-win-x64.zip` ou o instalador Inno Setup da mesma versão. Valide o SHA-256 recebido por um canal confiável antes de executar qualquer arquivo.
+Use preferencialmente `protheus-pulse-<versão>-win-x64-setup.exe`. Ele é um instalador Inno Setup self-contained e não exige abrir o PowerShell. Valide o SHA-256 recebido por um canal confiável antes de executar o arquivo.
 
 O padrão seguro instala:
 
@@ -15,7 +15,7 @@ O aplicativo é independente do Protheus e não altera serviços, INI, RPO, banc
 
 ## Pré-requisitos
 
-- Windows Server x64 com PowerShell 5.1 ou mais recente;
+- Windows Server 2016 ou mais recente, x64;
 - sessão administrativa apenas durante instalação/atualização;
 - porta local 5058 livre;
 - acesso de leitura da conta do serviço aos recursos monitorados;
@@ -23,15 +23,28 @@ O aplicativo é independente do Protheus e não altera serviços, INI, RPO, banc
 
 A publicação é self-contained e não exige instalação separada do .NET. Para UNC, conceda leitura no compartilhamento e no NTFS à identidade do computador (`DOMINIO\SERVIDOR$`) ou use uma conta de serviço corporativa aprovada em uma instalação customizada. Não use unidade mapeada e não grave credenciais no Pulse.
 
-## Instalar pelo ZIP
+## Instalar pelo `.exe` (recomendado)
+
+1. coloque o `.exe` e o `.sha256` correspondente na mesma pasta;
+2. confira o SHA-256;
+3. abra o `.exe` e aprove a elevação do Windows;
+4. mantenha o diretório padrão e conclua o assistente.
+
+O instalador interrompe o serviço da versão anterior, repara somente as ACLs administradas pelo Pulse, copia os binários, preserva banco e chaves, registra o serviço com o caminho corretamente delimitado, inicia o serviço e valida `/health/ready`. Nenhum bypass de política do PowerShell é necessário.
+
+Se o serviço não iniciar, a mensagem do próprio assistente mostra a causa resumida. O diagnóstico completo fica em `C:\ProgramData\ProtheusPulse\logs\install-diagnostics.txt`.
+
+O build reproduzível gera SHA-256, mas não inventa uma identidade de publicador. Até um certificado Authenticode corporativo ser configurado, o Windows pode mostrar “Publicador desconhecido”; isso é diferente do bloqueio de script não assinado e não exige alterar a política do PowerShell. Para distribuição definitiva, assine o EXE e valide a cadeia do certificado.
+
+## Instalar pelo ZIP (alternativo)
 
 ```powershell
-$package = 'C:\Pacotes\protheus-pulse-0.1.3-win-x64.zip'
+$package = 'C:\Pacotes\protheus-pulse-0.1.4-win-x64.zip'
 (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
 # Compare visualmente com o arquivo .sha256 obtido por canal confiável.
 
-Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.3'
-Set-Location 'C:\Pacotes\ProtheusPulse-0.1.3\protheus-pulse-0.1.3-win-x64'
+Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.4'
+Set-Location 'C:\Pacotes\ProtheusPulse-0.1.4\protheus-pulse-0.1.4-win-x64'
 .\install.cmd
 ```
 
@@ -42,10 +55,6 @@ Para visualizar as ações sem executá-las:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-service.ps1 -WhatIf
 ```
-
-## Instalar pelo `.exe`
-
-Execute o instalador como administrador e preserve o diretório padrão. O instalador chama o mesmo script de registro e health check. Em distribuição corporativa, assine Authenticode tanto o instalador quanto os scripts e valide a cadeia de assinatura.
 
 ## Primeiro acesso
 
@@ -61,10 +70,6 @@ As chaves do ASP.NET Core Data Protection são protegidas por DPAPI da máquina 
 
 ## Desinstalação
 
-A desinstalação normal remove serviço e binários, mas preserva `C:\ProgramData\ProtheusPulse`. Para apagar permanentemente banco, logs, chave JWT e chaves DPAPI, faça backup e execute explicitamente:
-
-```powershell
-& 'C:\Program Files\Protheus Pulse\scripts\uninstall-service.ps1' -RemoveData
-```
+A desinstalação pelo menu Aplicativos do Windows remove o serviço e os binários, mas preserva `C:\ProgramData\ProtheusPulse`. Para apagar permanentemente banco, logs, chave JWT e chaves DPAPI, primeiro desinstale o produto, faça o backup necessário e remova explicitamente essa pasta com uma sessão administrativa.
 
 Essa operação é irreversível após a confirmação.

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
-    [string]$Version = '0.1.3',
+    [string]$Version = '0.1.4',
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
     [switch]$SkipTests,
@@ -61,7 +61,10 @@ try {
             [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
         ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         $compilerCandidates = $programDirectories |
-            ForEach-Object { [IO.Path]::Combine($_, 'Inno Setup 6\ISCC.exe') } |
+            ForEach-Object {
+                [IO.Path]::Combine($_, 'Inno Setup 7\ISCC.exe')
+                [IO.Path]::Combine($_, 'Inno Setup 6\ISCC.exe')
+            } |
             Where-Object { Test-Path -LiteralPath $_ }
         $compiler = $compilerCandidates | Select-Object -First 1
         if ($null -ne $compiler) {
@@ -76,7 +79,7 @@ try {
             }
         }
         else {
-            Write-Warning 'Inno Setup 6 não encontrado; o ZIP instalável foi gerado e o .exe foi ignorado.'
+            throw 'Inno Setup 6.6 ou mais recente não encontrado. Instale com "winget install --id JRSoftware.InnoSetup -e" ou use -SkipInstaller para gerar somente o ZIP.'
         }
     }
 

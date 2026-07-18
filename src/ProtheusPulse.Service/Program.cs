@@ -19,8 +19,16 @@ using ProtheusPulse.Service.HostedServices;
 using ProtheusPulse.Service.Hubs;
 using ProtheusPulse.Service.Monitoring;
 using ProtheusPulse.Service.Security;
+using ProtheusPulse.Service.WindowsSetup;
 using Serilog;
 using Serilog.Events;
+
+var installerExitCode = await WindowsServiceInstaller.TryRunAsync(args);
+if (installerExitCode.HasValue)
+{
+    Environment.ExitCode = installerExitCode.Value;
+    return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 var demoMode = args.Any(item => string.Equals(item, "--demo", StringComparison.OrdinalIgnoreCase))

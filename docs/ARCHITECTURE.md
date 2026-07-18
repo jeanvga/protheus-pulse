@@ -78,4 +78,4 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 - Heartbeats recebem um token de 256 bits uma única vez e persistem somente SHA-256. A comparação é constante, a rotação revoga imediatamente o valor anterior e o endpoint limita chamadas por job/origem.
 - O relógio do servidor define o evento; payload livre do cliente não é persistido. Janelas diárias podem atravessar meia-noite e atrasos fora da janela não geram incidente.
 - O serviço usa `LocalService`, binários somente leitura e dados com modificação limitada. Chave JWT, banco, logs e Data Protection ficam fora de `Program Files`.
-- Data Protection usa DPAPI da máquina mais ACL do diretório. O pacote self-contained e o Inno Setup chamam o mesmo instalador PowerShell idempotente.
+- Data Protection usa DPAPI da máquina mais ACL do diretório. O `setup.exe` chama um modo administrativo restrito do próprio binário publicado; o PowerShell permanece apenas como alternativa técnica no ZIP.

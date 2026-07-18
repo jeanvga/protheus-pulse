@@ -2,8 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/complete-mvp]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -72,28 +74,98 @@ jobs:
       - name: Publish self-contained Windows package
         shell: pwsh
         run: |
-          $packageRoot = '.\artifacts\protheus-pulse-0.1.3-win-x64'
+          $packageRoot = '.\artifacts\protheus-pulse-0.1.4-win-x64'
           dotnet clean .\src\ProtheusPulse.Service --configuration Release --runtime win-x64
-          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.3 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
+          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.4 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
           Copy-Item .\scripts\install-service.ps1, .\scripts\install.cmd, .\scripts\uninstall-service.ps1, .\docs\PILOT-CHECKLIST.md, .\LICENSE -Destination $packageRoot
           Compress-Archive -LiteralPath $packageRoot -DestinationPath "$packageRoot.zip" -CompressionLevel Optimal
           $hash = (Get-FileHash -LiteralPath "$packageRoot.zip" -Algorithm SHA256).Hash
-          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.3-win-x64.zip`r`n")
+          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.4-win-x64.zip`r`n")
 
-      - name: Smoke test Windows service installer
+      - name: Install verified Inno Setup compiler
         shell: pwsh
         run: |
-          $packageRoot = '.\artifacts\protheus-pulse-0.1.3-win-x64'
-          $dataRoot = Join-Path $env:RUNNER_TEMP 'ProtheusPulseData'
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer
+          $expectedHash = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
+          $actualHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "Hash inesperado do Inno Setup: $actualHash"
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Pyrsys B\.V\.') {
+            throw "Assinatura Authenticode inválida do Inno Setup: $($signature.Status)"
+          }
+          $process = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Instalação do compilador Inno Setup falhou: $($process.ExitCode)"
+          }
+
+      - name: Compile single-file Windows installer
+        shell: pwsh
+        run: |
+          $packageRoot = (Resolve-Path '.\artifacts\protheus-pulse-0.1.4-win-x64').Path
+          $outputRoot = (Resolve-Path '.\artifacts').Path
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $compiler "/DMyAppVersion=0.1.4" "/DSourceDirectory=$packageRoot\app" "/DOutputDirectory=$outputRoot" .\installer\ProtheusPulse.iss
+          if ($LASTEXITCODE -ne 0) {
+            throw "O Inno Setup falhou com código $LASTEXITCODE."
+          }
+          $setup = Join-Path $outputRoot 'protheus-pulse-0.1.4-win-x64-setup.exe'
+          $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+          [IO.File]::WriteAllText("$setup.sha256", "$hash  $([IO.Path]::GetFileName($setup))`r`n")
+
+      - name: Smoke test setup.exe and Windows service
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path '.\artifacts\protheus-pulse-0.1.4-win-x64-setup.exe').Path
+          $installLog = Join-Path $env:RUNNER_TEMP 'protheus-pulse-setup.log'
+          $installRoot = Join-Path $env:ProgramFiles 'Protheus Pulse'
+          $dataRoot = Join-Path $env:ProgramData 'ProtheusPulse'
+          $uninstallExitCode = $null
+          $serviceSurvivedUninstall = $false
           try {
-            .\scripts\install-service.ps1 -SourceDirectory "$packageRoot\app" -DataDirectory $dataRoot
+            & $setup '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART' "/LOG=$installLog"
+            if ($LASTEXITCODE -ne 0) {
+              throw "setup.exe retornou $LASTEXITCODE"
+            }
             $service = Get-CimInstance Win32_Service -Filter "Name='ProtheusPulse'"
             if ($service.State -ne 'Running' -or $service.StartName -notmatch 'LocalService') {
               throw "Serviço instalado em estado ou conta inesperados."
             }
+            if ($service.PathName -ne ('"' + (Join-Path $installRoot 'ProtheusPulse.Service.exe') + '"')) {
+              throw "ImagePath inesperado: $($service.PathName)"
+            }
+            $response = Invoke-WebRequest 'http://127.0.0.1:5058/health/ready' -UseBasicParsing -TimeoutSec 10
+            if ($response.StatusCode -ne 200) {
+              throw "Health check retornou HTTP $($response.StatusCode)."
+            }
+          }
+          catch {
+            Get-Content -LiteralPath $installLog -Tail 120 -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath (Join-Path $dataRoot 'logs\install-diagnostics.txt') -Tail 160 -ErrorAction SilentlyContinue
+            throw
           }
           finally {
-            .\scripts\uninstall-service.ps1 -DataDirectory $dataRoot -RemoveData -Confirm:$false
+            $uninstaller = Join-Path $installRoot 'unins000.exe'
+            if (Test-Path -LiteralPath $uninstaller) {
+              & $uninstaller '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART'
+              $uninstallExitCode = $LASTEXITCODE
+            }
+            if (Get-Service -Name ProtheusPulse -ErrorAction SilentlyContinue) {
+              $serviceSurvivedUninstall = $true
+              sc.exe stop ProtheusPulse | Out-Null
+              sc.exe delete ProtheusPulse | Out-Null
+            }
+            if (Test-Path -LiteralPath $dataRoot) {
+              Remove-Item -LiteralPath $dataRoot -Recurse -Force
+            }
+          }
+          if ($null -eq $uninstallExitCode -or $uninstallExitCode -ne 0) {
+            throw "O desinstalador não concluiu corretamente: $uninstallExitCode"
+          }
+          if ($serviceSurvivedUninstall) {
+            throw 'O serviço permaneceu registrado após a desinstalação.'
           }
 
       - name: Upload test results
@@ -111,5 +183,7 @@ jobs:
         with:
           name: protheus-pulse-win-x64
           path: |
-            artifacts/protheus-pulse-0.1.3-win-x64.zip
-            artifacts/protheus-pulse-0.1.3-win-x64.zip.sha256
+            artifacts/protheus-pulse-0.1.4-win-x64.zip
+            artifacts/protheus-pulse-0.1.4-win-x64.zip.sha256
+            artifacts/protheus-pulse-0.1.4-win-x64-setup.exe
+            artifacts/protheus-pulse-0.1.4-win-x64-setup.exe.sha256

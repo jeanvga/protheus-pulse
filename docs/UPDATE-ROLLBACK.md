@@ -13,7 +13,7 @@ Não copie o backup para repositórios, tickets ou pastas de acesso amplo: ele c
 
 ## Atualizar
 
-Execute o novo instalador ou `install.cmd` do novo ZIP. O procedimento é idempotente: para o serviço, repara a pasta gerenciada, substitui binários, mantém o diretório de dados e a chave JWT existente, reaplica ACLs, inicia e valida o banco.
+Execute preferencialmente o novo `setup.exe`; use `install.cmd` do ZIP apenas como alternativa técnica. O procedimento para o serviço, repara a pasta gerenciada, substitui binários, mantém o diretório de dados e a chave JWT existente, reaplica ACLs, inicia e valida o banco.
 
 Depois valide:
 

@@ -712,5 +712,7 @@ public sealed class PulseWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Development");
         builder.UseSetting("Pulse:DemoMode", "true");
         builder.UseSetting("Pulse:DataDirectory", dataDirectory);
+        builder.UseSetting("Pulse:DiskWarningPercent", "1");
+        builder.UseSetting("Pulse:DiskCriticalPercent", "0");
     }
 }
