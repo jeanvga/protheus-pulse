@@ -68,17 +68,47 @@ export interface AuthToken {
   role: string
 }
 
-export interface CreateInstallationInput {
+export interface TcpCheckConfiguration {
+  host: string
+  port: number
+  timeoutMs: number
+  isRequired: boolean
+}
+
+export interface HttpCheckConfiguration {
+  url: string
+  method: 'GET' | 'HEAD'
+  expectedStatusMin: number
+  expectedStatusMax: number
+  timeoutMs: number
+  bodyPattern?: string
+  validateTls: boolean
+  certificateWarningDays: number
+  isRequired: boolean
+}
+
+export interface ComponentConfigurationInput {
+  id?: string
+  name: string
+  type: ComponentType
+  isRequired: boolean
+  windowsServiceName?: string
+  executablePath?: string
+  iniPath?: string
+  logPaths: string[]
+  tcpChecks: TcpCheckConfiguration[]
+  httpChecks: HttpCheckConfiguration[]
+}
+
+export interface SaveInstallationInput {
   name: string
   environment: EnvironmentKind
   customEnvironmentName?: string
   tags: string[]
-  components: Array<{
-    name: string
-    type: ComponentType
-    isRequired: boolean
-  }>
+  components: ComponentConfigurationInput[]
 }
+
+export type CreateInstallationInput = SaveInstallationInput
 
 export interface InstallationCreated {
   id: string
@@ -88,4 +118,39 @@ export interface InstallationCreated {
   tags: string[]
   componentCount: number
   status: HealthStatus
+}
+
+export interface InstallationConfiguration extends Omit<SaveInstallationInput, 'components'> {
+  id: string
+  isDemo: boolean
+  components: Array<ComponentConfigurationInput & { id: string; status: HealthStatus }>
+}
+
+export interface ServiceCandidate {
+  serviceName: string
+  displayName: string
+  status: string
+}
+
+export interface ServiceDiscoveryResult {
+  supported: boolean
+  dryRun: boolean
+  candidates: ServiceCandidate[]
+}
+
+export interface PathCandidate {
+  path: string
+  fileName: string
+}
+
+export interface PathDiscoveryResult {
+  dryRun: boolean
+  timedOut: boolean
+  durationMs: number
+  candidates: PathCandidate[]
+}
+
+export interface CollectionResult {
+  processedComponents: number
+  completedAt: string
 }

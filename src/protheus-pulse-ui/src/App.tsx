@@ -2,12 +2,21 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Activity, AlertTriangle, Archive, Bell, Boxes, BriefcaseBusiness, Check, ChevronDown, CircleHelp,
-  Clock3, FileText, Gauge, HeartPulse, ListFilter, LockKeyhole, LogOut, Menu, Moon, MoreHorizontal,
-  Plus, RefreshCw, Search, Server, Settings, ShieldCheck, Sun, TerminalSquare, UserRound, X,
+  Clock3, FileText, FolderSearch, Gauge, HeartPulse, ListFilter, LockKeyhole, LogOut, Menu, Moon,
+  MoreHorizontal, Pencil, Play, Plus, RefreshCw, Search, Server, Settings, ShieldCheck, Sun,
+  TerminalSquare, Trash2, UserRound, X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { acknowledgeAlert, connectLiveUpdates, createInstallation, getAuthStatus, getDashboard, login, session, setup } from './api'
-import type { AlertSnapshot, AuthStatus, ComponentSnapshot, ComponentType, DashboardSummary, EnvironmentKind, HealthStatus } from './types'
+import {
+  acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, deleteInstallation, discoverPaths,
+  discoverServices, getAuthStatus, getDashboard, getInstallationConfiguration, login, session, setup,
+  updateInstallation,
+} from './api'
+import type {
+  AlertSnapshot, AuthStatus, ComponentSnapshot, ComponentType, DashboardSummary, EnvironmentKind,
+  HealthStatus, HttpCheckConfiguration, PathCandidate, SaveInstallationInput, ServiceCandidate,
+  TcpCheckConfiguration,
+} from './types'
 
 type Page = 'overview' | 'installations' | 'logs' | 'jobs' | 'alerts' | 'settings' | 'audit' | 'diagnostics'
 
@@ -59,7 +68,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mobileMenu, setMobileMenu] = useState(false)
-  const [installationDialog, setInstallationDialog] = useState(false)
+  const [installationEditorId, setInstallationEditorId] = useState<string | null | undefined>(undefined)
   const [theme, setTheme] = useState(() => localStorage.getItem('pulse.theme') ?? 'dark')
 
   useEffect(() => {
@@ -104,7 +113,7 @@ export default function App() {
   }
 
   const installationCreated = async () => {
-    setInstallationDialog(false)
+    setInstallationEditorId(undefined)
     setPage('installations')
     await loadSummary()
   }
@@ -134,10 +143,10 @@ export default function App() {
         </header>
 
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => void loadSummary()}><RefreshCw size={15} /> Tentar novamente</button></div>}
-        {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} addInstallation={() => setInstallationDialog(true)} />}
-        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 0.1.0 · produto independente</span></footer>
+        {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} addInstallation={() => setInstallationEditorId(null)} editInstallation={setInstallationEditorId} />}
+        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 0.1.5 · produto independente</span></footer>
       </main>
-      {installationDialog && <InstallationDialog close={() => setInstallationDialog(false)} onCreated={installationCreated} />}
+      {installationEditorId !== undefined && <InstallationDialog installationId={installationEditorId} close={() => setInstallationEditorId(undefined)} onSaved={installationCreated} />}
     </div>
   )
 }
@@ -216,10 +225,10 @@ function LoginScreen({ status, onAuthenticated, error: initialError }: { status:
   </div>
 }
 
-function PageContent({ page, summary, refresh, addInstallation }: { page: Page; summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void }) {
+function PageContent({ page, summary, refresh, addInstallation, editInstallation }: { page: Page; summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void; editInstallation: (id: string) => void }) {
   switch (page) {
     case 'overview': return <Overview summary={summary} refresh={refresh} addInstallation={addInstallation} />
-    case 'installations': return <Installations summary={summary} addInstallation={addInstallation} />
+    case 'installations': return <Installations summary={summary} refresh={refresh} addInstallation={addInstallation} editInstallation={editInstallation} />
     case 'logs': return <LogsPage />
     case 'jobs': return <JobsPage components={summary.components} />
     case 'alerts': return <AlertsPage alerts={summary.alerts} refresh={refresh} />
@@ -278,69 +287,157 @@ function AlertList({ alerts, acknowledge, busyId }: { alerts: AlertSnapshot[]; a
   return <div className="alert-list">{alerts.map(alert => <div className="alert-row" key={alert.id}><div className={`alert-symbol ${alert.severity.toLowerCase()}`}>{alert.state === 'Resolved' ? <Check size={17} /> : <AlertTriangle size={17} />}</div><div className="alert-main"><div><strong>{alert.ruleName}</strong><StatusBadge status={alert.state === 'Resolved' ? 'Healthy' : alert.severity === 'Critical' ? 'Critical' : 'Warning'} label={stateLabel(alert.state)} /></div><span>{alert.componentName} · {alert.installationName}</span><p>{alert.evidence}</p></div><div className="alert-time"><strong>{formatRelative(alert.startedAt)}</strong><span>#{alert.correlationId.slice(0, 8)}</span>{alert.state === 'Active' && acknowledge && <button className="secondary-button alert-action" disabled={busyId === alert.id} onClick={() => acknowledge(alert.id)}>{busyId === alert.id ? 'Salvando…' : 'Reconhecer'}</button>}</div></div>)}</div>
 }
 
-function Installations({ summary, addInstallation }: { summary: DashboardSummary; addInstallation: () => void }) {
-  const groups = useMemo(() => Object.entries(summary.components.reduce<Record<string, ComponentSnapshot[]>>((result, item) => {
-    ;(result[item.installationName] ??= []).push(item)
+function Installations({ summary, refresh, addInstallation, editInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void; editInstallation: (id: string) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const groups = useMemo(() => Object.values(summary.components.reduce<Record<string, { name: string; components: ComponentSnapshot[] }>>((result, item) => {
+    ;(result[item.installationId] ??= { name: item.installationName, components: [] }).components.push(item)
     return result
   }, {})), [summary.components])
-  return <div className="page-body"><section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Componentes agrupados por instalação e impacto.</p></div><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></section><div className="installation-grid">{groups.map(([name, components]) => <article className="panel installation-card" key={name}><header><div><span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span><h3>{name}</h3></div><StatusBadge status={worstStatus(components ?? [])} /></header><div className="installation-stat"><span>{components?.length ?? 0} componentes</span><span>{components?.filter(item => item.status === 'Healthy').length ?? 0} saudáveis</span></div>{components?.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span></div><small>{component.summary}</small></div>)}</article>)}</div></div>
+
+  const runCollection = async () => {
+    setBusy(true); setError(null); setMessage(null)
+    try {
+      const result = await collectNow()
+      setMessage(`Coleta concluída em ${result.processedComponents} componente(s).`)
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível executar a coleta.')
+    } finally { setBusy(false) }
+  }
+
+  const remove = async (id: string, name: string) => {
+    if (!window.confirm(`Remover a instalação “${name}” e seu histórico?`)) return
+    setBusy(true); setError(null); setMessage(null)
+    try {
+      await deleteInstallation(id)
+      setMessage('Instalação removida.')
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível remover a instalação.')
+    } finally { setBusy(false) }
+  }
+
+  return <div className="page-body">
+    <section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Configure serviços, arquivos, portas e URLs sem sair do painel.</p></div><div className="intro-actions"><button className="secondary-button" disabled={busy || summary.demoMode} onClick={() => void runCollection()}><Play size={16} /> {busy ? 'Executando…' : 'Coletar agora'}</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+    {message && <div className="success-banner"><Check size={16} /> {message}</div>}
+    <div className="installation-grid">{groups.map(({ name, components }) => {
+      const installationId = components[0]?.installationId
+      const isDemo = components.every(item => item.isDemo)
+      return <article className="panel installation-card" key={installationId}>
+        <header><div><span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span><h3>{name}</h3></div><StatusBadge status={worstStatus(components)} /></header>
+        <div className="installation-stat"><span>{components.length} componentes</span><span>{components.filter(item => item.status === 'Healthy').length} saudáveis</span></div>
+        {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span></div><small>{component.summary}</small></div>)}
+        {!isDemo && installationId && <footer className="installation-actions"><button className="secondary-button" onClick={() => editInstallation(installationId)}><Pencil size={15} /> Configurar</button><button className="danger-button" disabled={busy} onClick={() => void remove(installationId, name)}><Trash2 size={15} /> Remover</button></footer>}
+      </article>
+    })}</div>
+  </div>
 }
 
+interface TcpCheckDraft extends TcpCheckConfiguration { key: number }
+interface HttpCheckDraft extends HttpCheckConfiguration { key: number }
 interface ComponentDraft {
   key: number
+  id?: string
   name: string
   type: ComponentType
   isRequired: boolean
+  windowsServiceName: string
+  executablePath: string
+  iniPath: string
+  logPaths: string[]
+  tcpChecks: TcpCheckDraft[]
+  httpChecks: HttpCheckDraft[]
 }
 
-function InstallationDialog({ close, onCreated }: { close: () => void; onCreated: () => Promise<void> }) {
+let draftKey = 0
+const nextDraftKey = () => ++draftKey
+const emptyComponent = (): ComponentDraft => ({
+  key: nextDraftKey(), name: '', type: 'AppServer', isRequired: true, windowsServiceName: '',
+  executablePath: '', iniPath: '', logPaths: [], tcpChecks: [], httpChecks: [],
+})
+
+function InstallationDialog({ installationId, close, onSaved }: { installationId: string | null; close: () => void; onSaved: () => Promise<void> }) {
   const [name, setName] = useState('')
   const [environment, setEnvironment] = useState<EnvironmentKind>('Production')
   const [customEnvironmentName, setCustomEnvironmentName] = useState('')
   const [tags, setTags] = useState('')
-  const [components, setComponents] = useState<ComponentDraft[]>([{ key: 1, name: '', type: 'AppServer', isRequired: true }])
+  const [components, setComponents] = useState<ComponentDraft[]>([emptyComponent()])
+  const [loading, setLoading] = useState(Boolean(installationId))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const updateComponent = (key: number, update: Partial<Omit<ComponentDraft, 'key'>>) => {
-    setComponents(current => current.map(item => item.key === key ? { ...item, ...update } : item))
-  }
+  useEffect(() => {
+    if (!installationId) return
+    setLoading(true)
+    getInstallationConfiguration(installationId).then(configuration => {
+      setName(configuration.name)
+      setEnvironment(configuration.environment)
+      setCustomEnvironmentName(configuration.customEnvironmentName ?? '')
+      setTags(configuration.tags.join(', '))
+      setComponents(configuration.components.map(component => ({
+        ...component,
+        key: nextDraftKey(),
+        windowsServiceName: component.windowsServiceName ?? '',
+        executablePath: component.executablePath ?? '',
+        iniPath: component.iniPath ?? '',
+        tcpChecks: component.tcpChecks.map(check => ({ ...check, key: nextDraftKey() })),
+        httpChecks: component.httpChecks.map(check => ({ ...check, key: nextDraftKey() })),
+      })))
+    }).catch(reason => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a configuração.'))
+      .finally(() => setLoading(false))
+  }, [installationId])
 
-  const addComponent = () => {
-    setComponents(current => {
-      const key = Math.max(...current.map(item => item.key), 0) + 1
-      return [...current, { key, name: '', type: 'AppServer', isRequired: true }]
-    })
-  }
-
-  const removeComponent = (key: number) => {
-    setComponents(current => current.filter(item => item.key !== key))
-  }
+  const updateComponent = (key: number, update: Partial<Omit<ComponentDraft, 'key'>>) => setComponents(current => current.map(item => item.key === key ? { ...item, ...update } : item))
+  const addComponent = () => setComponents(current => [...current, emptyComponent()])
+  const removeComponent = (key: number) => setComponents(current => current.filter(item => item.key !== key))
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    setBusy(true)
     setError(null)
-    try {
-      await createInstallation({
-        name,
-        environment,
-        customEnvironmentName: environment === 'Custom' ? customEnvironmentName : undefined,
-        tags: tags.split(',').map(item => item.trim()).filter(Boolean),
-        components: components.map(item => ({ name: item.name, type: item.type, isRequired: item.isRequired })),
-      })
-      await onCreated()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível cadastrar a instalação.')
-    } finally {
-      setBusy(false)
+    const missingTarget = components.find(component => !component.windowsServiceName.trim()
+      && !component.executablePath.trim() && !component.iniPath.trim()
+      && component.logPaths.every(path => !path.trim())
+      && component.tcpChecks.length === 0 && component.httpChecks.length === 0)
+    if (missingTarget) {
+      setError(`Configure ao menos um alvo no componente “${missingTarget.name || 'sem nome'}”.`)
+      return
     }
+
+    const input: SaveInstallationInput = {
+      name,
+      environment,
+      customEnvironmentName: environment === 'Custom' ? customEnvironmentName : undefined,
+      tags: tags.split(',').map(item => item.trim()).filter(Boolean),
+      components: components.map(component => ({
+        id: component.id,
+        name: component.name,
+        type: component.type,
+        isRequired: component.isRequired,
+        windowsServiceName: component.windowsServiceName.trim() || undefined,
+        executablePath: component.executablePath.trim() || undefined,
+        iniPath: component.iniPath.trim() || undefined,
+        logPaths: component.logPaths.map(path => path.trim()).filter(Boolean),
+        tcpChecks: component.tcpChecks.map(({ key: _, ...check }) => check),
+        httpChecks: component.httpChecks.map(({ key: _, ...check }) => ({ ...check, bodyPattern: check.bodyPattern?.trim() || undefined })),
+      })),
+    }
+    setBusy(true)
+    try {
+      if (installationId) await updateInstallation(installationId, input)
+      else await createInstallation(input)
+      await onSaved()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a instalação.')
+    } finally { setBusy(false) }
   }
 
   return <div className="modal-backdrop">
-    <section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="installation-dialog-title">
-      <header className="modal-header"><div><span>Fase 2 · Cadastro manual</span><h2 id="installation-dialog-title">Adicionar instalação</h2><p>Cadastre somente metadados técnicos. Nenhuma conexão será feita agora.</p></div><button className="icon-button" onClick={close} disabled={busy} aria-label="Fechar cadastro"><X size={18} /></button></header>
-      <form onSubmit={submit}>
+    <section className="modal-card configuration-modal" role="dialog" aria-modal="true" aria-labelledby="installation-dialog-title">
+      <header className="modal-header"><div><span>Configuração local completa</span><h2 id="installation-dialog-title">{installationId ? 'Configurar instalação' : 'Adicionar instalação'}</h2><p>Defina os alvos reais que serão consultados em modo somente leitura.</p></div><button className="icon-button" onClick={close} disabled={busy} aria-label="Fechar cadastro"><X size={18} /></button></header>
+      {loading ? <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando configuração…</div> : <form onSubmit={submit}>
         {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
         <div className="form-grid">
           <label>Nome da instalação<input aria-label="Nome da instalação" value={name} onChange={event => setName(event.target.value)} maxLength={160} placeholder="Ex.: ERP Produção" required /></label>
@@ -349,20 +446,84 @@ function InstallationDialog({ close, onCreated }: { close: () => void; onCreated
           <label className={environment === 'Custom' ? '' : 'wide-field'}>Tags opcionais<input aria-label="Tags opcionais" value={tags} onChange={event => setTags(event.target.value)} placeholder="matriz, servidor-a" /></label>
         </div>
         <div className="component-editor">
-          <div className="component-editor-heading"><div><h3>Componentes</h3><p>Informe ao menos um item que será monitorado nas próximas etapas.</p></div><button type="button" className="secondary-button" onClick={addComponent}><Plus size={15} /> Adicionar componente</button></div>
-          {components.map((component, index) => <div className="component-editor-row" key={component.key}>
-            <span>{index + 1}</span>
-            <label>Nome<input aria-label={`Nome do componente ${index + 1}`} value={component.name} onChange={event => updateComponent(component.key, { name: event.target.value })} maxLength={160} placeholder="Ex.: AppServer REST" required /></label>
-            <label>Tipo<select aria-label={`Tipo do componente ${index + 1}`} value={component.type} onChange={event => updateComponent(component.key, { type: event.target.value as ComponentType })}>{componentTypeOptions.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
-            <label className="checkbox-label"><input type="checkbox" checked={component.isRequired} onChange={event => updateComponent(component.key, { isRequired: event.target.checked })} /> Obrigatório</label>
-            <button type="button" className="row-action remove-component" onClick={() => removeComponent(component.key)} disabled={components.length === 1} aria-label={`Remover componente ${index + 1}`}><X size={17} /></button>
-          </div>)}
+          <div className="component-editor-heading"><div><h3>Componentes e alvos</h3><p>Serviço, executável, INI, logs, TCP e HTTP podem ser combinados.</p></div><button type="button" className="secondary-button" onClick={addComponent}><Plus size={15} /> Adicionar componente</button></div>
+          {components.map((component, index) => <ComponentConfigurationEditor key={component.key} component={component} index={index} update={update => updateComponent(component.key, update)} remove={() => removeComponent(component.key)} canRemove={components.length > 1} />)}
         </div>
-        <div className="modal-safety"><ShieldCheck size={18} /><span>Este cadastro não inicia, para ou consulta serviços e não lê arquivos do servidor.</span></div>
-        <footer className="modal-actions"><button type="button" className="secondary-button" onClick={close} disabled={busy}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}{busy ? 'Cadastrando…' : 'Cadastrar instalação'}</button></footer>
-      </form>
+        <div className="modal-safety"><ShieldCheck size={18} /><span>A descoberta apenas lista candidatos. O Pulse nunca inicia serviços nem altera arquivos, INIs ou executáveis monitorados.</span></div>
+        <footer className="modal-actions"><button type="button" className="secondary-button" onClick={close} disabled={busy}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{busy ? 'Salvando…' : 'Salvar e monitorar'}</button></footer>
+      </form>}
     </section>
   </div>
+}
+
+function ComponentConfigurationEditor({ component, index, update, remove, canRemove }: { component: ComponentDraft; index: number; update: (update: Partial<Omit<ComponentDraft, 'key'>>) => void; remove: () => void; canRemove: boolean }) {
+  const [serviceQuery, setServiceQuery] = useState(component.windowsServiceName || component.name)
+  const [serviceCandidates, setServiceCandidates] = useState<ServiceCandidate[]>([])
+  const [pathRoot, setPathRoot] = useState('')
+  const [fileNames, setFileNames] = useState(defaultFileNames(component.type))
+  const [pathCandidates, setPathCandidates] = useState<PathCandidate[]>([])
+  const [discoveryBusy, setDiscoveryBusy] = useState(false)
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
+
+  const findServices = async () => {
+    setDiscoveryError(null)
+    if (serviceQuery.trim().length < 2) { setDiscoveryError('Informe ao menos dois caracteres para buscar serviços.'); return }
+    setDiscoveryBusy(true)
+    try { setServiceCandidates((await discoverServices(serviceQuery.trim())).candidates) }
+    catch (reason) { setDiscoveryError(reason instanceof Error ? reason.message : 'Falha na descoberta de serviços.') }
+    finally { setDiscoveryBusy(false) }
+  }
+
+  const findPaths = async () => {
+    setDiscoveryError(null)
+    const names = fileNames.split(',').map(item => item.trim()).filter(Boolean)
+    if (!pathRoot.trim() || names.length === 0) { setDiscoveryError('Informe uma pasta inicial e ao menos um nome de arquivo.'); return }
+    setDiscoveryBusy(true)
+    try { setPathCandidates((await discoverPaths(pathRoot.trim(), names)).candidates) }
+    catch (reason) { setDiscoveryError(reason instanceof Error ? reason.message : 'Falha na descoberta de caminhos.') }
+    finally { setDiscoveryBusy(false) }
+  }
+
+  const addLog = (path: string) => update({ logPaths: [...new Set([...component.logPaths, path])] })
+  const addTcp = () => update({ tcpChecks: [...component.tcpChecks, { key: nextDraftKey(), host: '127.0.0.1', port: 0, timeoutMs: 3000, isRequired: true }] })
+  const addHttp = () => update({ httpChecks: [...component.httpChecks, { key: nextDraftKey(), url: '', method: 'GET', expectedStatusMin: 200, expectedStatusMax: 399, timeoutMs: 5000, validateTls: true, certificateWarningDays: 30, isRequired: true }] })
+
+  return <article className="component-config-card">
+    <header><span>{index + 1}</span><div><strong>{component.name || 'Novo componente'}</strong><small>Configure um ou mais alvos de leitura</small></div><button type="button" className="row-action remove-component" onClick={remove} disabled={!canRemove} aria-label={`Remover componente ${index + 1}`}><X size={17} /></button></header>
+    <div className="target-form-grid basic-target-grid">
+      <label>Nome<input aria-label={`Nome do componente ${index + 1}`} value={component.name} onChange={event => update({ name: event.target.value })} maxLength={160} placeholder="Ex.: AppServer REST" required /></label>
+      <label>Tipo<select aria-label={`Tipo do componente ${index + 1}`} value={component.type} onChange={event => { const type = event.target.value as ComponentType; update({ type }); setFileNames(defaultFileNames(type)) }}>{componentTypeOptions.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
+      <label className="checkbox-label"><input type="checkbox" checked={component.isRequired} onChange={event => update({ isRequired: event.target.checked })} /> Obrigatório</label>
+    </div>
+
+    <section className="target-section"><div className="target-section-heading"><div><h4>Serviço Windows</h4><p>Use o nome interno do serviço, não apenas o nome exibido.</p></div></div>
+      <div className="discovery-row"><input aria-label={`Buscar serviço do componente ${index + 1}`} value={serviceQuery} onChange={event => setServiceQuery(event.target.value)} placeholder="Ex.: AppServer" /><button type="button" className="secondary-button" disabled={discoveryBusy} onClick={() => void findServices()}><Search size={14} /> Buscar no servidor</button></div>
+      {serviceCandidates.length > 0 && <div className="candidate-list">{serviceCandidates.slice(0, 20).map(candidate => <button type="button" key={candidate.serviceName} onClick={() => update({ windowsServiceName: candidate.serviceName })}><span><strong>{candidate.displayName}</strong><small>{candidate.serviceName} · {candidate.status}</small></span><Check size={14} /></button>)}</div>}
+      <label className="target-field">Serviço selecionado<input aria-label={`Nome do serviço Windows ${index + 1}`} value={component.windowsServiceName} onChange={event => update({ windowsServiceName: event.target.value })} placeholder="Opcional" /></label>
+    </section>
+
+    <section className="target-section"><div className="target-section-heading"><div><h4>Arquivos e logs</h4><p>Informe caminhos absolutos locais ou UNC. Nenhuma unidade mapeada é usada.</p></div><FolderSearch size={17} /></div>
+      <div className="path-discovery-grid"><label>Pasta inicial<input aria-label={`Pasta para descoberta ${index + 1}`} value={pathRoot} onChange={event => setPathRoot(event.target.value)} placeholder="D:\TOTVS\Protheus" /></label><label>Nomes exatos<input aria-label={`Arquivos para descoberta ${index + 1}`} value={fileNames} onChange={event => setFileNames(event.target.value)} /></label><button type="button" className="secondary-button" disabled={discoveryBusy} onClick={() => void findPaths()}><FolderSearch size={14} /> Localizar</button></div>
+      {pathCandidates.length > 0 && <div className="path-candidates">{pathCandidates.slice(0, 20).map(candidate => <div key={candidate.path}><span title={candidate.path}>{candidate.path}</span><div>{candidate.fileName.toLowerCase().endsWith('.exe') && <button type="button" onClick={() => update({ executablePath: candidate.path })}>Executável</button>}{candidate.fileName.toLowerCase().endsWith('.ini') && <button type="button" onClick={() => update({ iniPath: candidate.path })}>INI</button>}<button type="button" onClick={() => addLog(candidate.path)}>Log</button></div></div>)}</div>}
+      <div className="target-form-grid"><label>Executável<input aria-label={`Caminho do executável ${index + 1}`} value={component.executablePath} onChange={event => update({ executablePath: event.target.value })} placeholder="Opcional" /></label><label>Arquivo INI<input aria-label={`Caminho do INI ${index + 1}`} value={component.iniPath} onChange={event => update({ iniPath: event.target.value })} placeholder="Opcional" /></label><label className="wide-field">Logs, um caminho por linha<textarea aria-label={`Caminhos de log ${index + 1}`} value={component.logPaths.join('\n')} onChange={event => update({ logPaths: event.target.value.split(/\r?\n/) })} placeholder={'D:\\TOTVS\\Protheus\\logs\\console.log'} /></label></div>
+    </section>
+
+    <section className="target-section"><div className="target-section-heading"><div><h4>Portas TCP</h4><p>Verifica conectividade sem enviar comandos ao Protheus.</p></div><button type="button" className="secondary-button" onClick={addTcp}><Plus size={14} /> Porta</button></div>
+      {component.tcpChecks.map((check, checkIndex) => <div className="check-row tcp-row" key={check.key}><label>Host<input aria-label={`Host TCP ${index + 1}.${checkIndex + 1}`} value={check.host} onChange={event => update({ tcpChecks: component.tcpChecks.map(item => item.key === check.key ? { ...item, host: event.target.value } : item) })} required /></label><label>Porta<input aria-label={`Porta TCP ${index + 1}.${checkIndex + 1}`} type="number" min="1" max="65535" value={check.port || ''} onChange={event => update({ tcpChecks: component.tcpChecks.map(item => item.key === check.key ? { ...item, port: Number(event.target.value) } : item) })} required /></label><label>Timeout (ms)<input type="number" min="250" max="30000" value={check.timeoutMs} onChange={event => update({ tcpChecks: component.tcpChecks.map(item => item.key === check.key ? { ...item, timeoutMs: Number(event.target.value) } : item) })} /></label><button type="button" className="row-action remove-component" aria-label={`Remover porta TCP ${checkIndex + 1}`} onClick={() => update({ tcpChecks: component.tcpChecks.filter(item => item.key !== check.key) })}><X size={16} /></button></div>)}
+    </section>
+
+    <section className="target-section"><div className="target-section-heading"><div><h4>Endpoints HTTP/HTTPS</h4><p>Somente GET ou HEAD, sem redirecionamentos.</p></div><button type="button" className="secondary-button" onClick={addHttp}><Plus size={14} /> Endpoint</button></div>
+      {component.httpChecks.map((check, checkIndex) => <div className="http-check" key={check.key}><div className="check-row http-row"><label>URL<input aria-label={`URL HTTP ${index + 1}.${checkIndex + 1}`} type="url" value={check.url} onChange={event => update({ httpChecks: component.httpChecks.map(item => item.key === check.key ? { ...item, url: event.target.value } : item) })} placeholder="http://127.0.0.1:porta/rota" required /></label><label>Método<select value={check.method} onChange={event => update({ httpChecks: component.httpChecks.map(item => item.key === check.key ? { ...item, method: event.target.value as 'GET' | 'HEAD' } : item) })}><option>GET</option><option>HEAD</option></select></label><label>Status mínimo<input type="number" min="100" max="599" value={check.expectedStatusMin} onChange={event => update({ httpChecks: component.httpChecks.map(item => item.key === check.key ? { ...item, expectedStatusMin: Number(event.target.value) } : item) })} /></label><label>Status máximo<input type="number" min="100" max="599" value={check.expectedStatusMax} onChange={event => update({ httpChecks: component.httpChecks.map(item => item.key === check.key ? { ...item, expectedStatusMax: Number(event.target.value) } : item) })} /></label><button type="button" className="row-action remove-component" aria-label={`Remover endpoint HTTP ${checkIndex + 1}`} onClick={() => update({ httpChecks: component.httpChecks.filter(item => item.key !== check.key) })}><X size={16} /></button></div><div className="http-options"><label>Texto esperado<input value={check.bodyPattern ?? ''} onChange={event => update({ httpChecks: component.httpChecks.map(item => item.key === check.key ? { ...item, bodyPattern: event.target.value } : item) })} placeholder="Opcional" /></label><label>Timeout (ms)<input type="number" min="250" max="30000" value={check.timeoutMs} onChange={event => update({ httpChecks: component.httpChecks.map(item => item.key === check.key ? { ...item, timeoutMs: Number(event.target.value) } : item) })} /></label><label className="checkbox-label"><input type="checkbox" checked={check.validateTls} onChange={event => update({ httpChecks: component.httpChecks.map(item => item.key === check.key ? { ...item, validateTls: event.target.checked } : item) })} /> Validar TLS</label><label className="checkbox-label"><input type="checkbox" checked={check.isRequired} onChange={event => update({ httpChecks: component.httpChecks.map(item => item.key === check.key ? { ...item, isRequired: event.target.checked } : item) })} /> Obrigatório</label></div></div>)}
+    </section>
+    {discoveryError && <div className="inline-error"><AlertTriangle size={14} /> {discoveryError}</div>}
+  </article>
+}
+
+function defaultFileNames(type: ComponentType) {
+  if (type === 'DbAccess') return 'dbaccess.exe, dbaccess.ini, dbaccess.log'
+  if (type === 'LicenseServer') return 'licenseserver.exe, appserver.ini, console.log'
+  if (type === 'Tss') return 'appserver.exe, appserver.ini, console.log'
+  return 'appserver.exe, appserver.ini, console.log'
 }
 
 function LogsPage() {

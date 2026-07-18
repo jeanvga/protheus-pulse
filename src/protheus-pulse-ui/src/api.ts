@@ -1,6 +1,9 @@
 import * as signalR from '@microsoft/signalr'
 import { demoSummary } from './demoData'
-import type { AuthStatus, AuthToken, CreateInstallationInput, DashboardSummary, InstallationCreated } from './types'
+import type {
+  AuthStatus, AuthToken, CollectionResult, DashboardSummary, InstallationConfiguration,
+  InstallationCreated, PathDiscoveryResult, SaveInstallationInput, ServiceDiscoveryResult,
+} from './types'
 
 const staticDemo = import.meta.env.VITE_DEMO_STATIC === 'true'
 const tokenKey = 'pulse.accessToken'
@@ -50,9 +53,37 @@ export async function getDashboard(): Promise<DashboardSummary> {
   return request<DashboardSummary>('/api/v1/dashboard/summary')
 }
 
-export async function createInstallation(input: CreateInstallationInput): Promise<InstallationCreated> {
+export async function createInstallation(input: SaveInstallationInput): Promise<InstallationCreated> {
   if (staticDemo) throw new Error('O cadastro persistente não está disponível na demonstração estática.')
   return request<InstallationCreated>('/api/v1/installations', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export async function getInstallationConfiguration(id: string): Promise<InstallationConfiguration> {
+  return request<InstallationConfiguration>(`/api/v1/installations/${id}/configuration`)
+}
+
+export async function updateInstallation(id: string, input: SaveInstallationInput): Promise<InstallationConfiguration> {
+  return request<InstallationConfiguration>(`/api/v1/installations/${id}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
+export async function deleteInstallation(id: string): Promise<void> {
+  await request<void>(`/api/v1/installations/${id}`, { method: 'DELETE' })
+}
+
+export async function discoverServices(nameContains: string): Promise<ServiceDiscoveryResult> {
+  const query = new URLSearchParams({ nameContains, limit: '100' })
+  return request<ServiceDiscoveryResult>(`/api/v1/discovery/services?${query}`)
+}
+
+export async function discoverPaths(root: string, fileNames: string[]): Promise<PathDiscoveryResult> {
+  return request<PathDiscoveryResult>('/api/v1/discovery/paths', {
+    method: 'POST',
+    body: JSON.stringify({ roots: [root], fileNames, maxDepth: 6, maxResults: 100, timeoutSeconds: 15 }),
+  })
+}
+
+export async function collectNow(): Promise<CollectionResult> {
+  return request<CollectionResult>('/api/v1/diagnostics/collect-now', { method: 'POST', body: '{}' })
 }
 
 export async function acknowledgeAlert(id: string): Promise<void> {
