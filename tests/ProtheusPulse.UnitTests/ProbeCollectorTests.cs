@@ -44,12 +44,13 @@ public sealed class ProbeCollectorTests
         listener.Start();
         try
         {
+            using var serverTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var endpoint = (IPEndPoint)listener.LocalEndpoint;
-            var accepted = listener.AcceptTcpClientAsync(CancellationToken.None);
+            var accepted = listener.AcceptTcpClientAsync(serverTimeout.Token);
             var component = CreateComponent();
             component.TcpChecks.Add(new TcpCheck
             {
-                Host = "localhost",
+                Host = IPAddress.Loopback.ToString(),
                 Port = endpoint.Port,
                 TimeoutMs = 2_000
             });
