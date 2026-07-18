@@ -2,6 +2,14 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.0.4] - 2026-07-18
+
+### Fixed
+
+- Instalador encerra instâncias remanescentes do `ProtheusPulse.Service.exe` (por exemplo, execuções manuais em sessão RDP) antes de configurar o serviço, evitando que segurem o banco ou arquivos com ACL quebrada.
+- Arquivos `pulse.db*` recebem `icacls /reset` individual e atributos normalizados; bancos com DACL vazia deixados por instalações com falha voltam a herdar as permissões corretas.
+- Novo teste de abertura do banco antes de iniciar o serviço: se `pulse.db` não puder ser aberto para leitura e escrita, a instalação falha imediatamente com mensagem explicando como resolver, em vez de estourar no health check.
+
 ## [1.0.3] - 2026-07-18
 
 ### Fixed

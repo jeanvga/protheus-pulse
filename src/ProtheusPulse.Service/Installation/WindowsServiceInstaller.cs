@@ -151,6 +151,7 @@ internal static class WindowsServiceInstaller
         var jwtKeyPath = Path.Combine(secretDirectory, "jwt.key");
 
         await StopServiceAsync();
+        KillStrayServiceProcesses();
 
         Directory.CreateDirectory(dataDirectory);
         Directory.CreateDirectory(secretDirectory);
@@ -158,7 +159,8 @@ internal static class WindowsServiceInstaller
         Directory.CreateDirectory(logsDirectory);
 
         await ApplyDirectoryAccessControlAsync(installDirectory, dataDirectory, secretDirectory, keysDirectory);
-        ClearDatabaseReadOnlyAttributes(dataDirectory);
+        await NormalizeDatabaseFilesAsync(dataDirectory);
+        EnsureDatabaseWritable(dataDirectory);
         CreateOrValidateJwtKey(jwtKeyPath);
         await ApplyJwtKeyAccessControlAsync(jwtKeyPath);
         await CreateOrUpdateServiceAsync(executablePath, dataDirectory, jwtKeyPath);
@@ -183,23 +185,67 @@ internal static class WindowsServiceInstaller
         }
 
         await StopServiceAsync();
+        KillStrayServiceProcesses();
         var deleteResult = await RunScAsync("delete", ServiceName);
         deleteResult.EnsureSuccess("remover o serviço", 0, 1060, 1072);
         Console.WriteLine("Serviço removido. Banco, chaves e logs foram preservados.");
     }
 
-    private static void ClearDatabaseReadOnlyAttributes(string dataDirectory)
+    private static void KillStrayServiceProcesses()
     {
+        foreach (var process in Process.GetProcessesByName("ProtheusPulse.Service"))
+        {
+            using (process)
+            {
+                if (process.Id == Environment.ProcessId)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Console.Error.WriteLine($"Aviso: encerrando instância remanescente do Pulse (PID {process.Id}).");
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(10_000);
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    Console.Error.WriteLine($"Aviso: não foi possível encerrar o processo {process.Id}: {exception.Message}");
+                }
+            }
+        }
+    }
+
+    private static async Task NormalizeDatabaseFilesAsync(string dataDirectory)
+    {
+        foreach (var databaseFile in Directory.EnumerateFiles(dataDirectory, "pulse.db*", SearchOption.TopDirectoryOnly))
+        {
+            // Bancos criados durante instalações com falha podem carregar DACL vazia
+            // ou atributos que bloqueiam até o administrador; o reset força a herança
+            // do DACL correto já aplicado ao diretório de dados.
+            await RunIcaclsAsync(databaseFile, "/reset", "/Q");
+            File.SetAttributes(databaseFile, FileAttributes.Normal);
+        }
+    }
+
+    private static void EnsureDatabaseWritable(string dataDirectory)
+    {
+        var databasePath = Path.Combine(dataDirectory, "pulse.db");
+        if (!File.Exists(databasePath))
+        {
+            return;
+        }
+
         try
         {
-            foreach (var databaseFile in Directory.EnumerateFiles(dataDirectory, "pulse.db*", SearchOption.TopDirectoryOnly))
-            {
-                File.SetAttributes(databaseFile, FileAttributes.Normal);
-            }
+            using var stream = File.Open(databasePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"Aviso: não foi possível normalizar os atributos do banco: {exception.Message}");
+            throw new InvalidOperationException(
+                $"O banco {databasePath} não pôde ser aberto para leitura e escrita: {exception.Message} "
+                + "Encerre instâncias remanescentes do ProtheusPulse.Service.exe ou remova o arquivo se ele restou de uma instalação com falha (nenhum dado real é perdido nesse caso).",
+                exception);
         }
     }
 
