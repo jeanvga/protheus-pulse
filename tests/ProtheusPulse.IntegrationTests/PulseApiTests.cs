@@ -15,8 +15,11 @@ namespace ProtheusPulse.IntegrationTests;
 public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
 {
     private static readonly string[] IniFileNames = ["appserver.ini"];
+    private static readonly string[] InitialConfigurationTags = ["piloto"];
+    private static readonly string[] UpdatedConfigurationTags = ["piloto", "configurado-na-interface"];
     private static readonly string[] PilotTags = ["piloto", "servidor-a"];
     private static readonly string[] SampleWindowsRoots = ["C:\\TOTVS"];
+    private static string? cachedAdministratorToken;
     private readonly HttpClient client;
     private readonly PulseWebApplicationFactory factory;
 
@@ -170,6 +173,106 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdministratorCanConfigureExistingInstallationEntirelyThroughApiAndDeleteIt()
+    {
+        var installationName = $"ERP configurável {Guid.NewGuid():N}";
+        var token = await AuthenticateDemoAdministratorAsync();
+        using var createRequest = AuthorizedPost("/api/v1/installations", token, new
+        {
+            name = installationName,
+            environment = "Homologation",
+            tags = InitialConfigurationTags,
+            components = new[] { new { name = "AppServer principal", type = "AppServer", isRequired = true } }
+        });
+        var createResponse = await client.SendAsync(createRequest);
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<InstallationResponse>();
+        Assert.NotNull(created);
+
+        using var getRequest = AuthorizedRequest(HttpMethod.Get, $"/api/v1/installations/{created.Id}/configuration", token);
+        var getResponse = await client.SendAsync(getRequest);
+        getResponse.EnsureSuccessStatusCode();
+        var initialConfiguration = await getResponse.Content.ReadFromJsonAsync<InstallationConfigurationResponse>();
+        Assert.NotNull(initialConfiguration);
+        var existingComponent = Assert.Single(initialConfiguration.Components);
+        Assert.Null(existingComponent.WindowsServiceName);
+
+        const string executablePath = "D:\\Synthetic\\appserver.exe";
+        const string iniPath = "D:\\Synthetic\\appserver.ini";
+        const string logPath = "D:\\Synthetic\\logs\\console.log";
+        using var updateRequest = AuthorizedRequest(HttpMethod.Put, $"/api/v1/installations/{created.Id}", token, new
+        {
+            name = installationName,
+            environment = "Homologation",
+            tags = UpdatedConfigurationTags,
+            components = new[]
+            {
+                new
+                {
+                    id = existingComponent.Id,
+                    name = "AppServer principal",
+                    type = "AppServer",
+                    isRequired = true,
+                    windowsServiceName = "SyntheticAppServer",
+                    executablePath,
+                    iniPath,
+                    logPaths = new[] { logPath },
+                    tcpChecks = new[] { new { host = "127.0.0.1", port = 18080, timeoutMs = 2000, isRequired = true } },
+                    httpChecks = new[]
+                    {
+                        new
+                        {
+                            url = "http://127.0.0.1:18080/health",
+                            method = "GET",
+                            expectedStatusMin = 200,
+                            expectedStatusMax = 299,
+                            timeoutMs = 3000,
+                            validateTls = true,
+                            certificateWarningDays = 30,
+                            isRequired = false
+                        }
+                    }
+                }
+            }
+        });
+        var updateResponse = await client.SendAsync(updateRequest);
+        updateResponse.EnsureSuccessStatusCode();
+        var updated = await updateResponse.Content.ReadFromJsonAsync<InstallationConfigurationResponse>();
+        Assert.NotNull(updated);
+        var configuredComponent = Assert.Single(updated.Components);
+        Assert.Equal(existingComponent.Id, configuredComponent.Id);
+        Assert.Equal("SyntheticAppServer", configuredComponent.WindowsServiceName);
+        Assert.Equal(executablePath, configuredComponent.ExecutablePath);
+        Assert.Equal(iniPath, configuredComponent.IniPath);
+        Assert.Equal(logPath, Assert.Single(configuredComponent.LogPaths));
+        Assert.Equal(18080, Assert.Single(configuredComponent.TcpChecks).Port);
+        Assert.Equal("http://127.0.0.1:18080/health", Assert.Single(configuredComponent.HttpChecks).Url);
+
+        await using (var verificationScope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = verificationScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            Assert.Equal(1, await dbContext.WindowsServiceTargets.CountAsync(item => item.ComponentId == existingComponent.Id));
+            Assert.Equal(1, await dbContext.ProcessTargets.CountAsync(item => item.ComponentId == existingComponent.Id));
+            Assert.Equal(2, await dbContext.FileTargets.CountAsync(item => item.ComponentId == existingComponent.Id));
+            Assert.Equal(1, await dbContext.LogSources.CountAsync(item => item.ComponentId == existingComponent.Id));
+            Assert.Equal(1, await dbContext.TcpChecks.CountAsync(item => item.ComponentId == existingComponent.Id));
+            Assert.Equal(1, await dbContext.HttpChecks.CountAsync(item => item.ComponentId == existingComponent.Id));
+            var audit = await dbContext.AuditEvents.AsNoTracking()
+                .OrderByDescending(item => item.OccurredAt)
+                .FirstAsync(item => item.Action == "InstallationUpdated" && item.EntityId == created.Id.ToString());
+            Assert.DoesNotContain(installationName, audit.SanitizedDetailsJson, StringComparison.Ordinal);
+            Assert.DoesNotContain(executablePath, audit.SanitizedDetailsJson, StringComparison.Ordinal);
+        }
+
+        using var deleteRequest = AuthorizedRequest(HttpMethod.Delete, $"/api/v1/installations/{created.Id}", token);
+        var deleteResponse = await client.SendAsync(deleteRequest);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+        await using var deletionScope = factory.Services.CreateAsyncScope();
+        var deletionDb = deletionScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+        Assert.False(await deletionDb.Installations.AnyAsync(item => item.Id == created.Id));
     }
 
     [Fact]
@@ -670,9 +773,14 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
 
     private static HttpRequestMessage AuthorizedPost(string path, string token, object content)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
+        return AuthorizedRequest(HttpMethod.Post, path, token, content);
+    }
+
+    private static HttpRequestMessage AuthorizedRequest(HttpMethod method, string path, string token, object? content = null)
+    {
+        var request = new HttpRequestMessage(method, new Uri(path, UriKind.Relative))
         {
-            Content = JsonContent.Create(content)
+            Content = content is null ? null : JsonContent.Create(content)
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return request;
@@ -680,6 +788,11 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
 
     private async Task<string> AuthenticateDemoAdministratorAsync()
     {
+        if (cachedAdministratorToken is not null)
+        {
+            return cachedAdministratorToken;
+        }
+
         var authStatus = await client.GetFromJsonAsync<AuthStatusResponse>(
             new Uri("/api/v1/auth/status", UriKind.Relative));
         Assert.NotNull(authStatus);
@@ -692,13 +805,25 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         login.EnsureSuccessStatusCode();
         var token = await login.Content.ReadFromJsonAsync<TokenResponse>();
         Assert.NotNull(token);
-        return token.AccessToken;
+        cachedAdministratorToken = token.AccessToken;
+        return cachedAdministratorToken;
     }
 
     private sealed record TokenResponse(string AccessToken);
     private sealed record AuthStatusResponse(string DemoUsername, string DemoPassword);
     private sealed record ComponentPayload(string Name, string Type, bool IsRequired = true);
     private sealed record InstallationResponse(Guid Id, string Name, string Environment, int ComponentCount, string Status);
+    private sealed record InstallationConfigurationResponse(Guid Id, string Name, List<ComponentConfigurationResponse> Components);
+    private sealed record ComponentConfigurationResponse(
+        Guid Id,
+        string? WindowsServiceName,
+        string? ExecutablePath,
+        string? IniPath,
+        List<string> LogPaths,
+        List<TcpCheckConfigurationResponse> TcpChecks,
+        List<HttpCheckConfigurationResponse> HttpChecks);
+    private sealed record TcpCheckConfigurationResponse(string Host, int Port);
+    private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
     private sealed record HeartbeatTokenResponse(Guid Id, string JobKey, string Token, bool TokenShownOnce);
 }
