@@ -124,7 +124,7 @@ export default function App() {
   const title = pageTitles[page]
   return (
     <div className="app-shell">
-      <Sidebar active={page} setPage={setPage} open={mobileMenu} close={() => setMobileMenu(false)} logout={logout} />
+      <Sidebar active={page} setPage={setPage} open={mobileMenu} close={() => setMobileMenu(false)} logout={logout} alertCount={summary?.totals.activeAlerts ?? 0} />
       <main className="main-content">
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setMobileMenu(true)} aria-label="Abrir menu"><Menu size={20} /></button>
@@ -151,7 +151,7 @@ export default function App() {
   )
 }
 
-function Sidebar({ active, setPage, open, close, logout }: { active: Page; setPage: (page: Page) => void; open: boolean; close: () => void; logout: () => void }) {
+function Sidebar({ active, setPage, open, close, logout, alertCount }: { active: Page; setPage: (page: Page) => void; open: boolean; close: () => void; logout: () => void; alertCount: number }) {
   const choose = (page: Page) => { setPage(page); close() }
   return <>
     {open && <button className="sidebar-backdrop" onClick={close} aria-label="Fechar menu" />}
@@ -159,7 +159,7 @@ function Sidebar({ active, setPage, open, close, logout }: { active: Page; setPa
       <div className="brand"><div className="brand-mark"><HeartPulse size={24} /></div><div><strong>Protheus</strong><span>Pulse</span></div><button className="mobile-close" onClick={close}><X size={20} /></button></div>
       <nav aria-label="Navegação principal">
         <span className="nav-section-label">Monitoramento</span>
-        {navItems.map(item => <NavItem key={item.id} {...item} active={active === item.id} onClick={() => choose(item.id)} />)}
+        {navItems.map(item => <NavItem key={item.id} {...item} active={active === item.id} badge={item.id === 'alerts' ? alertCount : undefined} onClick={() => choose(item.id)} />)}
         <span className="nav-section-label secondary">Sistema</span>
         {secondaryNav.map(item => <NavItem key={item.id} {...item} active={active === item.id} onClick={() => choose(item.id)} />)}
       </nav>
@@ -169,8 +169,8 @@ function Sidebar({ active, setPage, open, close, logout }: { active: Page; setPa
   </>
 }
 
-function NavItem({ label, icon: Icon, active, onClick }: { label: string; icon: LucideIcon; active: boolean; onClick: () => void }) {
-  return <button className={`nav-item ${active ? 'active' : ''}`} onClick={onClick}><Icon size={18} /><span>{label}</span>{label === 'Alertas' && <i>3</i>}</button>
+function NavItem({ label, icon: Icon, active, badge, onClick }: { label: string; icon: LucideIcon; active: boolean; badge?: number; onClick: () => void }) {
+  return <button className={`nav-item ${active ? 'active' : ''}`} onClick={onClick}><Icon size={18} /><span>{label}</span>{badge != null && badge > 0 && <i>{badge}</i>}</button>
 }
 
 function LoginScreen({ status, onAuthenticated, error: initialError }: { status: AuthStatus | null; onAuthenticated: (token: string) => void; error: string | null }) {
@@ -250,7 +250,7 @@ function Overview({ summary, refresh, addInstallation }: { summary: DashboardSum
     </section>
     <section className="overview-grid">
       <article className="panel availability-panel"><PanelHeader title="Disponibilidade consolidada" subtitle="Últimas 12 horas" action="12 horas" /><AvailabilityChart values={summary.availability} /><div className="chart-legend"><span><i className="legend-green" /> Disponibilidade</span><strong>{summary.totals.availabilityPercent}% <small>média</small></strong></div></article>
-      <article className="panel status-panel"><PanelHeader title="Estado dos componentes" subtitle="Distribuição atual" /><div className="donut-wrap"><div className="donut" style={{ '--healthy': summary.totals.healthy, '--warning': summary.totals.warning, '--critical': summary.totals.critical, '--total': Math.max(summary.totals.components, 1) } as CSSProperties}><div><strong>{summary.totals.components}</strong><span>total</span></div></div><div className="status-legend"><StatusLegend label="Saudável" value={summary.totals.healthy} status="Healthy" /><StatusLegend label="Atenção" value={summary.totals.warning} status="Warning" /><StatusLegend label="Crítico" value={summary.totals.critical} status="Critical" /><StatusLegend label="Desconhecido" value={summary.totals.unknown} status="Unknown" /></div></div></article>
+      <article className="panel status-panel"><PanelHeader title="Estado dos componentes" subtitle="Distribuição atual" /><div className="donut-wrap"><div className="donut" style={{ '--donut-healthy': summary.totals.healthy, '--donut-warning': summary.totals.warning, '--donut-critical': summary.totals.critical, '--donut-total': Math.max(summary.totals.components, 1) } as CSSProperties}><div><strong>{summary.totals.components}</strong><span>total</span></div></div><div className="status-legend"><StatusLegend label="Saudável" value={summary.totals.healthy} status="Healthy" /><StatusLegend label="Atenção" value={summary.totals.warning} status="Warning" /><StatusLegend label="Crítico" value={summary.totals.critical} status="Critical" /><StatusLegend label="Desconhecido" value={summary.totals.unknown} status="Unknown" /></div></div></article>
     </section>
     <section className="panel component-panel"><PanelHeader title="Componentes que pedem atenção" subtitle="Ordenados por impacto operacional" action="Ver instalações" /><ComponentTable components={summary.components.filter(item => item.status !== 'Healthy')} /></section>
     <section className="panel alert-panel"><PanelHeader title="Alertas recentes" subtitle="Evidência sanitizada e resolução automática" action="Ver todos" /><AlertList alerts={summary.alerts.slice(0, 4)} /></section>
@@ -272,7 +272,9 @@ function AvailabilityChart({ values }: { values: DashboardSummary['availability'
   const range = Math.max(100 - min, 1)
   const points = values.map((item, index) => `${(index / Math.max(values.length - 1, 1)) * width},${height - ((item.value - min) / range) * (height - 22) - 8}`).join(' ')
   const area = `0,${height} ${points} ${width},${height}`
-  return <div className="chart"><div className="chart-y"><span>100%</span><span>98%</span><span>96%</span><span>94%</span></div><svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Disponibilidade ao longo das últimas doze horas"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#32d6a0" stopOpacity=".28" /><stop offset="1" stopColor="#32d6a0" stopOpacity="0" /></linearGradient></defs><line x1="0" y1="42" x2={width} y2="42" /><line x1="0" y1="88" x2={width} y2="88" /><line x1="0" y1="134" x2={width} y2="134" /><polygon points={area} fill="url(#area)" /><polyline points={points} fill="none" stroke="#32d6a0" strokeWidth="3" vectorEffect="non-scaling-stroke" /></svg><div className="chart-x">{values.filter((_, index) => index % 2 === 0).map(item => <span key={item.at}>{new Date(item.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>)}</div></div>
+  const axisValues = [100, min + (range * 2) / 3, min + range / 3, min]
+  const axisLabel = (value: number) => `${Number.isInteger(value) ? value : value.toFixed(1)}%`
+  return <div className="chart"><div className="chart-y">{axisValues.map(value => <span key={value}>{axisLabel(value)}</span>)}</div><svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Disponibilidade ao longo das últimas doze horas"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopOpacity=".28" /><stop offset="1" stopOpacity="0" /></linearGradient></defs><line x1="0" y1="42" x2={width} y2="42" /><line x1="0" y1="88" x2={width} y2="88" /><line x1="0" y1="134" x2={width} y2="134" /><polygon points={area} fill="url(#area)" /><polyline points={points} fill="none" strokeWidth="3" vectorEffect="non-scaling-stroke" /></svg><div className="chart-x">{values.filter((_, index) => index % 2 === 0).map(item => <span key={item.at}>{new Date(item.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>)}</div></div>
 }
 
 function StatusLegend({ label, value, status }: { label: string; value: number; status: HealthStatus }) {
