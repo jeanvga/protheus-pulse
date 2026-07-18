@@ -70,6 +70,7 @@ public sealed class HttpProbeCollector : IProbeCollector, IDisposable
             AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
             ConnectTimeout = TimeSpan.FromSeconds(10),
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            UseProxy = false,
             ConnectCallback = static (context, cancellationToken) =>
                 new ValueTask<Stream>(SafeNetworkConnector.ConnectStreamAsync(
                     context.DnsEndPoint.Host,

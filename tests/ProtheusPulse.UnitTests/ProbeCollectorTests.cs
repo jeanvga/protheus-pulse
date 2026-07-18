@@ -74,12 +74,16 @@ public sealed class ProbeCollectorTests
         listener.Start();
         try
         {
+            using var serverTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var endpoint = (IPEndPoint)listener.LocalEndpoint;
-            var server = ServeSingleHttpResponseAsync(listener, "HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\nPULSE_READY");
+            var server = ServeSingleHttpResponseAsync(
+                listener,
+                "HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\nPULSE_READY",
+                serverTimeout.Token);
             var component = CreateComponent();
             component.HttpChecks.Add(new HttpCheck
             {
-                Url = $"http://localhost:{endpoint.Port}/health",
+                Url = $"http://127.0.0.1:{endpoint.Port}/health",
                 ExpectedStatusMax = 299,
                 BodyPattern = "PULSE_READY",
                 TimeoutMs = 2_000
@@ -191,14 +195,17 @@ public sealed class ProbeCollectorTests
         IsRequired = true
     };
 
-    private static async Task ServeSingleHttpResponseAsync(TcpListener listener, string response)
+    private static async Task ServeSingleHttpResponseAsync(
+        TcpListener listener,
+        string response,
+        CancellationToken cancellationToken)
     {
-        using var connection = await listener.AcceptTcpClientAsync(CancellationToken.None);
+        using var connection = await listener.AcceptTcpClientAsync(cancellationToken);
         await using var stream = connection.GetStream();
         var requestBuffer = new byte[4_096];
-        _ = await stream.ReadAsync(requestBuffer, CancellationToken.None);
+        _ = await stream.ReadAsync(requestBuffer, cancellationToken);
         var responseBytes = Encoding.ASCII.GetBytes(response);
-        await stream.WriteAsync(responseBytes, CancellationToken.None);
+        await stream.WriteAsync(responseBytes, cancellationToken);
     }
 
     private sealed class FixedClock(DateTimeOffset utcNow) : IClock
