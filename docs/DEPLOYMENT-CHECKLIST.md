@@ -1,6 +1,6 @@
-# Checklist do piloto no servidor Protheus
+# Checklist de implantação no Windows Server
 
-Use dados sintéticos na primeira validação. Não envie ao repositório senhas, tokens, INI, logs reais, IPs públicos, nomes de clientes ou backups.
+Este checklist orienta a implantação segura do Protheus Pulse. Use dados sintéticos na validação inicial e nunca envie ao repositório senhas, tokens, INI, logs reais, IPs públicos, nomes de clientes ou backups.
 
 ## 1. Preparar
 
@@ -13,7 +13,7 @@ Use dados sintéticos na primeira validação. Não envie ao repositório senhas
 
 ## 2. Instalar
 
-- [ ] Executar `protheus-pulse-0.1.5-win-x64-setup.exe` e aprovar a elevação solicitada.
+- [ ] Executar `protheus-pulse-1.0.0-win-x64-setup.exe` e aprovar a elevação solicitada.
 - [ ] Confirmar serviço `ProtheusPulse` em execução como `LocalService`.
 - [ ] Confirmar `http://127.0.0.1:5058/health/live` com HTTP 200.
 - [ ] Confirmar `http://127.0.0.1:5058/health/ready` com HTTP 200.
@@ -55,6 +55,6 @@ Use dados sintéticos na primeira validação. Não envie ao repositório senhas
 - [ ] Criar backup protegido de `C:\ProgramData\ProtheusPulse` com o serviço parado.
 - [ ] Testar restauração/rollback em laboratório.
 - [ ] Definir responsável por alertas, retenção, atualização e revisão de acesso.
-- [ ] Registrar versão, SHA-256, data, operador e resultado do piloto.
+- [ ] Registrar versão, SHA-256, data, operador e resultado da implantação.
 
 Critério de aceite: health checks, login, coleta, alerta, resolução, heartbeat, reinício e backup funcionam sem escrita nos recursos Protheus e sem segredo em UI, log ou repositório.

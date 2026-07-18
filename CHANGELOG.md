@@ -2,7 +2,7 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [1.0.0] - 2026-07-18
 
 ### Fixed
 
@@ -39,7 +39,7 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Ação de reconhecimento de alerta no dashboard.
 - Heartbeats autenticados com token de uso único, hash SHA-256, rotação, janelas diárias e detecção de atraso.
 - Pacote Windows self-contained, scripts idempotentes de instalação/desinstalação e fonte Inno Setup.
-- Checklist operacional do piloto, health check pós-instalação e procedimentos atualizados de rollback.
+- Checklist operacional de implantação, health check pós-instalação e procedimentos de rollback.
 
 ### Security
 

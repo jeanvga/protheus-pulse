@@ -2,17 +2,17 @@
 
 Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
 
-> **Estado do projeto:** MVP 0.1.5 concluído e pronto para piloto controlado. Cadastro e configuração integral pelo painel local, descoberta, coletores, alertas, heartbeats, retenção e instalação Windows estão funcionais.
+> **Versão estável:** 1.0.0. O Protheus Pulse está pronto para implantação e operação, com configuração pelo painel local, descoberta assistida, coletores, alertas, heartbeats, retenção e instalador para Windows.
 
 ![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
 
-## Por que existe
+## Visão geral
 
 O Pulse consolida estado atual, causa, evidência sanitizada e histórico técnico sem depender de nuvem. A arquitetura é somente leitura: o produto não inicia ou para serviços, não executa binários Protheus e não altera INI, RPO, banco ou arquivos monitorados.
 
-Este é um produto independente, não oficial e não afiliado à TOTVS. O repositório não contém binários, bibliotecas, documentação fechada, logotipos ou dados reais de clientes.
+Este é um produto independente, não oficial e não afiliado à TOTVS. O repositório público contém somente código-fonte, documentação, exemplos sintéticos e automação de build; não contém bibliotecas proprietárias, documentação restrita, logotipos ou dados reais de clientes.
 
-## O que já funciona
+## Recursos
 
 - Host ASP.NET Core .NET 8 preparado para executar como Windows Service.
 - React, Vite e TypeScript compilados e servidos pelo mesmo processo.
@@ -22,10 +22,10 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Bind padrão em `127.0.0.1:5058`, limites de requisição e cabeçalhos de segurança.
 - Dashboard responsivo em português, temas claro/escuro e SignalR.
 - Health checks em `/health/live` e `/health/ready`.
-- OpenAPI/Swagger em desenvolvimento e no modo demo.
+- OpenAPI/Swagger no ambiente de desenvolvimento local e no modo demonstração.
 - Modo `--demo` persistido, com dois ambientes, alerta de memória, job atrasado, TLS próximo do vencimento, erros agrupados e incidente que abre e se resolve.
 - Serilog com rotação diária, limite de tamanho e retenção de 14 arquivos.
-- Testes xUnit, Vitest e Playwright; CI reproduzível em `windows-latest`.
+- Validação automatizada com xUnit, Vitest e Playwright em `windows-latest`.
 - Cadastro, edição e remoção de instalações pelo painel local, incluindo serviços Windows, executável, INI, logs, TCP e HTTP/HTTPS.
 - Descoberta assistida de serviços e arquivos e coleta imediata pelo navegador, sem PowerShell na configuração operacional.
 - Importação JSON/YAML com prévia, schema estrito e confirmação explícita.
@@ -38,12 +38,18 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Serviço Windows sob `LocalService`, chave JWT em arquivo restrito, DPAPI, ACLs mínimas e recuperação automática.
 - `setup.exe` self-contained em Inno Setup, sem PowerShell no fluxo normal, com SHA-256, serviço `LocalService` e health check pós-instalação.
 
-## Executar a demonstração
+## Instalação
+
+Para uso em Windows Server, utilize `protheus-pulse-1.0.0-win-x64-setup.exe` junto do arquivo `.sha256` correspondente. O instalador registra o serviço, gera a chave JWT local, preserva os dados entre atualizações e valida a disponibilidade ao concluir.
+
+Consulte [Instalação no Windows Server](docs/INSTALLATION.md) para pré-requisitos, verificação do pacote, primeiro acesso e permissões. Organizações que compilam o próprio pacote encontram o processo reproduzível em [installer/README.md](installer/README.md).
+
+## Avaliação local com dados sintéticos
 
 Pré-requisitos: SDK .NET 8 e Node.js 24 ou versão compatível com Vite 8.
 
 ```powershell
-git clone <url-do-repositorio>
+git clone https://github.com/jeanvga/protheus-pulse.git
 Set-Location protheus-pulse
 npm ci
 npm run ui:build
@@ -58,7 +64,7 @@ Abra [http://127.0.0.1:5058](http://127.0.0.1:5058) e use:
 
 Essas credenciais existem **somente** quando `--demo` está ativo. Dados simulados são marcados no banco e na interface.
 
-Para uma execução que não seja demo, defina uma chave JWT de pelo menos 32 caracteres:
+Para executar o código-fonte fora do modo demonstração, defina uma chave JWT de pelo menos 32 caracteres:
 
 ```powershell
 $env:PULSE_JWT_SIGNING_KEY = '<segredo-aleatorio-com-pelo-menos-32-caracteres>'
@@ -102,7 +108,7 @@ installer/                       fonte reproduzível do Inno Setup
 scripts/                         build, release, instalação e execução local
 ```
 
-## Verificar o projeto
+## Validação para contribuidores
 
 ```powershell
 dotnet build ProtheusPulse.sln --configuration Release
@@ -114,14 +120,6 @@ npm run ui:e2e
 npm audit --audit-level=moderate
 ```
 
-## Roadmap verificável
-
-- [x] Fase 1 — fundação, banco, serviço, API, frontend e demo.
-- [x] Fase 2 — cadastro manual, importação, descoberta segura e parser INI sanitizado.
-- [x] Fase 3 — coletores de serviço/processo, TCP/HTTP, arquivo/disco e logs incrementais.
-- [x] Fase 4 — motor completo de regras, notificações, retenção e agregação.
-- [x] Fase 5 — heartbeats autenticados, instalador EXE em Inno Setup e hardening final.
-
 ## Documentação
 
 - [Instalação no Windows Server](docs/INSTALLATION.md)
@@ -131,7 +129,7 @@ npm audit --audit-level=moderate
 - [Alertas, manutenção e notificações](docs/ALERTING.md)
 - [Heartbeats autenticados](docs/HEARTBEATS.md)
 - [Privacidade e retenção](docs/PRIVACY-RETENTION.md)
-- [Checklist do piloto](docs/PILOT-CHECKLIST.md)
+- [Checklist de implantação](docs/DEPLOYMENT-CHECKLIST.md)
 - [Threat model](docs/THREAT-MODEL.md)
 - [Como contribuir](CONTRIBUTING.md)
 - [Política de segurança](SECURITY.md)

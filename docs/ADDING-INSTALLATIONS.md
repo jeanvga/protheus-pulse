@@ -1,6 +1,6 @@
 # Cadastro de instalações
 
-A Fase 2 oferece cadastro manual, importação versionada e descoberta somente leitura. A aplicação permite múltiplas instalações e componentes de tipos variados, sem nomes fixos de serviço ou executável.
+O Protheus Pulse oferece cadastro manual, importação versionada e descoberta somente leitura. A aplicação permite múltiplas instalações e componentes de tipos variados, sem depender de nomes fixos de serviço ou executável.
 
 ## Cadastro pelo painel local
 
@@ -104,7 +104,7 @@ Para o INI, envie `root` e `path`. Comentários não são retornados e proprieda
 
 Não substitua os exemplos versionados por caminhos, IPs ou nomes reais de clientes ao contribuir.
 
-## Regras que permanecerão invariantes
+## Garantias de segurança
 
 - nunca varrer `C:\`, todos os discos ou compartilhamentos automaticamente;
 - confirmar candidatos antes de persistir;

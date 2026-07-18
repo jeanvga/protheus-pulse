@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
-    [string]$Version = '0.1.5',
+    [string]$Version = '1.0.0',
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
     [switch]$SkipTests,
@@ -49,7 +49,7 @@ try {
     Copy-Item -LiteralPath .\scripts\install-service.ps1 -Destination $packageRoot
     Copy-Item -LiteralPath .\scripts\install.cmd -Destination $packageRoot
     Copy-Item -LiteralPath .\scripts\uninstall-service.ps1 -Destination $packageRoot
-    Copy-Item -LiteralPath .\docs\PILOT-CHECKLIST.md -Destination $packageRoot
+    Copy-Item -LiteralPath .\docs\DEPLOYMENT-CHECKLIST.md -Destination $packageRoot
     Copy-Item -LiteralPath .\LICENSE -Destination $packageRoot
     Compress-Archive -LiteralPath $packageRoot -DestinationPath $zipPath -CompressionLevel Optimal
     $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash

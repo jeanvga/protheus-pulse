@@ -29,7 +29,7 @@ Ao terminar, uma falha persistente reativa o incidente; uma recuperação o reso
 
 ## Notificações
 
-Administradores configuram canais em `/api/v1/notification-channels`. O MVP aceita `Webhook`, `Teams`, `Slack` e `Discord`, sempre com URL HTTPS sem credenciais embutidas ou fragmento.
+Administradores configuram canais em `/api/v1/notification-channels`. A versão 1.0 aceita `Webhook`, `Teams`, `Slack` e `Discord`, sempre com URL HTTPS sem credenciais embutidas ou fragmento.
 
 A URL é cifrada com ASP.NET Core Data Protection e nunca é devolvida pela API ou gravada em auditoria/log. O envio:
 

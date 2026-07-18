@@ -53,7 +53,7 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 
 A chave JWT de produção vem de `PULSE_JWT_SIGNING_KEY_FILE`, criado pelo instalador com aleatoriedade criptográfica e ACL restrita. Senhas usam PBKDF2-SHA256. Tokens de heartbeat são armazenados somente como SHA-256. URLs de notificação e chaves do Data Protection são protegidas com DPAPI da máquina e ACL do diretório.
 
-## Riscos residuais do MVP
+## Riscos residuais
 
 - Um administrador local ou comprometimento da conta do serviço permanece dentro do limite de confiança do host.
 - SQLite não oferece criptografia nativa; backup e volume dependem da proteção do Windows/BitLocker e dos controles corporativos.

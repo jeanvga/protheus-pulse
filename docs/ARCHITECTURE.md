@@ -14,7 +14,7 @@ O Protheus Pulse é um monólito modular local. Um único processo hospeda a API
 
 Dependências apontam para dentro: `Service → Application/Infrastructure → Domain`.
 
-A camada sugerida `ProtheusPulse.Web` foi incorporada a `ProtheusPulse.Service` nesta fase. Como API, SignalR e Worker são publicados no mesmo processo, um projeto Web separado criaria outra fronteira de implantação sem isolamento real. Os endpoints permanecem separados por módulos no código; a camada pode ser extraída depois sem mover regras de domínio ou infraestrutura.
+API, SignalR e Worker são publicados pelo projeto `ProtheusPulse.Service`. Os endpoints permanecem separados por módulos no código, mantendo a organização interna sem criar outra unidade de implantação.
 
 ## Fluxo de monitoramento
 
@@ -42,14 +42,14 @@ JWT é enviado pelo cabeçalho `Authorization`, não por cookie; isso reduz a su
 
 O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos sensíveis desnecessários.
 
-## Decisões da Fase 1
+## Implantação e segurança básica
 
 - Porta padrão `5058`, somente em loopback.
 - Swagger disponível apenas em desenvolvimento ou demo.
 - Chave JWT obrigatória por variável de ambiente ou arquivo secreto fora de desenvolvimento/demo.
 - Dados demonstrativos persistidos e marcados com `IsDemo`.
 
-## Decisões da Fase 2
+## Configuração e descoberta
 
 - Importações usam schema versionado e rejeitam propriedades desconhecidas, reduzindo configuração ambígua e entrada acidental de segredos.
 - A prévia nunca persiste; a aplicação exige `confirm: true` e grava instalações, alvos e auditoria em uma única operação.
@@ -57,7 +57,7 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 - Descoberta de serviços exige filtro textual e retorna apenas nome, nome de exibição e estado; não lê linha de comando nem altera o serviço.
 - A inspeção de INI só aceita arquivo contido em raiz autorizada e remove comentários, limita tamanho/linhas e mascara chaves sensíveis antes da resposta.
 
-## Decisões da Fase 3
+## Coleta e acesso à rede
 
 - Um único worker agenda componentes não demonstrativos; cada componente usa escopo de banco isolado, timeout por coletor e concorrência global limitada.
 - Os coletores devolvem um contrato comum e não recebem operações de escrita no alvo. Apenas resultados, métricas e cursores locais são alterados.
@@ -65,7 +65,7 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 - HTTP aceita somente `GET`/`HEAD`, não segue redirects e lê no máximo 64 KiB quando precisa validar conteúdo.
 - Logs são lidos a partir de cursor persistido, no máximo 256 KiB por ciclo por padrão. Linhas são limitadas, redigidas e agrupadas por fingerprint antes da persistência.
 
-## Decisões da Fase 4
+## Alertas, notificações e retenção
 
 - O primeiro ciclo cria uma regra padrão por tipo de probe; por padrão, duas falhas consecutivas abrem o incidente e cinco minutos de cooldown evitam reabertura imediata.
 - Regras customizadas podem escolher estados de falha, severidade, quantidade consecutiva e cooldown. Recuperação resolve automaticamente; operador pode reconhecer sem alterar o alvo.
@@ -73,7 +73,7 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 - Configuração de webhook é protegida pelo ASP.NET Core Data Protection e nunca volta pela API. Notificações externas contêm apenas tipo de evento, correlação, severidade e estado.
 - Métricas detalhadas com mais de sete dias são agregadas por hora. Probes, logs, métricas agregadas, alertas resolvidos e janelas expiradas são removidos após a retenção configurada.
 
-## Decisões da Fase 5
+## Heartbeats e instalação no Windows
 
 - Heartbeats recebem um token de 256 bits uma única vez e persistem somente SHA-256. A comparação é constante, a rotação revoga imediatamente o valor anterior e o endpoint limita chamadas por job/origem.
 - O relógio do servidor define o evento; payload livre do cliente não é persistido. Janelas diárias podem atravessar meia-noite e atrasos fora da janela não geram incidente.

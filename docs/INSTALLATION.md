@@ -34,17 +34,17 @@ O instalador interrompe o serviço da versão anterior, repara somente as ACLs a
 
 Se o serviço não iniciar, a mensagem do próprio assistente mostra a causa resumida. O diagnóstico completo fica em `C:\ProgramData\ProtheusPulse\logs\install-diagnostics.txt`.
 
-O build reproduzível gera SHA-256, mas não inventa uma identidade de publicador. Até um certificado Authenticode corporativo ser configurado, o Windows pode mostrar “Publicador desconhecido”; isso é diferente do bloqueio de script não assinado e não exige alterar a política do PowerShell. Para distribuição definitiva, assine o EXE e valide a cadeia do certificado.
+O build reproduzível gera SHA-256, mas a identidade do publicador depende de um certificado Authenticode. Builds locais sem certificado podem exibir “Publicador desconhecido”; isso é diferente do bloqueio de script não assinado e não exige alterar a política do PowerShell. Pacotes distribuídos por uma organização devem ser assinados e ter a cadeia do certificado validada.
 
 ## Instalar pelo ZIP (alternativo)
 
 ```powershell
-$package = 'C:\Pacotes\protheus-pulse-0.1.5-win-x64.zip'
+$package = 'C:\Pacotes\protheus-pulse-1.0.0-win-x64.zip'
 (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
 # Compare visualmente com o arquivo .sha256 obtido por canal confiável.
 
-Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.5'
-Set-Location 'C:\Pacotes\ProtheusPulse-0.1.5\protheus-pulse-0.1.5-win-x64'
+Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-1.0.0'
+Set-Location 'C:\Pacotes\ProtheusPulse-1.0.0\protheus-pulse-1.0.0-win-x64'
 .\install.cmd
 ```
 

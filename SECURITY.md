@@ -2,7 +2,7 @@
 
 ## Versões suportadas
 
-Enquanto o projeto estiver antes da versão 1.0, apenas o código da branch principal recebe correções de segurança.
+A série 1.x recebe correções de segurança na branch `main`. Versões anteriores à 1.0 não são mais suportadas.
 
 ## Relatar uma vulnerabilidade
 
