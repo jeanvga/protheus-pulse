@@ -215,6 +215,18 @@ internal static class WindowsServiceInstaller
         string secretDirectory,
         string keysDirectory)
     {
+        // Versões antigas podem ter deixado arquivos com dono e ACL que negam
+        // acesso administrativo; sem a posse, o icacls abaixo falharia parcialmente.
+        var takeOwnership = await RunProcessAsync(
+            ResolveSystemExecutable("takeown.exe"),
+            "/F",
+            dataDirectory,
+            "/A",
+            "/R",
+            "/D",
+            "Y");
+        takeOwnership.EnsureSuccess("assumir a propriedade administrativa dos dados", 0, 1);
+
         await RunIcaclsAsync(
             installDirectory,
             "/grant:r",
@@ -274,34 +286,29 @@ internal static class WindowsServiceInstaller
     private static async Task CreateOrUpdateServiceAsync(string executablePath, string dataDirectory, string jwtKeyPath)
     {
         var quotedExecutablePath = $"\"{executablePath}\"";
-        ProcessResult result;
-        if (ServiceExists())
+        Task<ProcessResult> ConfigureAsync(string verb) => RunScAsync(
+            verb,
+            ServiceName,
+            "binPath=",
+            quotedExecutablePath,
+            "start=",
+            "delayed-auto",
+            "obj=",
+            ServiceAccount,
+            "DisplayName=",
+            ServiceDisplayName);
+
+        if (IsServiceMarkedForDeletion())
         {
-            result = await RunScAsync(
-                "config",
-                ServiceName,
-                "binPath=",
-                quotedExecutablePath,
-                "start=",
-                "delayed-auto",
-                "obj=",
-                ServiceAccount,
-                "DisplayName=",
-                ServiceDisplayName);
+            await WaitForPendingServiceDeletionAsync();
         }
-        else
+
+        var result = await ConfigureAsync(ServiceExists() ? "config" : "create");
+        if (result.ExitCode == 1072)
         {
-            result = await RunScAsync(
-                "create",
-                ServiceName,
-                "binPath=",
-                quotedExecutablePath,
-                "start=",
-                "delayed-auto",
-                "obj=",
-                ServiceAccount,
-                "DisplayName=",
-                ServiceDisplayName);
+            // O SCM ainda tinha uma exclusão pendente; aguarda concluir e recria o serviço.
+            await WaitForPendingServiceDeletionAsync();
+            result = await ConfigureAsync("create");
         }
 
         result.EnsureSuccess("criar ou atualizar o serviço", 0);
@@ -344,6 +351,33 @@ internal static class WindowsServiceInstaller
     {
         using var serviceKey = Registry.LocalMachine.OpenSubKey(ServiceRegistryPath, writable: false);
         return serviceKey is not null;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool IsServiceMarkedForDeletion()
+    {
+        using var serviceKey = Registry.LocalMachine.OpenSubKey(ServiceRegistryPath, writable: false);
+        return serviceKey?.GetValue("DeleteFlag") is int deleteFlag && deleteFlag != 0;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static async Task WaitForPendingServiceDeletionAsync()
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            if (!ServiceExists())
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+
+        throw new InvalidOperationException(
+            "O serviço ProtheusPulse está marcado para exclusão e o Windows não concluiu a remoção. "
+            + "Feche o console services.msc, o Gerenciador de Tarefas e outras ferramentas administrativas "
+            + "(ou reinicie o servidor) e execute o instalador novamente.");
     }
 
     [SupportedOSPlatform("windows")]
@@ -486,7 +520,7 @@ internal static class WindowsServiceInstaller
             }
 
             await AppendRecentApplicationLogsAsync(diagnostics, logDirectory);
-            await File.WriteAllTextAsync(diagnosticPath, diagnostics.ToString(), new UTF8Encoding(false));
+            diagnosticPath = await WriteDiagnosticsFileAsync(logDirectory, diagnosticPath, diagnostics.ToString());
         }
         catch (Exception diagnosticException)
         {
@@ -494,6 +528,42 @@ internal static class WindowsServiceInstaller
         }
 
         return diagnosticPath;
+    }
+
+    private static async Task<string> WriteDiagnosticsFileAsync(string logDirectory, string diagnosticPath, string content)
+    {
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            try
+            {
+                if (File.Exists(diagnosticPath))
+                {
+                    File.SetAttributes(diagnosticPath, FileAttributes.Normal);
+                }
+
+                await File.WriteAllTextAsync(diagnosticPath, content, new UTF8Encoding(false));
+                return diagnosticPath;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == 1)
+                {
+                    // ACLs herdadas de versões antigas podem negar a escrita administrativa; repara e tenta de novo.
+                    await RunProcessAsync(
+                        ResolveSystemExecutable("icacls.exe"),
+                        logDirectory,
+                        "/grant:r",
+                        "*S-1-5-32-544:(OI)(CI)F",
+                        "/T",
+                        "/C",
+                        "/Q");
+                }
+            }
+        }
+
+        var fallbackPath = Path.Combine(Path.GetTempPath(), "protheus-pulse-install-diagnostics.txt");
+        await File.WriteAllTextAsync(fallbackPath, content, new UTF8Encoding(false));
+        return fallbackPath;
     }
 
     private static async Task AppendCommandOutputAsync(StringBuilder diagnostics, string title, params string[] arguments)

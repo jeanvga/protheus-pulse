@@ -2,6 +2,14 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.0.2] - 2026-07-18
+
+### Fixed
+
+- Instalador agora trata serviço marcado para exclusão (erro 1072): aguarda o Windows concluir a remoção pendente e recria o serviço; quando um console administrativo segura a exclusão, a mensagem orienta fechar o services.msc ou reiniciar o servidor.
+- Instalador assume a propriedade administrativa de `C:\ProgramData\ProtheusPulse` antes de aplicar ACLs, corrigindo permissões herdadas de versões antigas que negavam acesso até ao administrador.
+- Gravação do `install-diagnostics.txt` repara a ACL da pasta de logs quando a escrita é negada e usa `%TEMP%` como último recurso, para o diagnóstico nunca se perder.
+
 ## [1.0.1] - 2026-07-18
 
 ### Fixed
