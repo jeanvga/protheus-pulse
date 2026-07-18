@@ -158,6 +158,7 @@ internal static class WindowsServiceInstaller
         Directory.CreateDirectory(logsDirectory);
 
         await ApplyDirectoryAccessControlAsync(installDirectory, dataDirectory, secretDirectory, keysDirectory);
+        ClearDatabaseReadOnlyAttributes(dataDirectory);
         CreateOrValidateJwtKey(jwtKeyPath);
         await ApplyJwtKeyAccessControlAsync(jwtKeyPath);
         await CreateOrUpdateServiceAsync(executablePath, dataDirectory, jwtKeyPath);
@@ -185,6 +186,21 @@ internal static class WindowsServiceInstaller
         var deleteResult = await RunScAsync("delete", ServiceName);
         deleteResult.EnsureSuccess("remover o serviço", 0, 1060, 1072);
         Console.WriteLine("Serviço removido. Banco, chaves e logs foram preservados.");
+    }
+
+    private static void ClearDatabaseReadOnlyAttributes(string dataDirectory)
+    {
+        try
+        {
+            foreach (var databaseFile in Directory.EnumerateFiles(dataDirectory, "pulse.db*", SearchOption.TopDirectoryOnly))
+            {
+                File.SetAttributes(databaseFile, FileAttributes.Normal);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Aviso: não foi possível normalizar os atributos do banco: {exception.Message}");
+        }
     }
 
     private static void CreateOrValidateJwtKey(string jwtKeyPath)
@@ -226,6 +242,10 @@ internal static class WindowsServiceInstaller
             "/D",
             "Y");
         takeOwnership.EnsureSuccess("assumir a propriedade administrativa dos dados", 0, 1);
+
+        // /grant:r não remove ACEs explícitas antigas (inclusive Deny); o /reset
+        // zera o DACL herdado de qualquer versão anterior antes do estado final.
+        await RunIcaclsAsync(dataDirectory, "/reset", "/T", "/C", "/Q");
 
         await RunIcaclsAsync(
             installDirectory,
@@ -503,6 +523,25 @@ internal static class WindowsServiceInstaller
             {
                 diagnostics.AppendLine(line.Trim());
             }
+
+            var dataAcl = await RunProcessAsync(ResolveSystemExecutable("icacls.exe"), dataDirectory);
+            diagnostics.AppendLine("ACL do diretório de dados:");
+            diagnostics.AppendLine(dataAcl.StandardOutput.Trim());
+
+            var databasePath = Path.Combine(dataDirectory, "pulse.db");
+            if (File.Exists(databasePath))
+            {
+                var databaseAcl = await RunProcessAsync(ResolveSystemExecutable("icacls.exe"), databasePath);
+                diagnostics.AppendLine(CultureInfo.InvariantCulture, $"ACL do banco ({File.GetAttributes(databasePath)}):");
+                diagnostics.AppendLine(databaseAcl.StandardOutput.Trim());
+            }
+
+            var serviceProcesses = await RunProcessAsync(
+                ResolveSystemExecutable("tasklist.exe"),
+                "/FI",
+                "IMAGENAME eq ProtheusPulse.Service.exe");
+            diagnostics.AppendLine("Processos ProtheusPulse.Service.exe:");
+            diagnostics.AppendLine(serviceProcesses.StandardOutput.Trim());
 
             var scmEvents = await RunProcessAsync(
                 ResolveSystemExecutable("wevtutil.exe"),

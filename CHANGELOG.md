@@ -2,6 +2,14 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.0.3] - 2026-07-18
+
+### Fixed
+
+- Serviço não falha mais com `SQLite Error 14` ao criar `pulse.db`: o instalador agora executa `icacls /reset` no diretório de dados antes de aplicar o DACL final, removendo ACEs explícitas (inclusive Deny) herdadas de instalações antigas que `/grant:r` não substitui.
+- Instalador normaliza atributos somente leitura de `pulse.db*` durante a configuração.
+- `install-diagnostics.txt` agora inclui a ACL efetiva do diretório de dados e do banco, os processos `ProtheusPulse.Service.exe` em execução e os atributos do arquivo, eliminando diagnósticos às cegas.
+
 ## [1.0.2] - 2026-07-18
 
 ### Fixed

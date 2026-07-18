@@ -144,7 +144,7 @@ export default function App() {
 
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => void loadSummary()}><RefreshCw size={15} /> Tentar novamente</button></div>}
         {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} addInstallation={() => setInstallationEditorId(null)} editInstallation={setInstallationEditorId} />}
-        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.0.2 · produto independente</span></footer>
+        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.0.3 · produto independente</span></footer>
       </main>
       {installationEditorId !== undefined && <InstallationDialog installationId={installationEditorId} close={() => setInstallationEditorId(undefined)} onSaved={installationCreated} />}
     </div>
