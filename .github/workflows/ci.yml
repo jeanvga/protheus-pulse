@@ -125,9 +125,16 @@ jobs:
           $uninstallExitCode = $null
           $serviceSurvivedUninstall = $false
           try {
-            & $setup '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART' "/LOG=$installLog"
-            if ($LASTEXITCODE -ne 0) {
-              throw "setup.exe retornou $LASTEXITCODE"
+            $installArguments = @(
+              '/VERYSILENT'
+              '/SUPPRESSMSGBOXES'
+              '/NORESTART'
+              '/SP-'
+              ('/LOG="{0}"' -f $installLog)
+            )
+            $installProcess = Start-Process -FilePath $setup -ArgumentList $installArguments -Wait -PassThru
+            if ($installProcess.ExitCode -ne 0) {
+              throw "setup.exe retornou $($installProcess.ExitCode)"
             }
             $service = Get-CimInstance Win32_Service -Filter "Name='ProtheusPulse'"
             if ($service.State -ne 'Running' -or $service.StartName -notmatch 'LocalService') {
@@ -149,8 +156,8 @@ jobs:
           finally {
             $uninstaller = Join-Path $installRoot 'unins000.exe'
             if (Test-Path -LiteralPath $uninstaller) {
-              & $uninstaller '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART'
-              $uninstallExitCode = $LASTEXITCODE
+              $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+              $uninstallExitCode = $uninstallProcess.ExitCode
             }
             if (Get-Service -Name ProtheusPulse -ErrorAction SilentlyContinue) {
               $serviceSurvivedUninstall = $true
