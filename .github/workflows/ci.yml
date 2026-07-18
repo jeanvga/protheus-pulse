@@ -123,6 +123,7 @@ jobs:
           $installRoot = Join-Path $env:ProgramFiles 'Protheus Pulse'
           $dataRoot = Join-Path $env:ProgramData 'ProtheusPulse'
           $uninstallExitCode = $null
+          $installerCompleted = $false
           $serviceSurvivedUninstall = $false
           try {
             $installArguments = @(
@@ -136,6 +137,7 @@ jobs:
             if ($installProcess.ExitCode -ne 0) {
               throw "setup.exe retornou $($installProcess.ExitCode)"
             }
+            $installerCompleted = $true
             $service = Get-CimInstance Win32_Service -Filter "Name='ProtheusPulse'"
             if ($service.State -ne 'Running' -or $service.StartName -notmatch 'LocalService') {
               throw "Serviço instalado em estado ou conta inesperados."
@@ -155,7 +157,7 @@ jobs:
           }
           finally {
             $uninstaller = Join-Path $installRoot 'unins000.exe'
-            if (Test-Path -LiteralPath $uninstaller) {
+            if ($installerCompleted -and (Test-Path -LiteralPath $uninstaller)) {
               $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
               $uninstallExitCode = $uninstallProcess.ExitCode
             }

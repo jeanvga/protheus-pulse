@@ -79,7 +79,7 @@ function Initialize-InstallDirectoryAcl([string]$Path) {
     }
 
     Invoke-Icacls @($Path, '/reset', '/T', '/C', '/Q')
-    Invoke-Icacls @($Path, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)RX', '/T', '/C', '/Q')
+    Invoke-Icacls @($Path, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-32-545:(OI)(CI)RX', '*S-1-5-19:(OI)(CI)RX', '/T', '/C', '/Q')
 }
 
 Assert-Administrator
@@ -142,7 +142,7 @@ if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
     throw "O executável do serviço não foi encontrado em $installPath."
 }
 
-Invoke-Icacls @($installPath, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-19:(OI)(CI)RX', '/T', '/C', '/Q')
+Invoke-Icacls @($installPath, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-32-545:(OI)(CI)RX', '*S-1-5-19:(OI)(CI)RX', '/T', '/C', '/Q')
 
 if (-not (Test-Path -LiteralPath $jwtKeyPath -PathType Leaf)) {
     $buffer = New-Object byte[] 64

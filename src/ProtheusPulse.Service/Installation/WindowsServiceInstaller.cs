@@ -217,10 +217,7 @@ internal static class WindowsServiceInstaller
     {
         await RunIcaclsAsync(
             installDirectory,
-            "/inheritance:r",
             "/grant:r",
-            "*S-1-5-18:(OI)(CI)F",
-            "*S-1-5-32-544:(OI)(CI)F",
             "*S-1-5-19:(OI)(CI)RX",
             "/T",
             "/C",
@@ -269,7 +266,7 @@ internal static class WindowsServiceInstaller
 
     private static async Task RunIcaclsAsync(params string[] arguments)
     {
-        var result = await RunProcessAsync(Path.Combine(Environment.SystemDirectory, "icacls.exe"), arguments);
+        var result = await RunProcessAsync(ResolveSystemExecutable("icacls.exe"), arguments);
         result.EnsureSuccess("aplicar as permissões de arquivos", 0);
     }
 
@@ -448,9 +445,15 @@ internal static class WindowsServiceInstaller
             Directory.CreateDirectory(logDirectory);
             var diagnostics = new StringBuilder()
                 .AppendLine(CultureInfo.InvariantCulture, $"UTC: {DateTimeOffset.UtcNow:O}")
-                .AppendLine(CultureInfo.InvariantCulture, $"Operação: {exception.GetType().Name}: {exception.Message}")
+                .AppendLine(CultureInfo.InvariantCulture, $"Operação: {exception}")
+                .AppendLine(CultureInfo.InvariantCulture, $"HRESULT: 0x{exception.HResult:X8}")
                 .AppendLine(CultureInfo.InvariantCulture, $"Executável: {Environment.ProcessPath}")
                 .AppendLine(CultureInfo.InvariantCulture, $"Dados: {dataDirectory}");
+
+            if (exception is FileNotFoundException fileNotFoundException)
+            {
+                diagnostics.AppendLine(CultureInfo.InvariantCulture, $"Arquivo ausente: {fileNotFoundException.FileName ?? "(não informado)"}");
+            }
 
             if (ServiceExists())
             {
@@ -460,7 +463,7 @@ internal static class WindowsServiceInstaller
                 await AppendCommandOutputAsync(diagnostics, "sc qc", "qc", ServiceName);
             }
 
-            var netstat = await RunProcessAsync(Path.Combine(Environment.SystemDirectory, "netstat.exe"), "-ano", "-p", "tcp");
+            var netstat = await RunProcessAsync(ResolveSystemExecutable("netstat.exe"), "-ano", "-p", "tcp");
             diagnostics.AppendLine("Porta 5058:");
             foreach (var line in netstat.StandardOutput.Split(Environment.NewLine).Where(item => item.Contains(":5058", StringComparison.Ordinal)))
             {
@@ -514,7 +517,27 @@ internal static class WindowsServiceInstaller
     }
 
     private static Task<ProcessResult> RunScAsync(params string[] arguments) =>
-        RunProcessAsync(Path.Combine(Environment.SystemDirectory, "sc.exe"), arguments);
+        RunProcessAsync(ResolveSystemExecutable("sc.exe"), arguments);
+
+    private static string ResolveSystemExecutable(string executableName)
+    {
+        var systemPath = Path.Combine(Environment.SystemDirectory, executableName);
+        if (File.Exists(systemPath))
+        {
+            return systemPath;
+        }
+
+        var windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var fallbackPath = Path.Combine(windowsDirectory, "System32", executableName);
+        if (File.Exists(fallbackPath))
+        {
+            return fallbackPath;
+        }
+
+        throw new FileNotFoundException(
+            $"A ferramenta do Windows {executableName} não foi encontrada.",
+            systemPath);
+    }
 
     private static async Task<ProcessResult> RunProcessAsync(string fileName, params string[] arguments)
     {

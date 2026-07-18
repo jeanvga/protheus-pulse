@@ -174,7 +174,7 @@ begin
 
     if (not Exec(
       ExpandConstant('{sys}\icacls.exe'),
-      AddQuotes(ExpandConstant('{app}')) + ' /grant:r *S-1-5-32-544:(OI)(CI)F /T /C /Q',
+      AddQuotes(ExpandConstant('{app}')) + ' /grant:r *S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX /T /C /Q',
       '',
       SW_HIDE,
       ewWaitUntilTerminated,
