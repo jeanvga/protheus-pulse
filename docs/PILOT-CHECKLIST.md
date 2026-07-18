@@ -13,7 +13,7 @@ Use dados sintéticos na primeira validação. Não envie ao repositório senhas
 
 ## 2. Instalar
 
-- [ ] Executar `protheus-pulse-0.1.4-win-x64-setup.exe` e aprovar a elevação solicitada.
+- [ ] Executar `protheus-pulse-0.1.5-win-x64-setup.exe` e aprovar a elevação solicitada.
 - [ ] Confirmar serviço `ProtheusPulse` em execução como `LocalService`.
 - [ ] Confirmar `http://127.0.0.1:5058/health/live` com HTTP 200.
 - [ ] Confirmar `http://127.0.0.1:5058/health/ready` com HTTP 200.
@@ -23,6 +23,7 @@ Use dados sintéticos na primeira validação. Não envie ao repositório senhas
 ## 3. Cadastrar sem impacto
 
 - [ ] Começar por uma instalação de desenvolvimento/homologação.
+- [ ] Fazer todo o cadastro em `http://127.0.0.1:5058`, sem scripts ou edição manual de configuração.
 - [ ] Cadastrar um componente por vez.
 - [ ] Conceder à conta do serviço apenas leitura nos caminhos necessários.
 - [ ] Usar UNC, nunca unidade mapeada; revisar permissões do compartilhamento e NTFS.

@@ -74,13 +74,13 @@ jobs:
       - name: Publish self-contained Windows package
         shell: pwsh
         run: |
-          $packageRoot = '.\artifacts\protheus-pulse-0.1.4-win-x64'
+          $packageRoot = '.\artifacts\protheus-pulse-0.1.5-win-x64'
           dotnet clean .\src\ProtheusPulse.Service --configuration Release --runtime win-x64
-          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.4 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
+          dotnet publish .\src\ProtheusPulse.Service --configuration Release --runtime win-x64 --self-contained true --output "$packageRoot\app" /p:SkipFrontendBuild=true /p:Version=0.1.5 /p:ContinuousIntegrationBuild=true /p:DebugType=None /p:DebugSymbols=false
           Copy-Item .\scripts\install-service.ps1, .\scripts\install.cmd, .\scripts\uninstall-service.ps1, .\docs\PILOT-CHECKLIST.md, .\LICENSE -Destination $packageRoot
           Compress-Archive -LiteralPath $packageRoot -DestinationPath "$packageRoot.zip" -CompressionLevel Optimal
           $hash = (Get-FileHash -LiteralPath "$packageRoot.zip" -Algorithm SHA256).Hash
-          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.4-win-x64.zip`r`n")
+          [IO.File]::WriteAllText("$packageRoot.zip.sha256", "$hash  protheus-pulse-0.1.5-win-x64.zip`r`n")
 
       - name: Install verified Inno Setup compiler
         shell: pwsh
@@ -104,21 +104,21 @@ jobs:
       - name: Compile single-file Windows installer
         shell: pwsh
         run: |
-          $packageRoot = (Resolve-Path '.\artifacts\protheus-pulse-0.1.4-win-x64').Path
+          $packageRoot = (Resolve-Path '.\artifacts\protheus-pulse-0.1.5-win-x64').Path
           $outputRoot = (Resolve-Path '.\artifacts').Path
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $compiler "/DMyAppVersion=0.1.4" "/DSourceDirectory=$packageRoot\app" "/DOutputDirectory=$outputRoot" .\installer\ProtheusPulse.iss
+          & $compiler "/DMyAppVersion=0.1.5" "/DSourceDirectory=$packageRoot\app" "/DOutputDirectory=$outputRoot" .\installer\ProtheusPulse.iss
           if ($LASTEXITCODE -ne 0) {
             throw "O Inno Setup falhou com código $LASTEXITCODE."
           }
-          $setup = Join-Path $outputRoot 'protheus-pulse-0.1.4-win-x64-setup.exe'
+          $setup = Join-Path $outputRoot 'protheus-pulse-0.1.5-win-x64-setup.exe'
           $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
           [IO.File]::WriteAllText("$setup.sha256", "$hash  $([IO.Path]::GetFileName($setup))`r`n")
 
       - name: Smoke test setup.exe and Windows service
         shell: pwsh
         run: |
-          $setup = (Resolve-Path '.\artifacts\protheus-pulse-0.1.4-win-x64-setup.exe').Path
+          $setup = (Resolve-Path '.\artifacts\protheus-pulse-0.1.5-win-x64-setup.exe').Path
           $installLog = Join-Path $env:RUNNER_TEMP 'protheus-pulse-setup.log'
           $installRoot = Join-Path $env:ProgramFiles 'Protheus Pulse'
           $dataRoot = Join-Path $env:ProgramData 'ProtheusPulse'
@@ -192,7 +192,7 @@ jobs:
         with:
           name: protheus-pulse-win-x64
           path: |
-            artifacts/protheus-pulse-0.1.4-win-x64.zip
-            artifacts/protheus-pulse-0.1.4-win-x64.zip.sha256
-            artifacts/protheus-pulse-0.1.4-win-x64-setup.exe
-            artifacts/protheus-pulse-0.1.4-win-x64-setup.exe.sha256
+            artifacts/protheus-pulse-0.1.5-win-x64.zip
+            artifacts/protheus-pulse-0.1.5-win-x64.zip.sha256
+            artifacts/protheus-pulse-0.1.5-win-x64-setup.exe
+            artifacts/protheus-pulse-0.1.5-win-x64-setup.exe.sha256

@@ -6,12 +6,15 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 
 ### Fixed
 
+- Instalações que permaneciam como `Unknown` por falta de alvos agora podem ser completadas e corrigidas integralmente pelo painel local.
 - Instalador Windows agora recupera propriedade e ACL da pasta gerenciada antes da atualização, usa `robocopy` e inclui iniciador elevado que evita bloqueio por marca de download.
 - Diretórios do instalador não dependem mais de `Join-Path` com variáveis de ambiente durante a carga; o CMD passa caminhos explícitos e o PowerShell usa as pastas especiais do Windows como fallback validado.
 - Payload agora é copiado para uma pasta de runtime nova e versionada, sem sobrescrever arquivos de tentativas anteriores; o Robocopy mantém log de diagnóstico e o CI instala, inicia, valida e remove um serviço Windows real.
 
 ### Added
 
+- Cadastro e edição completos no navegador para serviço Windows, executável, INI, logs, TCP e HTTP/HTTPS, com descoberta assistida, coleta imediata e remoção de instalações.
+- Endpoints administrativos para consultar, atualizar e excluir a configuração técnica preservando IDs e histórico dos componentes mantidos.
 - Fundação modular em .NET 8 com Domain, Application, Infrastructure e Service.
 - Modelo mínimo completo, SQLite/EF Core e migration inicial.
 - Host ASP.NET Core preparado para Windows Service e bind loopback.

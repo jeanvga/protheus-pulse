@@ -5,10 +5,10 @@
 Gere os artefatos em um Windows com .NET 8, Node.js 24 e Inno Setup 6.6 ou mais recente:
 
 ```powershell
-.\scripts\build-release.ps1 -Version 0.1.4
+.\scripts\build-release.ps1 -Version 0.1.5
 ```
 
-O script produz `protheus-pulse-0.1.4-win-x64-setup.exe`, o ZIP técnico alternativo e um `.sha256` para cada pacote. Se o compilador não estiver instalado, use `winget install --id JRSoftware.InnoSetup -e`. O GitHub Actions também pode ser iniciado manualmente e publica o EXE já compilado como artefato.
+O script produz `protheus-pulse-0.1.5-win-x64-setup.exe`, o ZIP técnico alternativo e um `.sha256` para cada pacote. Se o compilador não estiver instalado, use `winget install --id JRSoftware.InnoSetup -e`. O GitHub Actions também pode ser iniciado manualmente e publica o EXE já compilado como artefato.
 
 O artefato só recebe assinatura Authenticode quando um certificado de assinatura de código confiável é configurado no ambiente de release. Não armazene certificado ou senha no repositório.
 

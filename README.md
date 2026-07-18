@@ -2,7 +2,7 @@
 
 Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
 
-> **Estado do projeto:** MVP 0.1.4 concluído e pronto para piloto controlado. Cadastro, descoberta, coletores, alertas, heartbeats, retenção e instalação Windows estão funcionais.
+> **Estado do projeto:** MVP 0.1.5 concluído e pronto para piloto controlado. Cadastro e configuração integral pelo painel local, descoberta, coletores, alertas, heartbeats, retenção e instalação Windows estão funcionais.
 
 ![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
 
@@ -26,7 +26,8 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Modo `--demo` persistido, com dois ambientes, alerta de memória, job atrasado, TLS próximo do vencimento, erros agrupados e incidente que abre e se resolve.
 - Serilog com rotação diária, limite de tamanho e retenção de 14 arquivos.
 - Testes xUnit, Vitest e Playwright; CI reproduzível em `windows-latest`.
-- Cadastro manual de instalações e componentes com autorização administrativa, validação e auditoria sanitizada.
+- Cadastro, edição e remoção de instalações pelo painel local, incluindo serviços Windows, executável, INI, logs, TCP e HTTP/HTTPS.
+- Descoberta assistida de serviços e arquivos e coleta imediata pelo navegador, sem PowerShell na configuração operacional.
 - Importação JSON/YAML com prévia, schema estrito e confirmação explícita.
 - Descoberta de serviços, caminhos e INI em modo somente leitura, com limites e mascaramento de segredos.
 - Agendador com concorrência e timeout limitados, execução manual administrativa e atualização por SignalR.

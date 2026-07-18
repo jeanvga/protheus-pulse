@@ -39,12 +39,12 @@ O build reproduzível gera SHA-256, mas não inventa uma identidade de publicado
 ## Instalar pelo ZIP (alternativo)
 
 ```powershell
-$package = 'C:\Pacotes\protheus-pulse-0.1.4-win-x64.zip'
+$package = 'C:\Pacotes\protheus-pulse-0.1.5-win-x64.zip'
 (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
 # Compare visualmente com o arquivo .sha256 obtido por canal confiável.
 
-Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.4'
-Set-Location 'C:\Pacotes\ProtheusPulse-0.1.4\protheus-pulse-0.1.4-win-x64'
+Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-0.1.5'
+Set-Location 'C:\Pacotes\ProtheusPulse-0.1.5\protheus-pulse-0.1.5-win-x64'
 .\install.cmd
 ```
 
@@ -59,6 +59,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-service.ps1 -W
 ## Primeiro acesso
 
 Abra [http://127.0.0.1:5058](http://127.0.0.1:5058) no próprio servidor e crie o primeiro administrador. Use uma senha exclusiva e guarde-a no cofre corporativo.
+
+Toda a configuração do ambiente monitorado é feita nesse endereço: abra **Instalações**, escolha **Adicionar instalação**, informe os alvos de leitura e use **Salvar e monitorar**. A própria tela pesquisa serviços Windows e arquivos dentro da pasta indicada, permite cadastrar portas TCP e endpoints HTTP/HTTPS e oferece **Coletar agora**. Não é necessário executar PowerShell, editar JSON ou alterar `appsettings.json` para cadastrar o Protheus.
 
 Para acesso remoto, coloque um reverse proxy HTTPS autenticado/restrito diante do bind local. Não altere o bind para LAN sem certificado confiável, firewall restrito e revisão dos cabeçalhos de proxy. O instalador não abre firewall.
 
