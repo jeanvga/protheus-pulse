@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using ProtheusPulse.Application.Abstractions;
@@ -29,6 +28,9 @@ if (installerExitCode.HasValue)
     Environment.ExitCode = installerExitCode.Value;
     return;
 }
+
+AppDomain.CurrentDomain.UnhandledException += static (_, eventArgs) =>
+    TryLogStartupCrash(eventArgs.ExceptionObject as Exception);
 
 var builder = WebApplication.CreateBuilder(args);
 var demoMode = args.Any(item => string.Equals(item, "--demo", StringComparison.OrdinalIgnoreCase))
@@ -211,6 +213,10 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+builder.Services.AddHostedService(serviceProvider => new DatabaseInitializer(
+    serviceProvider,
+    demoMode,
+    serviceProvider.GetRequiredService<ILogger<DatabaseInitializer>>()));
 if (demoMode)
 {
     builder.Services.AddHostedService<DemoPulseWorker>();
@@ -222,17 +228,6 @@ else
 }
 
 var app = builder.Build();
-
-await using (var scope = app.Services.CreateAsyncScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
-    await dbContext.Database.MigrateAsync();
-    if (demoMode)
-    {
-        var seeder = scope.ServiceProvider.GetRequiredService<IDemoDataSeeder>();
-        await seeder.SeedAsync(CancellationToken.None);
-    }
-}
 
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
@@ -267,6 +262,32 @@ app.UseStaticFiles();
 app.MapFallbackToFile("index.html").AllowAnonymous();
 
 await app.RunAsync();
+
+static void TryLogStartupCrash(Exception? exception)
+{
+    if (exception is null)
+    {
+        return;
+    }
+
+    try
+    {
+        var logDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "ProtheusPulse",
+            "logs");
+        Directory.CreateDirectory(logDirectory);
+        File.AppendAllText(
+            Path.Combine(logDirectory, "startup-crash.log"),
+            $"{DateTimeOffset.UtcNow:O} {exception}{Environment.NewLine}",
+            new UTF8Encoding(false));
+    }
+    catch (Exception writeException)
+        when (writeException is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+    {
+        // Sem acesso ao diretório de dados; o erro original ainda sobe para o console e o SCM.
+    }
+}
 
 static string? ReadJwtSigningKeyFile(string? configuredPath)
 {

@@ -164,7 +164,7 @@ internal static class WindowsServiceInstaller
 
         var startResult = await RunScAsync("start", ServiceName);
         startResult.EnsureSuccess("iniciar o serviço", 0, 1056);
-        await WaitForServiceStatusAsync(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
+        await WaitForServiceStatusAsync(ServiceControllerStatus.Running, TimeSpan.FromSeconds(60));
         await WaitForHealthCheckAsync();
 
         TryDeleteLegacyReleases(installDirectory);
@@ -470,7 +470,22 @@ internal static class WindowsServiceInstaller
                 diagnostics.AppendLine(line.Trim());
             }
 
-            AppendRecentApplicationLog(diagnostics, logDirectory);
+            var scmEvents = await RunProcessAsync(
+                ResolveSystemExecutable("wevtutil.exe"),
+                "qe",
+                "System",
+                "/q:*[System[Provider[@Name='Service Control Manager']]]",
+                "/c:12",
+                "/rd:true",
+                "/f:text");
+            diagnostics.AppendLine("Eventos recentes do Service Control Manager:");
+            diagnostics.AppendLine(scmEvents.StandardOutput.Trim());
+            if (!string.IsNullOrWhiteSpace(scmEvents.StandardError))
+            {
+                diagnostics.AppendLine(scmEvents.StandardError.Trim());
+            }
+
+            await AppendRecentApplicationLogsAsync(diagnostics, logDirectory);
             await File.WriteAllTextAsync(diagnosticPath, diagnostics.ToString(), new UTF8Encoding(false));
         }
         catch (Exception diagnosticException)
@@ -492,27 +507,60 @@ internal static class WindowsServiceInstaller
         }
     }
 
-    private static void AppendRecentApplicationLog(StringBuilder diagnostics, string logDirectory)
+    private static async Task AppendRecentApplicationLogsAsync(StringBuilder diagnostics, string logDirectory)
     {
         try
         {
+            var candidates = new List<string>();
             var latestLog = Directory.EnumerateFiles(logDirectory, "pulse-*.log", SearchOption.TopDirectoryOnly)
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault();
-            if (latestLog is null)
+            if (latestLog is not null)
             {
-                return;
+                candidates.Add(latestLog);
             }
 
-            diagnostics.AppendLine(CultureInfo.InvariantCulture, $"Log da aplicação: {latestLog}");
-            foreach (var line in File.ReadLines(latestLog).TakeLast(80))
+            var startupCrashLog = Path.Combine(logDirectory, "startup-crash.log");
+            if (File.Exists(startupCrashLog))
             {
-                diagnostics.AppendLine(line);
+                candidates.Add(startupCrashLog);
+            }
+
+            foreach (var candidate in candidates)
+            {
+                await AppendFileTailAsync(diagnostics, candidate);
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            diagnostics.AppendLine(CultureInfo.InvariantCulture, $"Não foi possível ler o log da aplicação: {exception.Message}");
+            diagnostics.AppendLine(CultureInfo.InvariantCulture, $"Não foi possível listar os logs da aplicação: {exception.Message}");
+        }
+    }
+
+    private static async Task AppendFileTailAsync(StringBuilder diagnostics, string path)
+    {
+        diagnostics.AppendLine(CultureInfo.InvariantCulture, $"Log da aplicação: {path}");
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            try
+            {
+                foreach (var line in File.ReadLines(path).TakeLast(80))
+                {
+                    diagnostics.AppendLine(line);
+                }
+
+                return;
+            }
+            catch (UnauthorizedAccessException) when (attempt == 1)
+            {
+                // O arquivo pode ter herdado uma ACL sem leitura administrativa; corrige e tenta de novo.
+                await RunProcessAsync(ResolveSystemExecutable("icacls.exe"), path, "/grant:r", "*S-1-5-32-544:R", "/Q");
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.AppendLine(CultureInfo.InvariantCulture, $"Não foi possível ler o log da aplicação: {exception.Message}");
+                return;
+            }
         }
     }
 

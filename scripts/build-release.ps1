@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.0.1',
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
     [switch]$SkipTests,
@@ -40,6 +40,7 @@ try {
         --self-contained true `
         --no-restore `
         --output $applicationRoot `
+        /p:PublishReadyToRun=true `
         /p:SkipFrontendBuild=true `
         /p:Version=$Version `
         /p:ContinuousIntegrationBuild=true `

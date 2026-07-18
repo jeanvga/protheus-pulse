@@ -2,6 +2,15 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.0.1] - 2026-07-18
+
+### Fixed
+
+- Serviço Windows não falha mais com o erro 1053 na instalação: a migração do banco e o seed demonstrativo saíram do caminho crítico de inicialização e agora executam como hosted service, permitindo que o processo se registre no SCM imediatamente.
+- Falhas de inicialização passam a ser gravadas em `logs/startup-crash.log`, mesmo quando o Serilog ainda não subiu.
+- Diagnóstico do instalador agora captura os eventos recentes do Service Control Manager, inclui o log de crash e recupera a leitura do log da aplicação quando a ACL herdada nega acesso administrativo.
+- Publicação com ReadyToRun reduz o tempo de primeira inicialização do serviço em servidores sem cache JIT.
+
 ## [1.0.0] - 2026-07-18
 
 ### Fixed
