@@ -1,5 +1,4 @@
 using System.IdentityModel.Tokens.Jwt;
-using System.Runtime.Versioning;
 using System.Security.Claims;
 using System.ServiceProcess;
 using System.Text.Json;
@@ -247,9 +246,13 @@ public static class ServiceControlEndpoints
         return results;
     }
 
-    [SupportedOSPlatform("windows")]
     private static ServiceActionOutcome ExecuteServiceAction(string serviceName, string action)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            return new ServiceActionOutcome(serviceName, false, "Unsupported", "Ações de serviço estão disponíveis somente no Windows.");
+        }
+
         try
         {
             using var controller = new ServiceController(serviceName);
