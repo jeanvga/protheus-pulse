@@ -12,7 +12,7 @@ test('autentica no modo demonstração e mostra o estado operacional', async ({ 
   await page.getByRole('button', { name: 'Adicionar instalação' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Adicionar instalação' })).toBeVisible()
-  await expect(page.getByText('A descoberta apenas lista candidatos.')).toBeVisible()
+  await expect(page.getByText('A descoberta apenas lista candidatos e a coleta é somente leitura.')).toBeVisible()
   await page.getByLabel('Nome da instalação').fill('ERP Piloto')
   await page.getByLabel('Nome do componente 1').fill('AppServer REST')
   await page.getByRole('button', { name: 'Adicionar componente' }).click()
