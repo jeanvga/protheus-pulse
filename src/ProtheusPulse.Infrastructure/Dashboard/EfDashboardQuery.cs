@@ -13,6 +13,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
         var components = await dbContext.Components
             .AsNoTracking()
             .Include(item => item.Installation)
+            .Include(item => item.WindowsServiceTargets)
             .Include(item => item.ProbeResults.OrderByDescending(probe => probe.ObservedAt).Take(1))
             .Include(item => item.MetricSamples.OrderByDescending(metric => metric.ObservedAt).Take(2))
             .AsSplitQuery()
@@ -73,7 +74,8 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
                 metric is null ? null : TranslateMetric(metric.Name),
                 metric?.Value,
                 metric?.Unit,
-                component.IsDemo);
+                component.IsDemo,
+                component.WindowsServiceTargets.Select(target => target.ServiceName).FirstOrDefault());
         }).ToArray();
 
         var alertSnapshots = alerts.Select(item => new AlertSnapshot(

@@ -2,13 +2,13 @@
 
 Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
 
-> **Versão estável:** 1.0.4. O Protheus Pulse está pronto para implantação e operação, com configuração pelo painel local, descoberta assistida, coletores, alertas, heartbeats, retenção e instalador para Windows.
+> **Versão estável:** 1.1.0. O Protheus Pulse está pronto para implantação e operação, com configuração pelo painel local, descoberta assistida, coletores, alertas, heartbeats, retenção e instalador para Windows.
 
 ![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
 
 ## Visão geral
 
-O Pulse consolida estado atual, causa, evidência sanitizada e histórico técnico sem depender de nuvem. A arquitetura é somente leitura: o produto não inicia ou para serviços, não executa binários Protheus e não altera INI, RPO, banco ou arquivos monitorados.
+O Pulse consolida estado atual, causa, evidência sanitizada e histórico técnico sem depender de nuvem. A coleta é somente leitura: o produto não executa binários Protheus e não altera INI, RPO, banco ou arquivos monitorados. Ações operacionais — iniciar, reiniciar ou parar serviços monitorados e o modo manutenção — são explícitas, restritas ao perfil `Administrator` e registradas na auditoria.
 
 Este é um produto independente, não oficial e não afiliado à TOTVS. O repositório público contém somente código-fonte, documentação, exemplos sintéticos e automação de build; não contém bibliotecas proprietárias, documentação restrita, logotipos ou dados reais de clientes.
 
@@ -35,12 +35,15 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Regras automáticas/customizadas, falhas consecutivas, cooldown, reconhecimento, resolução e janelas de manutenção.
 - Webhooks HTTPS com configuração protegida e payload mínimo; retenção automática com agregação horária.
 - Heartbeats com token aleatório exibido uma vez, somente hash no banco, rotação, janela operacional e rate limit.
-- Serviço Windows sob `LocalService`, chave JWT em arquivo restrito, DPAPI, ACLs mínimas e recuperação automática.
-- `setup.exe` self-contained em Inno Setup, sem PowerShell no fluxo normal, com SHA-256, serviço `LocalService` e health check pós-instalação.
+- Iniciar, reiniciar e parar serviços Windows monitorados pelo painel, com confirmação, perfil `Administrator` e auditoria.
+- Modo manutenção que para todos os serviços monitorados, suspende alertas e retoma tudo ao encerrar.
+- Página de logs com eventos reais coletados e sanitizados, busca e filtro por severidade.
+- Serviço Windows sob `LocalSystem` (necessário para as ações de serviço), chave JWT em arquivo restrito, DPAPI, ACLs mínimas e recuperação automática.
+- `setup.exe` self-contained em Inno Setup, sem PowerShell no fluxo normal, com SHA-256, serviço `LocalSystem` e health check pós-instalação.
 
 ## Instalação
 
-Para uso em Windows Server, utilize `protheus-pulse-1.0.4-win-x64-setup.exe` junto do arquivo `.sha256` correspondente. O instalador registra o serviço, gera a chave JWT local, preserva os dados entre atualizações e valida a disponibilidade ao concluir.
+Para uso em Windows Server, utilize `protheus-pulse-1.1.0-win-x64-setup.exe` junto do arquivo `.sha256` correspondente. O instalador registra o serviço, gera a chave JWT local, preserva os dados entre atualizações e valida a disponibilidade ao concluir.
 
 Consulte [Instalação no Windows Server](docs/INSTALLATION.md) para pré-requisitos, verificação do pacote, primeiro acesso e permissões. Organizações que compilam o próprio pacote encontram o processo reproduzível em [installer/README.md](installer/README.md).
 

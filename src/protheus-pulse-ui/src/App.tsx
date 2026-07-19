@@ -2,20 +2,21 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Activity, AlertTriangle, Archive, Bell, Boxes, BriefcaseBusiness, Check, ChevronDown, CircleHelp,
-  Clock3, FileText, FolderSearch, Gauge, HeartPulse, ListFilter, LockKeyhole, LogOut, Menu, Moon,
-  MoreHorizontal, Pencil, Play, Plus, RefreshCw, Search, Server, Settings, ShieldCheck, Sun,
-  TerminalSquare, Trash2, UserRound, X,
+  Clock3, FileText, FolderSearch, Gauge, HeartPulse, LockKeyhole, LogOut, Menu, Moon,
+  Pencil, Play, Plus, RefreshCw, RotateCw, Search, Server, Settings, ShieldCheck, Square, Sun,
+  TerminalSquare, Trash2, UserRound, Wrench, X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, deleteInstallation, discoverPaths,
-  discoverServices, getAuthStatus, getDashboard, getInstallationConfiguration, login, session, setup,
+  discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAuthStatus, getDashboard,
+  getInstallationConfiguration, getLogEvents, getMaintenanceStatus, login, session, setup,
   updateInstallation,
 } from './api'
 import type {
-  AlertSnapshot, AuthStatus, ComponentSnapshot, ComponentType, DashboardSummary, EnvironmentKind,
-  HealthStatus, HttpCheckConfiguration, PathCandidate, SaveInstallationInput, ServiceCandidate,
-  TcpCheckConfiguration,
+  AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EnvironmentKind,
+  HealthStatus, HttpCheckConfiguration, LogEventItem, MaintenanceStatus, PathCandidate, SaveInstallationInput,
+  ServiceAction, ServiceCandidate, TcpCheckConfiguration,
 } from './types'
 
 type Page = 'overview' | 'installations' | 'logs' | 'jobs' | 'alerts' | 'settings' | 'audit' | 'diagnostics'
@@ -101,13 +102,15 @@ export default function App() {
     return connectLiveUpdates(() => void loadSummary())
   }, [authenticated, loadSummary])
 
-  const onAuthenticated = (token: string) => {
-    session.token = token
+  const onAuthenticated = (token: AuthToken) => {
+    session.token = token.accessToken
+    session.role = token.role
     setAuthenticated(true)
   }
 
   const logout = () => {
     session.token = null
+    session.role = null
     setAuthenticated(false)
     setSummary(null)
   }
@@ -137,14 +140,14 @@ export default function App() {
             <button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Alternar tema">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <button className="icon-button notification-button" aria-label="Notificações"><Bell size={18} /><i>{summary?.totals.activeAlerts ?? 0}</i></button>
+            <button className="icon-button notification-button" aria-label="Notificações" onClick={() => setPage('alerts')}><Bell size={18} /><i>{summary?.totals.activeAlerts ?? 0}</i></button>
             <div className="user-chip"><span>AD</span><div><strong>Administrador</strong><small>Operação local</small></div><ChevronDown size={15} /></div>
           </div>
         </header>
 
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => void loadSummary()}><RefreshCw size={15} /> Tentar novamente</button></div>}
-        {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} addInstallation={() => setInstallationEditorId(null)} editInstallation={setInstallationEditorId} />}
-        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.0.4 · produto independente</span></footer>
+        {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} goTo={setPage} addInstallation={() => setInstallationEditorId(null)} editInstallation={setInstallationEditorId} />}
+        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.1.0 · produto independente</span></footer>
       </main>
       {installationEditorId !== undefined && <InstallationDialog installationId={installationEditorId} close={() => setInstallationEditorId(undefined)} onSaved={installationCreated} />}
     </div>
@@ -163,7 +166,7 @@ function Sidebar({ active, setPage, open, close, logout, alertCount }: { active:
         <span className="nav-section-label secondary">Sistema</span>
         {secondaryNav.map(item => <NavItem key={item.id} {...item} active={active === item.id} onClick={() => choose(item.id)} />)}
       </nav>
-      <div className="sidebar-callout"><ShieldCheck size={19} /><div><strong>Somente leitura</strong><span>Nenhum serviço ou arquivo monitorado é modificado.</span></div></div>
+      <div className="sidebar-callout"><ShieldCheck size={19} /><div><strong>Operação controlada</strong><span>Coleta somente leitura; ações de serviço são restritas a administradores e auditadas.</span></div></div>
       <button className="logout-button" onClick={logout}><LogOut size={17} /> Encerrar sessão</button>
     </aside>
   </>
@@ -173,7 +176,7 @@ function NavItem({ label, icon: Icon, active, badge, onClick }: { label: string;
   return <button className={`nav-item ${active ? 'active' : ''}`} onClick={onClick}><Icon size={18} /><span>{label}</span>{badge != null && badge > 0 && <i>{badge}</i>}</button>
 }
 
-function LoginScreen({ status, onAuthenticated, error: initialError }: { status: AuthStatus | null; onAuthenticated: (token: string) => void; error: string | null }) {
+function LoginScreen({ status, onAuthenticated, error: initialError }: { status: AuthStatus | null; onAuthenticated: (token: AuthToken) => void; error: string | null }) {
   const [username, setUsername] = useState(status?.demoUsername ?? '')
   const [displayName, setDisplayName] = useState('Administrador')
   const [password, setPassword] = useState(status?.demoPassword ?? '')
@@ -187,7 +190,7 @@ function LoginScreen({ status, onAuthenticated, error: initialError }: { status:
     setError(null)
     try {
       const token = isSetup ? await setup(username, displayName, password) : await login(username, password)
-      onAuthenticated(token.accessToken)
+      onAuthenticated(token)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Falha na autenticação.')
     } finally {
@@ -225,9 +228,9 @@ function LoginScreen({ status, onAuthenticated, error: initialError }: { status:
   </div>
 }
 
-function PageContent({ page, summary, refresh, addInstallation, editInstallation }: { page: Page; summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void; editInstallation: (id: string) => void }) {
+function PageContent({ page, summary, refresh, goTo, addInstallation, editInstallation }: { page: Page; summary: DashboardSummary; refresh: () => Promise<void>; goTo: (page: Page) => void; addInstallation: () => void; editInstallation: (id: string) => void }) {
   switch (page) {
-    case 'overview': return <Overview summary={summary} refresh={refresh} addInstallation={addInstallation} />
+    case 'overview': return <Overview summary={summary} refresh={refresh} goTo={goTo} addInstallation={addInstallation} />
     case 'installations': return <Installations summary={summary} refresh={refresh} addInstallation={addInstallation} editInstallation={editInstallation} />
     case 'logs': return <LogsPage />
     case 'jobs': return <JobsPage components={summary.components} />
@@ -238,7 +241,7 @@ function PageContent({ page, summary, refresh, addInstallation, editInstallation
   }
 }
 
-function Overview({ summary, refresh, addInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void }) {
+function Overview({ summary, refresh, goTo, addInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; goTo: (page: Page) => void; addInstallation: () => void }) {
   const updated = formatRelative(summary.generatedAt)
   return <div className="page-body">
     <section className="intro-row"><div><h2>Panorama dos ambientes</h2><p>Última consolidação {updated}. Os dados críticos aparecem primeiro.</p></div><div className="intro-actions"><button className="secondary-button" onClick={() => void refresh()}><RefreshCw size={16} /> Atualizar</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
@@ -249,20 +252,20 @@ function Overview({ summary, refresh, addInstallation }: { summary: DashboardSum
       <MetricCard icon={Activity} label="Disponibilidade" value={`${summary.totals.availabilityPercent}%`} detail="janela consolidada" tone="green" />
     </section>
     <section className="overview-grid">
-      <article className="panel availability-panel"><PanelHeader title="Disponibilidade consolidada" subtitle="Últimas 12 horas" action="12 horas" /><AvailabilityChart values={summary.availability} /><div className="chart-legend"><span><i className="legend-green" /> Disponibilidade</span><strong>{summary.totals.availabilityPercent}% <small>média</small></strong></div></article>
+      <article className="panel availability-panel"><PanelHeader title="Disponibilidade consolidada" subtitle="Últimas 12 horas" /><AvailabilityChart values={summary.availability} /><div className="chart-legend"><span><i className="legend-green" /> Disponibilidade</span><strong>{summary.totals.availabilityPercent}% <small>média</small></strong></div></article>
       <article className="panel status-panel"><PanelHeader title="Estado dos componentes" subtitle="Distribuição atual" /><div className="donut-wrap"><div className="donut" style={{ '--donut-healthy': summary.totals.healthy, '--donut-warning': summary.totals.warning, '--donut-critical': summary.totals.critical, '--donut-total': Math.max(summary.totals.components, 1) } as CSSProperties}><div><strong>{summary.totals.components}</strong><span>total</span></div></div><div className="status-legend"><StatusLegend label="Saudável" value={summary.totals.healthy} status="Healthy" /><StatusLegend label="Atenção" value={summary.totals.warning} status="Warning" /><StatusLegend label="Crítico" value={summary.totals.critical} status="Critical" /><StatusLegend label="Desconhecido" value={summary.totals.unknown} status="Unknown" /></div></div></article>
     </section>
-    <section className="panel component-panel"><PanelHeader title="Componentes que pedem atenção" subtitle="Ordenados por impacto operacional" action="Ver instalações" /><ComponentTable components={summary.components.filter(item => item.status !== 'Healthy')} /></section>
-    <section className="panel alert-panel"><PanelHeader title="Alertas recentes" subtitle="Evidência sanitizada e resolução automática" action="Ver todos" /><AlertList alerts={summary.alerts.slice(0, 4)} /></section>
+    <section className="panel component-panel"><PanelHeader title="Componentes que pedem atenção" subtitle="Ordenados por impacto operacional" action="Ver instalações" onAction={() => goTo('installations')} /><ComponentTable components={summary.components.filter(item => item.status !== 'Healthy')} /></section>
+    <section className="panel alert-panel"><PanelHeader title="Alertas recentes" subtitle="Evidência sanitizada e resolução automática" action="Ver todos" onAction={() => goTo('alerts')} /><AlertList alerts={summary.alerts.slice(0, 4)} /></section>
   </div>
 }
 
 function MetricCard({ icon: Icon, label, value, detail, tone }: { icon: LucideIcon; label: string; value: string | number; detail: string; tone: string }) {
-  return <article className={`metric-card ${tone}`}><div className="metric-icon"><Icon size={20} /></div><div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div><MoreHorizontal size={18} className="more" /></article>
+  return <article className={`metric-card ${tone}`}><div className="metric-icon"><Icon size={20} /></div><div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div></article>
 }
 
-function PanelHeader({ title, subtitle, action }: { title: string; subtitle: string; action?: string }) {
-  return <header className="panel-header"><div><h3>{title}</h3><p>{subtitle}</p></div>{action && <button>{action} <ChevronDown size={14} /></button>}</header>
+function PanelHeader({ title, subtitle, action, onAction }: { title: string; subtitle: string; action?: string; onAction?: () => void }) {
+  return <header className="panel-header"><div><h3>{title}</h3><p>{subtitle}</p></div>{action && onAction && <button onClick={onAction}>{action} <ChevronDown size={14} /></button>}</header>
 }
 
 function AvailabilityChart({ values }: { values: DashboardSummary['availability'] }) {
@@ -282,7 +285,7 @@ function StatusLegend({ label, value, status }: { label: string; value: number; 
 }
 
 function ComponentTable({ components }: { components: ComponentSnapshot[] }) {
-  return <div className="table-wrap"><table><thead><tr><th>Componente</th><th>Instalação</th><th>Estado</th><th>Evidência atual</th><th>Métrica</th><th /></tr></thead><tbody>{components.map(item => <tr key={item.id}><td><div className="component-name"><span><TerminalSquare size={17} /></span><div><strong>{item.name}</strong><small>{typeLabel(item.type)}</small></div></div></td><td><div className="installation-name">{item.installationName}<small>{item.isDemo ? 'Dado demonstrativo' : 'Monitoramento real'}</small></div></td><td><StatusBadge status={item.status} /></td><td><div className="evidence">{item.summary}<small>desde {formatRelative(item.lastStateChangeAt)}</small></div></td><td><div className="metric-value">{item.metricValue ?? '—'} <small>{item.metricUnit}</small><span>{item.metricLabel}</span></div></td><td><button className="row-action"><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table>{components.length === 0 && <div className="empty-state"><Check size={22} /> Nenhum componente pede atenção agora.</div>}</div>
+  return <div className="table-wrap"><table><thead><tr><th>Componente</th><th>Instalação</th><th>Estado</th><th>Evidência atual</th><th>Métrica</th></tr></thead><tbody>{components.map(item => <tr key={item.id}><td><div className="component-name"><span><TerminalSquare size={17} /></span><div><strong>{item.name}</strong><small>{typeLabel(item.type)}</small></div></div></td><td><div className="installation-name">{item.installationName}<small>{item.isDemo ? 'Dado demonstrativo' : 'Monitoramento real'}</small></div></td><td><StatusBadge status={item.status} /></td><td><div className="evidence">{item.summary}<small>desde {formatRelative(item.lastStateChangeAt)}</small></div></td><td><div className="metric-value">{item.metricValue ?? '—'} <small>{item.metricUnit}</small><span>{item.metricLabel}</span></div></td></tr>)}</tbody></table>{components.length === 0 && <div className="empty-state"><Check size={22} /> Nenhum componente pede atenção agora.</div>}</div>
 }
 
 function AlertList({ alerts, acknowledge, busyId }: { alerts: AlertSnapshot[]; acknowledge?: (id: string) => void; busyId?: string | null }) {
@@ -293,10 +296,55 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [maintenance, setMaintenance] = useState<MaintenanceStatus | null>(null)
+  const [serviceBusyId, setServiceBusyId] = useState<string | null>(null)
+  const isAdministrator = session.role === 'Administrator'
   const groups = useMemo(() => Object.values(summary.components.reduce<Record<string, { name: string; components: ComponentSnapshot[] }>>((result, item) => {
     ;(result[item.installationId] ??= { name: item.installationName, components: [] }).components.push(item)
     return result
   }, {})), [summary.components])
+
+  const loadMaintenance = useCallback(async () => {
+    try { setMaintenance(await getMaintenanceStatus()) } catch { setMaintenance(null) }
+  }, [])
+  useEffect(() => { void loadMaintenance() }, [loadMaintenance])
+
+  const toggleMaintenance = async () => {
+    const entering = !(maintenance?.active ?? false)
+    const confirmed = window.confirm(entering
+      ? 'Entrar em modo manutenção? Todos os serviços Windows monitorados serão PARADOS e os alertas ficarão suspensos.'
+      : 'Encerrar o modo manutenção? Os serviços monitorados serão iniciados novamente.')
+    if (!confirmed) return
+    setBusy(true); setError(null); setMessage(null)
+    try {
+      const result = entering ? await enterMaintenance() : await exitMaintenance()
+      const failures = result.services.filter(item => !item.success)
+      const summaryText = entering
+        ? `Modo manutenção ativado. ${result.services.length - failures.length} serviço(s) parado(s)`
+        : `Modo manutenção encerrado. ${result.services.length - failures.length} serviço(s) iniciado(s)`
+      if (failures.length > 0) setError(`${summaryText}; falhas: ${failures.map(item => `${item.serviceName} (${item.message})`).join('; ')}`)
+      else setMessage(`${summaryText}.`)
+      await loadMaintenance()
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível alterar o modo manutenção.')
+    } finally { setBusy(false) }
+  }
+
+  const runServiceAction = async (component: ComponentSnapshot, action: ServiceAction) => {
+    const verb = action === 'start' ? 'Iniciar' : action === 'stop' ? 'Parar' : 'Reiniciar'
+    if (action !== 'start' && !window.confirm(`${verb} o serviço “${component.windowsServiceName}” de ${component.name}?`)) return
+    setServiceBusyId(component.id); setError(null); setMessage(null)
+    try {
+      const outcome = await executeServiceAction(component.id, action)
+      const failures = outcome.results.filter(item => !item.success)
+      if (failures.length > 0) setError(`Falha em ${component.name}: ${failures.map(item => `${item.serviceName}: ${item.message}`).join('; ')}`)
+      else setMessage(`${verb} concluído em ${component.name}: ${outcome.results.map(item => `${item.serviceName} → ${item.status}`).join(', ')}.`)
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível executar a ação de serviço.')
+    } finally { setServiceBusyId(null) }
+  }
 
   const runCollection = async () => {
     setBusy(true); setError(null); setMessage(null)
@@ -322,7 +370,8 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
   }
 
   return <div className="page-body">
-    <section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Configure serviços, arquivos, portas e URLs sem sair do painel.</p></div><div className="intro-actions"><button className="secondary-button" disabled={busy || summary.demoMode} onClick={() => void runCollection()}><Play size={16} /> {busy ? 'Executando…' : 'Coletar agora'}</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
+    <section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Configure serviços, arquivos, portas e URLs sem sair do painel.</p></div><div className="intro-actions">{isAdministrator && <button className={maintenance?.active ? 'primary-button' : 'danger-button'} disabled={busy || summary.demoMode} onClick={() => void toggleMaintenance()}><Wrench size={16} /> {maintenance?.active ? 'Encerrar manutenção' : 'Modo manutenção'}</button>}<button className="secondary-button" disabled={busy || summary.demoMode} onClick={() => void runCollection()}><Play size={16} /> {busy ? 'Executando…' : 'Coletar agora'}</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
+    {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.</div>}
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
     {message && <div className="success-banner"><Check size={16} /> {message}</div>}
     <div className="installation-grid">{groups.map(({ name, components }) => {
@@ -331,7 +380,7 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
       return <article className="panel installation-card" key={installationId}>
         <header><div><span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span><h3>{name}</h3></div><StatusBadge status={worstStatus(components)} /></header>
         <div className="installation-stat"><span>{components.length} componentes</span><span>{components.filter(item => item.status === 'Healthy').length} saudáveis</span></div>
-        {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span></div><small>{component.summary}</small></div>)}
+        {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span>{isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><button className="row-action" title={`Iniciar ${component.windowsServiceName}`} aria-label={`Iniciar serviço de ${component.name}`} disabled={busy || serviceBusyId === component.id} onClick={() => void runServiceAction(component, 'start')}>{serviceBusyId === component.id ? <RefreshCw className="spin" size={14} /> : <Play size={14} />}</button><button className="row-action" title={`Reiniciar ${component.windowsServiceName}`} aria-label={`Reiniciar serviço de ${component.name}`} disabled={busy || serviceBusyId === component.id} onClick={() => void runServiceAction(component, 'restart')}><RotateCw size={14} /></button><button className="row-action" title={`Parar ${component.windowsServiceName}`} aria-label={`Parar serviço de ${component.name}`} disabled={busy || serviceBusyId === component.id} onClick={() => void runServiceAction(component, 'stop')}><Square size={14} /></button></span>}</div><small>{component.summary}</small></div>)}
         {!isDemo && installationId && <footer className="installation-actions"><button className="secondary-button" onClick={() => editInstallation(installationId)}><Pencil size={15} /> Configurar</button><button className="danger-button" disabled={busy} onClick={() => void remove(installationId, name)}><Trash2 size={15} /> Remover</button></footer>}
       </article>
     })}</div>
@@ -451,7 +500,7 @@ function InstallationDialog({ installationId, close, onSaved }: { installationId
           <div className="component-editor-heading"><div><h3>Componentes e alvos</h3><p>Serviço, executável, INI, logs, TCP e HTTP podem ser combinados.</p></div><button type="button" className="secondary-button" onClick={addComponent}><Plus size={15} /> Adicionar componente</button></div>
           {components.map((component, index) => <ComponentConfigurationEditor key={component.key} component={component} index={index} update={update => updateComponent(component.key, update)} remove={() => removeComponent(component.key)} canRemove={components.length > 1} />)}
         </div>
-        <div className="modal-safety"><ShieldCheck size={18} /><span>A descoberta apenas lista candidatos. O Pulse nunca inicia serviços nem altera arquivos, INIs ou executáveis monitorados.</span></div>
+        <div className="modal-safety"><ShieldCheck size={18} /><span>A descoberta apenas lista candidatos e a coleta é somente leitura. Ações de iniciar ou parar serviços são explícitas, auditadas e restritas a administradores.</span></div>
         <footer className="modal-actions"><button type="button" className="secondary-button" onClick={close} disabled={busy}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{busy ? 'Salvando…' : 'Salvar e monitorar'}</button></footer>
       </form>}
     </section>
@@ -528,13 +577,66 @@ function defaultFileNames(type: ComponentType) {
   return 'appserver.exe, appserver.ini, console.log'
 }
 
+const logLevelFilters = [
+  { id: 'all', label: 'Todos' },
+  { id: 'Critical', label: 'Críticos' },
+  { id: 'Error', label: 'Erros' },
+  { id: 'Warning', label: 'Avisos' },
+  { id: 'Information', label: 'Informativos' },
+]
+
+function logLevelStatus(level: string): HealthStatus {
+  if (level === 'Critical' || level === 'Error') return 'Critical'
+  if (level === 'Warning') return 'Warning'
+  return 'Maintenance'
+}
+
+function logLevelLabel(level: string) {
+  return ({ Critical: 'Crítico', Error: 'Erro', Warning: 'Aviso', Information: 'Info' } as Record<string, string>)[level] ?? level
+}
+
 function LogsPage() {
-  return <div className="page-body"><section className="toolbar"><div className="search-box"><Search size={17} /><input aria-label="Pesquisar logs" placeholder="Pesquisar eventos sanitizados…" /></div><button className="secondary-button"><ListFilter size={16} /> Filtros</button></section><article className="panel"><PanelHeader title="Grupos de erro" subtitle="Fixtures sintéticas · nenhuma informação de cliente" /><div className="log-group"><span className="log-count">8×</span><div><strong>Falha transitória ao consultar serviço externo</strong><p>Mensagem agrupada por assinatura; tokens e documentos foram removidos.</p><small>Console de Integração · há 11 min</small></div><StatusBadge status="Warning" label="Warning" /></div><div className="log-group"><span className="log-count muted">3×</span><div><strong>Tempo de resposta acima do esperado</strong><p>Latência observada na janela de demonstração.</p><small>AppServer REST · há 2 h</small></div><StatusBadge status="Healthy" label="Resolvido" /></div></article></div>
+  const [events, setEvents] = useState<LogEventItem[]>([])
+  const [search, setSearch] = useState('')
+  const [level, setLevel] = useState('all')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      setEvents(await getLogEvents())
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os logs.')
+    } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const normalizedSearch = search.trim().toLowerCase()
+  const filtered = events.filter(item => (level === 'all' || item.level === level)
+    && (normalizedSearch === ''
+      || item.message.toLowerCase().includes(normalizedSearch)
+      || item.componentName.toLowerCase().includes(normalizedSearch)
+      || item.installationName.toLowerCase().includes(normalizedSearch)))
+
+  return <div className="page-body">
+    <section className="toolbar"><div className="search-box"><Search size={17} /><input aria-label="Pesquisar logs" placeholder="Pesquisar mensagem, componente ou instalação…" value={search} onChange={event => setSearch(event.target.value)} /></div><button className="secondary-button" disabled={loading} onClick={() => void load()}><RefreshCw size={16} /> Atualizar</button></section>
+    <section className="summary-chips">{logLevelFilters.map(item => <button key={item.id} className={level === item.id ? 'active' : ''} onClick={() => setLevel(item.id)}>{item.label} <strong>{item.id === 'all' ? events.length : events.filter(event => event.level === item.id).length}</strong></button>)}</section>
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+    <article className="panel"><PanelHeader title="Eventos coletados dos logs" subtitle="Mensagens sanitizadas e agrupadas por assinatura · mais recentes primeiro" />
+      {loading
+        ? <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando eventos…</div>
+        : filtered.length === 0
+          ? <div className="empty-state"><Check size={22} /> Nenhum evento de log para os filtros atuais.</div>
+          : filtered.map(item => <div className="log-group" key={item.id}><span className={`log-count ${item.level === 'Information' ? 'muted' : ''}`}>{item.occurrenceCount}×</span><div><strong>{item.message}</strong><p>{item.componentName} · {item.installationName}</p><small>{new Date(item.observedAt).toLocaleString('pt-BR')} · {formatRelative(item.observedAt)}</small></div><StatusBadge status={logLevelStatus(item.level)} label={logLevelLabel(item.level)} /></div>)}
+    </article>
+  </div>
 }
 
 function JobsPage({ components }: { components: ComponentSnapshot[] }) {
   const jobs = components.filter(item => item.type === 'Job')
-  return <div className="page-body"><section className="intro-row"><div><h2>Heartbeats de jobs</h2><p>Frequência, duração e atraso sem exigir customização do ERP.</p></div><button className="secondary-button"><CircleHelp size={16} /> Como integrar</button></section>{jobs.map(job => <article className="panel job-card" key={job.id}><div className="job-icon"><BriefcaseBusiness size={21} /></div><div><span>{job.installationName}</span><h3>{job.name}</h3><p>{job.summary}</p></div><div className="job-metrics"><div><span>Último sinal</span><strong>há {job.metricValue} min</strong></div><div><span>Tolerância</span><strong>5 min</strong></div><StatusBadge status={job.status} /></div></article>)}</div>
+  return <div className="page-body"><section className="intro-row"><div><h2>Heartbeats de jobs</h2><p>Frequência, duração e atraso sem exigir customização do ERP.</p></div><a className="secondary-button" href="https://github.com/jeanvga/protheus-pulse/blob/main/docs/HEARTBEATS.md" target="_blank" rel="noreferrer"><CircleHelp size={16} /> Como integrar</a></section>{jobs.map(job => <article className="panel job-card" key={job.id}><div className="job-icon"><BriefcaseBusiness size={21} /></div><div><span>{job.installationName}</span><h3>{job.name}</h3><p>{job.summary}</p></div><div className="job-metrics"><div><span>Último sinal</span><strong>há {job.metricValue} min</strong></div><div><span>Tolerância</span><strong>5 min</strong></div><StatusBadge status={job.status} /></div></article>)}</div>
 }
 
 function AlertsPage({ alerts, refresh }: { alerts: AlertSnapshot[]; refresh: () => Promise<void> }) {
@@ -557,7 +659,7 @@ function AlertsPage({ alerts, refresh }: { alerts: AlertSnapshot[]; refresh: () 
 
 function SettingsPage() {
   const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
-  return <div className="page-body"><div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div><ChevronDown size={17} /></article>)}</div><div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Princípio de menor privilégio</strong><p>O Pulse não inicia, para ou reinicia serviços e não escreve nas pastas monitoradas.</p></div></div></div>
+  return <div className="page-body"><div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div><div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Coleta segura e ações auditadas</strong><p>A coleta é somente leitura e não escreve nas pastas monitoradas. Iniciar, reiniciar ou parar serviços exige perfil Administrator e fica registrado na auditoria.</p></div></div></div>
 }
 
 function AuditPage() {

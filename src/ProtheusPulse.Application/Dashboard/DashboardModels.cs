@@ -33,7 +33,8 @@ public sealed record ComponentSnapshot(
     string? MetricLabel,
     double? MetricValue,
     string? MetricUnit,
-    bool IsDemo);
+    bool IsDemo,
+    string? WindowsServiceName = null);
 
 public sealed record AlertSnapshot(
     Guid Id,

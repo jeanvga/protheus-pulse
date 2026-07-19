@@ -29,6 +29,41 @@ export interface ComponentSnapshot {
   metricValue?: number
   metricUnit?: string
   isDemo: boolean
+  windowsServiceName?: string
+}
+
+export interface LogEventItem {
+  id: string
+  componentId: string
+  installationName: string
+  componentName: string
+  observedAt: string
+  level: string
+  message: string
+  occurrenceCount: number
+}
+
+export type ServiceAction = 'start' | 'stop' | 'restart'
+
+export interface ServiceActionOutcome {
+  serviceName: string
+  success: boolean
+  status: string
+  message: string
+}
+
+export interface ServiceActionResponse {
+  results: ServiceActionOutcome[]
+}
+
+export interface MaintenanceStatus {
+  active: boolean
+  endsAt?: string
+}
+
+export interface MaintenanceChangeResult {
+  services: ServiceActionOutcome[]
+  endsAt?: string
 }
 
 export interface AlertSnapshot {

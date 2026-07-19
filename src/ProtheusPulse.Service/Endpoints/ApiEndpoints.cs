@@ -45,6 +45,7 @@ public static class ApiEndpoints
         api.MapInstallationImport();
         api.MapDiscovery();
         api.MapOperations();
+        api.MapServiceControl(demoMode);
         api.MapHeartbeats();
 
         api.MapGet("/components", async (IDashboardQuery query, CancellationToken cancellationToken) =>

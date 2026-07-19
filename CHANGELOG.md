@@ -2,6 +2,24 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.0] - 2026-07-18
+
+### Added
+
+- Iniciar, reiniciar e parar o serviço Windows de um componente diretamente pelo painel, com confirmação, restrição ao perfil `Administrator` e registro em auditoria.
+- Modo manutenção: para todos os serviços monitorados (exceto o próprio Pulse), abre janelas de manutenção que suspendem alertas e reinicia os serviços ao encerrar.
+- Página de logs com eventos reais coletados: busca por mensagem/componente/instalação, filtro por severidade, contagem de ocorrências e horário.
+
+### Changed
+
+- Serviço Windows passa a executar como `LocalSystem`, exigido pelas ações de serviço e pela leitura de processos e pastas do Protheus de outros usuários.
+- Botões decorativos removidos ou ligados a ações reais: cabeçalhos de painéis navegam, sino abre alertas, "Como integrar" abre a documentação de heartbeats.
+- Textos do painel e README refletem o novo modelo: coleta somente leitura com ações operacionais explícitas e auditadas.
+
+### Fixed
+
+- Componentes com executável, INI e logs não ficam mais permanentemente como `Desconhecido`: processos de outros usuários com o nome esperado agora contam como em execução mesmo quando o caminho completo não pode ser lido.
+
 ## [1.0.4] - 2026-07-18
 
 ### Fixed

@@ -2,17 +2,25 @@ import * as signalR from '@microsoft/signalr'
 import { demoSummary } from './demoData'
 import type {
   AuthStatus, AuthToken, CollectionResult, DashboardSummary, InstallationConfiguration,
-  InstallationCreated, PathDiscoveryResult, SaveInstallationInput, ServiceDiscoveryResult,
+  InstallationCreated, LogEventItem, MaintenanceChangeResult, MaintenanceStatus,
+  PathDiscoveryResult, SaveInstallationInput, ServiceAction, ServiceActionResponse,
+  ServiceDiscoveryResult,
 } from './types'
 
 const staticDemo = import.meta.env.VITE_DEMO_STATIC === 'true'
 const tokenKey = 'pulse.accessToken'
+const roleKey = 'pulse.role'
 
 export const session = {
   get token() { return sessionStorage.getItem(tokenKey) },
   set token(value: string | null) {
     if (value) sessionStorage.setItem(tokenKey, value)
     else sessionStorage.removeItem(tokenKey)
+  },
+  get role() { return sessionStorage.getItem(roleKey) },
+  set role(value: string | null) {
+    if (value) sessionStorage.setItem(roleKey, value)
+    else sessionStorage.removeItem(roleKey)
   },
 }
 
@@ -84,6 +92,31 @@ export async function discoverPaths(root: string, fileNames: string[]): Promise<
 
 export async function collectNow(): Promise<CollectionResult> {
   return request<CollectionResult>('/api/v1/diagnostics/collect-now', { method: 'POST', body: '{}' })
+}
+
+export async function getLogEvents(): Promise<LogEventItem[]> {
+  if (staticDemo) return []
+  return request<LogEventItem[]>('/api/v1/log-events')
+}
+
+export async function executeServiceAction(componentId: string, action: ServiceAction): Promise<ServiceActionResponse> {
+  if (staticDemo) throw new Error('Ações de serviço não estão disponíveis na demonstração estática.')
+  return request<ServiceActionResponse>(`/api/v1/components/${componentId}/service/${action}`, { method: 'POST', body: '{}' })
+}
+
+export async function getMaintenanceStatus(): Promise<MaintenanceStatus> {
+  if (staticDemo) return { active: false }
+  return request<MaintenanceStatus>('/api/v1/maintenance/status')
+}
+
+export async function enterMaintenance(): Promise<MaintenanceChangeResult> {
+  if (staticDemo) throw new Error('O modo manutenção não está disponível na demonstração estática.')
+  return request<MaintenanceChangeResult>('/api/v1/maintenance/enter', { method: 'POST', body: '{}' })
+}
+
+export async function exitMaintenance(): Promise<MaintenanceChangeResult> {
+  if (staticDemo) throw new Error('O modo manutenção não está disponível na demonstração estática.')
+  return request<MaintenanceChangeResult>('/api/v1/maintenance/exit', { method: 'POST', body: '{}' })
 }
 
 export async function acknowledgeAlert(id: string): Promise<void> {

@@ -16,7 +16,9 @@ internal static class WindowsServiceInstaller
     private const string DataDirectoryOption = "--data-directory";
     private const string ServiceName = "ProtheusPulse";
     private const string ServiceDisplayName = "Protheus Pulse";
-    private const string ServiceAccount = @"NT AUTHORITY\LocalService";
+    // LocalSystem é necessário para as ações operacionais (iniciar/parar serviços
+    // monitorados) e para ler processos e pastas do Protheus de outros usuários.
+    private const string ServiceAccount = "LocalSystem";
     private const string ServiceRegistryPath = @"SYSTEM\CurrentControlSet\Services\ProtheusPulse";
     private const string HealthUrl = "http://127.0.0.1:5058/health/ready";
 

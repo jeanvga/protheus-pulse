@@ -141,7 +141,9 @@ public sealed class ProcessProbeCollector(IClock clock) : IProbeCollector
             }
         }
 
-        return inaccessible ? HealthStatus.Unknown : HealthStatus.Critical;
+        // Processos de outros usuários (serviços) negam a leitura do caminho completo.
+        // Um processo em execução com o nome esperado é evidência suficiente de vida.
+        return inaccessible ? HealthStatus.Healthy : HealthStatus.Critical;
     }
 }
 
