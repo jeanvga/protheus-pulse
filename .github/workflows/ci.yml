@@ -139,7 +139,7 @@ jobs:
             }
             $installerCompleted = $true
             $service = Get-CimInstance Win32_Service -Filter "Name='ProtheusPulse'"
-            if ($service.State -ne 'Running' -or $service.StartName -notmatch 'LocalService') {
+            if ($service.State -ne 'Running' -or $service.StartName -notmatch 'LocalSystem') {
               throw "Serviço instalado em estado ou conta inesperados."
             }
             if ($service.PathName -ne ('"' + (Join-Path $installRoot 'ProtheusPulse.Service.exe') + '"')) {
