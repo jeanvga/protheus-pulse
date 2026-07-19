@@ -13,8 +13,8 @@ Este checklist orienta a implantação segura do Protheus Pulse. Use dados sint�
 
 ## 2. Instalar
 
-- [ ] Executar `protheus-pulse-1.0.0-win-x64-setup.exe` e aprovar a elevação solicitada.
-- [ ] Confirmar serviço `ProtheusPulse` em execução como `LocalService`.
+- [ ] Executar `protheus-pulse-1.1.0-win-x64-setup.exe` e aprovar a elevação solicitada.
+- [ ] Confirmar serviço `ProtheusPulse` em execução como `LocalSystem`.
 - [ ] Confirmar `http://127.0.0.1:5058/health/live` com HTTP 200.
 - [ ] Confirmar `http://127.0.0.1:5058/health/ready` com HTTP 200.
 - [ ] Confirmar que nenhuma regra de firewall foi criada.

@@ -8,10 +8,10 @@ O padrão seguro instala:
 
 - binários em `C:\Program Files\Protheus Pulse`;
 - banco, logs e chaves em `C:\ProgramData\ProtheusPulse`;
-- serviço `ProtheusPulse`, automático atrasado, sob `NT AUTHORITY\LocalService`;
+- serviço `ProtheusPulse`, automático atrasado, sob `LocalSystem`, necessário para as ações operacionais administrativas;
 - endpoint somente em `http://127.0.0.1:5058`.
 
-O aplicativo é independente do Protheus e não altera serviços, INI, RPO, banco ou arquivos monitorados.
+O aplicativo não altera INI, RPO, banco ou arquivos monitorados. Iniciar ou parar um serviço exige uma ação administrativa explícita e confirmada na interface.
 
 ## Pré-requisitos
 
@@ -39,12 +39,12 @@ O build reproduzível gera SHA-256, mas a identidade do publicador depende de um
 ## Instalar pelo ZIP (alternativo)
 
 ```powershell
-$package = 'C:\Pacotes\protheus-pulse-1.0.0-win-x64.zip'
+$package = 'C:\Pacotes\protheus-pulse-1.1.0-win-x64.zip'
 (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
 # Compare visualmente com o arquivo .sha256 obtido por canal confiável.
 
-Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-1.0.0'
-Set-Location 'C:\Pacotes\ProtheusPulse-1.0.0\protheus-pulse-1.0.0-win-x64'
+Expand-Archive -LiteralPath $package -DestinationPath 'C:\Pacotes\ProtheusPulse-1.1.0'
+Set-Location 'C:\Pacotes\ProtheusPulse-1.1.0\protheus-pulse-1.1.0-win-x64'
 .\install.cmd
 ```
 
