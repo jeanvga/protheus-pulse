@@ -4,6 +4,10 @@ namespace ProtheusPulse.UnitTests;
 
 public sealed class MaintenancePlannerTests
 {
+    private static readonly string[] ProductionServices = ["Producao-AppServer", "Producao-Broker"];
+    private static readonly string[] ExclusiveServices = ["Compilacao-AppServer"];
+    private static readonly string[] SingleProductionService = ["Producao-AppServer"];
+
     [Fact]
     public void ExclusiveInstallationStartsWhileEverythingElseStops()
     {
@@ -14,8 +18,8 @@ public sealed class MaintenancePlannerTests
             new MonitoredService("Compilacao-AppServer", true)
         ]);
 
-        Assert.Equal(new[] { "Producao-AppServer", "Producao-Broker" }, plan.ToStop);
-        Assert.Equal(new[] { "Compilacao-AppServer" }, plan.ToStart);
+        Assert.Equal(ProductionServices, plan.ToStop);
+        Assert.Equal(ExclusiveServices, plan.ToStart);
     }
 
     [Fact]
@@ -28,7 +32,7 @@ public sealed class MaintenancePlannerTests
             new MonitoredService("Producao-AppServer", false)
         ]);
 
-        Assert.Equal(new[] { "Producao-AppServer" }, plan.ToStop);
+        Assert.Equal(SingleProductionService, plan.ToStop);
         Assert.Single(plan.ToStart);
     }
 
@@ -41,7 +45,7 @@ public sealed class MaintenancePlannerTests
             new MonitoredService("Producao-AppServer", false)
         ]);
 
-        Assert.Equal(new[] { "Producao-AppServer" }, plan.ToStop);
+        Assert.Equal(SingleProductionService, plan.ToStop);
         Assert.Empty(plan.ToStart);
     }
 }
