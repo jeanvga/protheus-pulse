@@ -436,7 +436,7 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
           <button className={group.isExclusive ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.isExclusive} title="Instalação reiniciada no início da manutenção, que permanece como o único ambiente no ar" onClick={() => void toggleExclusive(group)}><Crown size={14} /> {group.isExclusive ? 'Exclusivo na manutenção' : 'Definir como exclusivo'}</button>
           <button className={group.autoStartEnabled ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.autoStartEnabled} title="Sobe automaticamente os serviços deste ambiente quando eles caem. Um serviço parado pelo painel fica de fora até ser iniciado pelo painel." onClick={() => void toggleAutoStart(group)}><Zap size={14} /> {group.autoStartEnabled ? 'Auto-start ativo' : 'Ativar auto-start'}</button>
         </div>}
-        {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span>{component.windowsServiceName && <small className="service-state">{serviceStatusLabel(component.windowsServiceStatus)}{group.autoStartEnabled && component.windowsServiceAutoStartSuspended ? ' · auto-start suspenso' : ''}</small>}{isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><ServiceActionButton component={component} action="start" icon={Play} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="restart" icon={RotateCw} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="stop" icon={Square} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /></span>}</div><small>{component.summary}</small></div>)}
+        {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span>{component.windowsServiceName && <small className={`service-state ${serviceStateTone(component.windowsServiceStatus)}`}><i />{serviceStatusLabel(component.windowsServiceStatus)}{group.autoStartEnabled ? autoStartNote(component) : ''}</small>}{isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><ServiceActionButton component={component} action="start" icon={Play} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="restart" icon={RotateCw} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="stop" icon={Square} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /></span>}</div><small>{component.summary}</small></div>)}
         {!isDemo && installationId && <footer className="installation-actions"><button className="secondary-button" onClick={() => editInstallation(installationId)}><Pencil size={15} /> Configurar</button><button className="danger-button" disabled={busy} onClick={() => void remove(installationId, name)}><Trash2 size={15} /> Remover</button></footer>}
       </article>
     })}</div>
@@ -478,6 +478,25 @@ export function serviceActionAllowed(status: string | undefined, action: Service
   if (status === 'Running') return action !== 'start'
   if (status === 'Stopped') return action === 'start'
   return true
+}
+
+function serviceStateTone(status: string | undefined) {
+  if (status === 'Running') return 'running'
+  if (status === 'Stopped') return 'stopped'
+  if (transitioningServiceStates.includes(status ?? '')) return 'pending'
+  return 'unknown'
+}
+
+/**
+ * Distingue as duas razões de o watchdog estar quieto: uma parada deliberada não
+ * acumula falhas, enquanto a desistência vem sempre depois de tentativas.
+ */
+function autoStartNote(component: ComponentSnapshot) {
+  if (!component.windowsServiceAutoStartSuspended) return ''
+  const failures = component.windowsServiceAutoStartFailures ?? 0
+  return failures > 0
+    ? ` · auto-start pausado após ${failures} falha${failures > 1 ? 's' : ''}`
+    : ' · auto-start suspenso'
 }
 
 export function serviceStatusLabel(status: string | undefined) {

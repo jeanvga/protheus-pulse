@@ -55,57 +55,74 @@ public sealed class AutoStartPolicyTests
     private static readonly DateTimeOffset Now = new(2026, 7, 25, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void StoppedServiceWithoutPreviousAttemptIsRecovered()
+    public void StoppedServiceWithoutPreviousFailureIsRecovered()
     {
-        Assert.True(AutoStartPolicy.ShouldAttempt("Stopped", null, Now));
+        Assert.True(AutoStartPolicy.ShouldAttempt("Stopped", AutoStartState.Clean, Now));
     }
 
     [Fact]
     public void RunningServiceIsNeverRestarted()
     {
-        Assert.False(AutoStartPolicy.ShouldAttempt("Running", null, Now));
-        Assert.False(AutoStartPolicy.ShouldAttempt("StartPending", null, Now));
+        Assert.False(AutoStartPolicy.ShouldAttempt("Running", AutoStartState.Clean, Now));
+        Assert.False(AutoStartPolicy.ShouldAttempt("StartPending", AutoStartState.Clean, Now));
     }
 
     [Fact]
     public void ManualStopSuspendsRecoveryUntilAManualStart()
     {
-        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", null, Now, manuallySuspended: true));
-        Assert.True(AutoStartPolicy.ShouldAttempt("Stopped", null, Now, manuallySuspended: false));
+        var suspended = AutoStartState.Clean with { Suspended = true };
+
+        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", suspended, Now));
+        Assert.True(AutoStartPolicy.ShouldAttempt("Stopped", AutoStartState.Clean, Now));
     }
 
     [Fact]
     public void ServiceWithAnActionInFlightIsLeftAlone()
     {
-        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", null, Now, actionInFlight: true));
+        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", AutoStartState.Clean, Now, actionInFlight: true));
     }
 
     [Fact]
-    public void AttemptBudgetStopsTheLoopWithinTheWindow()
+    public void BackoffHoldsTheNextAttemptUntilTheRetryMoment()
     {
-        var attempt = new AutoStartAttempt(AutoStartPolicy.MaximumAttempts, Now.AddMinutes(-5));
+        var failed = AutoStartPolicy.RegisterFailure(AutoStartState.Clean, Now);
 
-        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", attempt, Now));
+        Assert.Equal(Now + AutoStartPolicy.FirstRetryDelay, failed.RetryAfter);
+        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", failed, Now.AddSeconds(30)));
+        Assert.True(AutoStartPolicy.ShouldAttempt("Stopped", failed, Now + AutoStartPolicy.FirstRetryDelay));
     }
 
     [Fact]
-    public void AttemptBudgetResetsAfterTheWindow()
+    public void EachFailureDoublesTheWaitUpToTheCap()
     {
-        var attempt = new AutoStartAttempt(AutoStartPolicy.MaximumAttempts, Now - AutoStartPolicy.AttemptWindow.Add(TimeSpan.FromMinutes(1)));
-
-        Assert.True(AutoStartPolicy.ShouldAttempt("Stopped", attempt, Now));
-        Assert.Equal(1, AutoStartPolicy.Register(attempt, Now).Count);
+        Assert.Equal(AutoStartPolicy.FirstRetryDelay, AutoStartPolicy.BackoffFor(1));
+        Assert.Equal(TimeSpan.FromMinutes(2), AutoStartPolicy.BackoffFor(2));
+        Assert.Equal(TimeSpan.FromMinutes(4), AutoStartPolicy.BackoffFor(3));
+        Assert.Equal(AutoStartPolicy.MaximumRetryDelay, AutoStartPolicy.BackoffFor(20));
     }
 
     [Fact]
-    public void RegisterAccumulatesAttemptsInsideTheWindow()
+    public void WatchdogGivesUpAfterTheFailureBudgetAndStaysQuiet()
     {
-        var first = AutoStartPolicy.Register(null, Now);
-        var second = AutoStartPolicy.Register(first, Now.AddMinutes(1));
+        var state = AutoStartState.Clean;
+        for (var attempt = 0; attempt < AutoStartPolicy.MaximumFailures; attempt++)
+        {
+            state = AutoStartPolicy.RegisterFailure(state, Now.AddHours(attempt));
+        }
 
-        Assert.Equal(1, first.Count);
-        Assert.Equal(2, second.Count);
-        Assert.Equal(first.FirstAttemptAt, second.FirstAttemptAt);
+        Assert.True(state.Suspended);
+        Assert.Equal(AutoStartPolicy.MaximumFailures, state.FailureCount);
+        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", state, Now.AddDays(30)));
+    }
+
+    [Fact]
+    public void SuccessClearsTheFailureBudget()
+    {
+        var recovered = AutoStartPolicy.RegisterSuccess();
+
+        Assert.Equal(0, recovered.FailureCount);
+        Assert.Null(recovered.RetryAfter);
+        Assert.False(recovered.Suspended);
     }
 }
 

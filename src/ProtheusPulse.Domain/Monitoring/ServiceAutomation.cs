@@ -86,45 +86,69 @@ public static class MaintenancePlanner
     }
 }
 
-/// <summary>Tentativas de religar um serviço dentro da janela corrente.</summary>
-public sealed record AutoStartAttempt(int Count, DateTimeOffset FirstAttemptAt);
+/// <summary>
+/// Estado de recuperação de um serviço, guardado por alvo monitorado.
+/// <paramref name="Suspended"/> significa que o watchdog não toca mais no serviço
+/// até um start pelo painel — seja porque alguém o parou de propósito
+/// (<paramref name="FailureCount"/> zero), seja porque as tentativas se esgotaram.
+/// </summary>
+public sealed record AutoStartState(int FailureCount, DateTimeOffset? RetryAfter, bool Suspended)
+{
+    public static AutoStartState Clean { get; } = new(0, null, false);
+}
 
 /// <summary>
-/// Política do auto-start: religa um serviço parado, mas com orçamento de
-/// tentativas para não entrar em laço quando o ambiente não sobe de verdade.
+/// Política do auto-start: religa um serviço parado espaçando as tentativas e
+/// desistindo quando o ambiente simplesmente não sobe. Sem isso, um serviço que
+/// falha por configuração ou licença ficaria sendo iniciado indefinidamente,
+/// enchendo a auditoria e o log de eventos do Windows a cada ciclo.
 /// </summary>
 public static class AutoStartPolicy
 {
-    public const int MaximumAttempts = 3;
-    public static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(15);
+    /// <summary>Falhas consecutivas antes de o watchdog desistir e exigir intervenção.</summary>
+    public const int MaximumFailures = 5;
 
-    /// <param name="manuallySuspended">
-    /// O serviço foi parado pelo painel. Uma parada deliberada vale mais que o
-    /// watchdog: nada é religado até alguém iniciar o serviço pelo painel.
-    /// </param>
+    public static readonly TimeSpan FirstRetryDelay = TimeSpan.FromMinutes(1);
+    public static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromMinutes(30);
+
     /// <param name="actionInFlight">
     /// Há uma ação do painel executando neste serviço agora. Religar no meio de um
     /// restart competiria com a própria ação e faria a espera pelo estado falhar.
     /// </param>
     public static bool ShouldAttempt(
         string? serviceStatus,
-        AutoStartAttempt? attempt,
+        AutoStartState state,
         DateTimeOffset now,
-        bool manuallySuspended = false,
         bool actionInFlight = false)
     {
-        if (manuallySuspended || actionInFlight || !ServiceStateRules.IsStopped(serviceStatus))
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Suspended || actionInFlight || !ServiceStateRules.IsStopped(serviceStatus))
         {
             return false;
         }
 
-        return attempt is null
-            || now - attempt.FirstAttemptAt > AttemptWindow
-            || attempt.Count < MaximumAttempts;
+        return state.RetryAfter is null || now >= state.RetryAfter.Value;
     }
 
-    public static AutoStartAttempt Register(AutoStartAttempt? attempt, DateTimeOffset now) =>
-        attempt is null || now - attempt.FirstAttemptAt > AttemptWindow
-            ? new AutoStartAttempt(1, now)
-            : attempt with { Count = attempt.Count + 1 };
+    /// <summary>Espaça a próxima tentativa e desiste ao esgotar o orçamento de falhas.</summary>
+    public static AutoStartState RegisterFailure(AutoStartState state, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var failures = state.FailureCount + 1;
+        return new AutoStartState(failures, now + BackoffFor(failures), failures >= MaximumFailures);
+    }
+
+    public static AutoStartState RegisterSuccess() => AutoStartState.Clean;
+
+    /// <summary>Espera dobrada a cada falha, limitada a <see cref="MaximumRetryDelay"/>.</summary>
+    public static TimeSpan BackoffFor(int failureCount)
+    {
+        if (failureCount <= 1)
+        {
+            return FirstRetryDelay;
+        }
+
+        var ticks = FirstRetryDelay.Ticks * Math.Pow(2, Math.Min(failureCount - 1, 16));
+        return ticks >= MaximumRetryDelay.Ticks ? MaximumRetryDelay : TimeSpan.FromTicks((long)ticks);
+    }
 }

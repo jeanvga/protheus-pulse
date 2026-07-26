@@ -107,7 +107,7 @@ public static class ApiEndpoints
 
             var processedComponents = await worker.RunNowAsync(cancellationToken);
             return Results.Ok(new { processedComponents, completedAt = DateTimeOffset.UtcNow });
-        }).RequireAuthorization("Administrator");
+        }).RequireAuthorization("Administrator").RequireRateLimiting("serviceControl");
 
         return endpoints;
     }

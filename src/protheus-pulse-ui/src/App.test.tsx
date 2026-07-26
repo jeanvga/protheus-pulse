@@ -277,6 +277,27 @@ describe('App', () => {
     expect(await screen.findByText(/Parado · auto-start suspenso/)).toBeInTheDocument()
   })
 
+  it('mostra o auto-start pausado depois das falhas consecutivas', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    vi.mocked(getDashboard).mockResolvedValue({
+      ...realSummary,
+      components: [{
+        ...realSummary.components[0],
+        windowsServiceName: 'PulseAppServer',
+        windowsServiceStatus: 'Stopped',
+        windowsServiceAutoStartSuspended: true,
+        windowsServiceAutoStartFailures: 5,
+        installationAutoStartEnabled: true,
+      }],
+    })
+
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
+
+    expect(await screen.findByText(/auto-start pausado após 5 falhas/)).toBeInTheDocument()
+  })
+
   it('marca a instalação exclusiva e ativa o auto-start', async () => {
     sessionStorage.setItem('pulse.test.role', 'Administrator')
     vi.mocked(getDashboard).mockResolvedValue(realSummary)

@@ -60,6 +60,12 @@ public sealed class WindowsServiceTarget : Entity
     /// o auto-start até que alguém inicie o serviço pelo painel novamente.
     /// </summary>
     public bool AutoStartSuspended { get; set; }
+
+    /// <summary>Falhas consecutivas do auto-start; zera quando o serviço sobe.</summary>
+    public int AutoStartFailureCount { get; set; }
+
+    /// <summary>Momento a partir do qual o watchdog pode tentar de novo (backoff).</summary>
+    public DateTimeOffset? AutoStartRetryAfter { get; set; }
     public Component Component { get; set; } = null!;
 }
 

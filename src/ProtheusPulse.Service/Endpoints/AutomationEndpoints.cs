@@ -17,9 +17,11 @@ public static class AutomationEndpoints
     public static RouteGroupBuilder MapAutomation(this RouteGroupBuilder api)
     {
         api.MapPost("/installations/{installationId:guid}/exclusive", SetExclusiveAsync)
-            .RequireAuthorization("Administrator");
+            .RequireAuthorization("Administrator")
+            .RequireRateLimiting("serviceControl");
         api.MapPost("/installations/{installationId:guid}/auto-start", SetAutoStartAsync)
-            .RequireAuthorization("Administrator");
+            .RequireAuthorization("Administrator")
+            .RequireRateLimiting("serviceControl");
         return api;
     }
 

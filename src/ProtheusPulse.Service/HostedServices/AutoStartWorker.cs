@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.ServiceProcess;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
@@ -26,7 +25,6 @@ public sealed partial class AutoStartWorker(
     ILogger<AutoStartWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(40);
-    private readonly ConcurrentDictionary<string, AutoStartAttempt> attempts = new(StringComparer.OrdinalIgnoreCase);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -92,40 +90,45 @@ public sealed partial class AutoStartWorker(
             var status = ReadStatus(target.ServiceName);
             target.LastStatus = status;
             target.LastStatusAt = clock.UtcNow;
+            var state = ReadState(target);
             if (ServiceStateRules.IsRunning(status))
             {
-                attempts.TryRemove(target.ServiceName, out _);
+                ApplyState(target, AutoStartPolicy.RegisterSuccess());
                 continue;
             }
 
-            var attempt = attempts.TryGetValue(target.ServiceName, out var previous) ? previous : null;
-            if (!AutoStartPolicy.ShouldAttempt(
-                status,
-                attempt,
-                clock.UtcNow,
-                target.AutoStartSuspended,
-                coordinator.IsBusy(target.ServiceName)))
+            if (!AutoStartPolicy.ShouldAttempt(status, state, clock.UtcNow, coordinator.IsBusy(target.ServiceName)))
             {
                 continue;
             }
 
-            var registered = AutoStartPolicy.Register(attempt, clock.UtcNow);
-            attempts[target.ServiceName] = registered;
+            var attempt = state.FailureCount + 1;
             var outcome = await Task.Run(() => StartService(target.ServiceName), cancellationToken);
             target.LastStatus = outcome.Status;
             target.LastStatusAt = clock.UtcNow;
             if (outcome.Success)
             {
-                attempts.TryRemove(target.ServiceName, out _);
+                ApplyState(target, AutoStartPolicy.RegisterSuccess());
                 recovered++;
-                LogRecovered(logger, target.ServiceName, registered.Count);
+                LogRecovered(logger, target.ServiceName, attempt);
             }
             else
             {
-                LogRecoveryFailed(logger, target.ServiceName, registered.Count, outcome.Status);
+                var next = AutoStartPolicy.RegisterFailure(state, clock.UtcNow);
+                ApplyState(target, next);
+                if (next.Suspended)
+                {
+                    // Esgotou o orçamento: parar de tentar evita um laço infinito em
+                    // serviços que não sobem por configuração, licença ou dependência.
+                    LogGaveUp(logger, target.ServiceName, next.FailureCount);
+                }
+                else
+                {
+                    LogRecoveryFailed(logger, target.ServiceName, attempt, outcome.Status);
+                }
             }
 
-            AddAudit(dbContext, target, outcome, registered.Count);
+            AddAudit(dbContext, target, outcome, attempt, ReadState(target));
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -160,6 +163,16 @@ public sealed partial class AutoStartWorker(
             .Where(item => item.IsExclusive || !suspended.Contains(item.Id))
             .Select(item => item.Id)
             .ToHashSet();
+    }
+
+    private static AutoStartState ReadState(WindowsServiceTarget target) =>
+        new(target.AutoStartFailureCount, target.AutoStartRetryAfter, target.AutoStartSuspended);
+
+    private static void ApplyState(WindowsServiceTarget target, AutoStartState state)
+    {
+        target.AutoStartFailureCount = state.FailureCount;
+        target.AutoStartRetryAfter = state.RetryAfter;
+        target.AutoStartSuspended = state.Suspended;
     }
 
     private static string ReadStatus(string serviceName)
@@ -212,12 +225,20 @@ public sealed partial class AutoStartWorker(
         }
     }
 
-    private void AddAudit(PulseDbContext dbContext, WindowsServiceTarget target, RecoveryOutcome outcome, int attempt)
+    private void AddAudit(
+        PulseDbContext dbContext,
+        WindowsServiceTarget target,
+        RecoveryOutcome outcome,
+        int attempt,
+        AutoStartState state)
     {
+        var action = outcome.Success
+            ? "AutoStartRecovered"
+            : state.Suspended ? "AutoStartGaveUp" : "AutoStartFailed";
         dbContext.AuditEvents.Add(new AuditEvent
         {
             UserId = null,
-            Action = outcome.Success ? "AutoStartRecovered" : "AutoStartFailed",
+            Action = action,
             EntityType = nameof(Component),
             EntityId = target.ComponentId.ToString(),
             SanitizedDetailsJson = JsonSerializer.Serialize(new
@@ -225,7 +246,9 @@ public sealed partial class AutoStartWorker(
                 serviceName = target.ServiceName,
                 attempt,
                 status = outcome.Status,
-                message = outcome.Message
+                message = outcome.Message,
+                nextRetryAt = state.RetryAfter,
+                suspended = state.Suspended
             }),
             RemoteAddress = null,
             OccurredAt = clock.UtcNow
@@ -242,4 +265,7 @@ public sealed partial class AutoStartWorker(
 
     [LoggerMessage(EventId = 1503, Level = LogLevel.Warning, Message = "Auto-start não conseguiu religar {ServiceName} na tentativa {Attempt}: {Status}.")]
     private static partial void LogRecoveryFailed(ILogger logger, string serviceName, int attempt, string status);
+
+    [LoggerMessage(EventId = 1504, Level = LogLevel.Error, Message = "Auto-start desistiu de {ServiceName} após {Failures} falhas consecutivas; é preciso iniciar pelo painel.")]
+    private static partial void LogGaveUp(ILogger logger, string serviceName, int failures);
 }

@@ -32,6 +32,7 @@ export interface ComponentSnapshot {
   windowsServiceName?: string
   windowsServiceStatus?: string
   windowsServiceAutoStartSuspended?: boolean
+  windowsServiceAutoStartFailures?: number
   installationIsExclusive?: boolean
   installationAutoStartEnabled?: boolean
 }

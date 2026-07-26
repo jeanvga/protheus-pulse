@@ -11,6 +11,12 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Intervalo do watchdog configurável em `Pulse:AutoStartIntervalSeconds` (padrão 60 s, limites 15 s–3600 s).
 - Parada manual vence o watchdog: parar um serviço pelo painel suspende o auto-start daquele serviço até que alguém o inicie pelo painel novamente. A suspensão é gravada no banco, então sobrevive a um reinício do próprio Pulse; o painel mostra "auto-start suspenso" ao lado do componente.
 - Registro de ações em andamento compartilhado entre o painel e o watchdog: o auto-start não tenta religar um serviço enquanto uma ação manual ou o restart da manutenção está executando nele, evitando erros de tempo limite causados pela própria concorrência.
+- Backoff e desistência no auto-start: cada falha dobra a espera da próxima tentativa (1 min até o teto de 30 min) e, após cinco falhas consecutivas, o watchdog para de tentar e registra `AutoStartGaveUp`. Um serviço que não sobe por configuração, licença ou dependência deixa de ser iniciado indefinidamente; o painel mostra "auto-start pausado após N falhas" e um start pelo painel zera o contador e retoma a proteção.
+
+### Security
+
+- Rate limit nas rotas que alteram estado — ações de serviço, entrada e saída da manutenção, marcação de exclusivo/auto-start e coleta imediata — com 20 requisições por minuto por origem. Antes apenas login e heartbeat eram limitados, então um token vazado de administrador podia disparar start/stop em rajada no SCM.
+- Novos cabeçalhos de isolamento nas respostas: `Permissions-Policy` (nega câmera, microfone, geolocalização e afins), `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy` e `X-Permitted-Cross-Domain-Policies`.
 
 ### Changed
 

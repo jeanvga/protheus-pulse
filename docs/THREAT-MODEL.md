@@ -45,6 +45,8 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 | Token JWT forjado | Elevação de privilégio | HMAC >= 256 bits, segredo em arquivo com ACL, validação de issuer/audience/expiração |
 | Token de heartbeat roubado ou tentativas em massa | Evento falso e ocultação de atraso | Token aleatório exibido uma vez, somente hash no banco, comparação constante, rotação e rate limit por job/origem |
 | Abuso de SignalR | Consumo de conexão/dados | Autenticação no hub, mensagens sem payload sensível e limites do host |
+| Token de administrador roubado usado para rajada de start/stop | Instabilidade do ambiente Protheus e ruído no SCM | Perfil `Administrator`, rate limit de 20 req/min por origem nas rotas que alteram estado e auditoria de cada ação |
+| Serviço que nunca sobe | Laço infinito de tentativas, ruído em log e auditoria | Backoff exponencial por serviço (1 min a 30 min) e desistência após cinco falhas consecutivas, exigindo start pelo painel |
 | Coletor bloqueado | Exaustão de threads/recursos | Async, `CancellationToken`, timeout e concorrência limitada |
 | Conta de serviço privilegiada | Movimento lateral | Nunca exigir LocalSystem; conceder somente leitura nos alvos |
 | Supply chain | Execução de código malicioso | Lockfiles, auditoria npm, versões fixadas do .NET e CI limpa |

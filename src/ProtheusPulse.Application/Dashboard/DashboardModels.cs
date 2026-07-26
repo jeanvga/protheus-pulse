@@ -38,7 +38,8 @@ public sealed record ComponentSnapshot(
     string? WindowsServiceStatus = null,
     bool InstallationIsExclusive = false,
     bool InstallationAutoStartEnabled = false,
-    bool WindowsServiceAutoStartSuspended = false);
+    bool WindowsServiceAutoStartSuspended = false,
+    int WindowsServiceAutoStartFailures = 0);
 
 public sealed record AlertSnapshot(
     Guid Id,

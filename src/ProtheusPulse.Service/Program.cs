@@ -166,6 +166,20 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 AutoReplenishment = true
             }));
+    // Ações que mexem em serviços Windows: mesmo restritas a Administrator, um
+    // token vazado ou um clique repetido não podem virar uma enxurrada de
+    // start/stop no SCM. O particionamento é por origem porque o limiter roda
+    // antes da autenticação no pipeline.
+    options.AddPolicy("serviceControl", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "local",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+                AutoReplenishment = true
+            }));
     options.AddPolicy("heartbeat", context =>
     {
         var origin = context.Connection.RemoteIpAddress?.ToString() ?? "local";
@@ -243,6 +257,10 @@ app.Use(async (context, next) =>
     context.Response.Headers.XFrameOptions = "DENY";
     context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers["Permissions-Policy"] = "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
+    context.Response.Headers["Cross-Origin-Opener-Policy"] = "same-origin";
+    context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";
+    context.Response.Headers["X-Permitted-Cross-Domain-Policies"] = "none";
     await next();
 });
 app.UseSerilogRequestLogging();

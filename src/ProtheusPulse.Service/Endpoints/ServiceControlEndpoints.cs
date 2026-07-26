@@ -29,7 +29,8 @@ public static class ServiceControlEndpoints
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
             ExecuteComponentActionAsync(id, action, demoMode, dbContext, clock, coordinator, principal, httpContext, cancellationToken))
-            .RequireAuthorization("Administrator");
+            .RequireAuthorization("Administrator")
+            .RequireRateLimiting("serviceControl");
 
         api.MapGet("/maintenance/status", GetMaintenanceStatusAsync).RequireAuthorization("Viewer");
 
@@ -42,7 +43,8 @@ public static class ServiceControlEndpoints
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
             EnterMaintenanceAsync(request, demoMode, dbContext, clock, coordinator, principal, httpContext, cancellationToken))
-            .RequireAuthorization("Administrator");
+            .RequireAuthorization("Administrator")
+            .RequireRateLimiting("serviceControl");
 
         api.MapPost("/maintenance/exit", (
             PulseDbContext dbContext,
@@ -52,7 +54,8 @@ public static class ServiceControlEndpoints
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
             ExitMaintenanceAsync(demoMode, dbContext, clock, coordinator, principal, httpContext, cancellationToken))
-            .RequireAuthorization("Administrator");
+            .RequireAuthorization("Administrator")
+            .RequireRateLimiting("serviceControl");
 
         return api;
     }
@@ -106,9 +109,7 @@ public static class ServiceControlEndpoints
         foreach (var target in component.WindowsServiceTargets)
         {
             results.Add(await RunActionAsync(coordinator, target.ServiceName, normalizedAction, cancellationToken));
-            // Parar pelo painel é uma decisão deliberada: o watchdog não desfaz isso
-            // até que alguém inicie o serviço pelo painel novamente.
-            target.AutoStartSuspended = normalizedAction == "stop";
+            ApplyAutoStartState(target, stopping: normalizedAction == "stop");
         }
 
         ApplyObservedStatuses(component.WindowsServiceTargets, results, clock);
@@ -281,8 +282,8 @@ public static class ServiceControlEndpoints
             results.Add(await RunActionAsync(coordinator, serviceName, "restart", cancellationToken));
         }
 
-        ApplySuspension(targets, plan.ToStop, suspended: true);
-        ApplySuspension(targets, plan.ToRestart, suspended: false);
+        ApplyAutoStartState(targets, plan.ToStop, stopping: true);
+        ApplyAutoStartState(targets, plan.ToRestart, stopping: false);
         ApplyObservedStatuses(targets, results, clock);
         return results;
     }
@@ -306,7 +307,7 @@ public static class ServiceControlEndpoints
             results.Add(await RunActionAsync(coordinator, serviceName, action, cancellationToken));
         }
 
-        ApplySuspension(targets, serviceNames, suspended: action == "stop");
+        ApplyAutoStartState(targets, serviceNames, stopping: action == "stop");
         ApplyObservedStatuses(targets, results, clock);
         return results;
     }
@@ -325,10 +326,10 @@ public static class ServiceControlEndpoints
         return await Task.Run(() => ExecuteServiceAction(serviceName, action), cancellationToken);
     }
 
-    private static void ApplySuspension(
+    private static void ApplyAutoStartState(
         IEnumerable<WindowsServiceTarget> targets,
         IReadOnlyCollection<string> serviceNames,
-        bool suspended)
+        bool stopping)
     {
         if (serviceNames.Count == 0)
         {
@@ -338,8 +339,26 @@ public static class ServiceControlEndpoints
         var affected = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase);
         foreach (var target in targets.Where(target => affected.Contains(target.ServiceName)))
         {
-            target.AutoStartSuspended = suspended;
+            ApplyAutoStartState(target, stopping);
         }
+    }
+
+    /// <summary>
+    /// Parar pelo painel é uma decisão deliberada e suspende o watchdog até um start
+    /// manual. Iniciar pelo painel é o caminho de volta: limpa a suspensão e zera o
+    /// backoff, inclusive quando o auto-start havia desistido depois de várias falhas.
+    /// </summary>
+    private static void ApplyAutoStartState(WindowsServiceTarget target, bool stopping)
+    {
+        if (stopping)
+        {
+            target.AutoStartSuspended = true;
+            return;
+        }
+
+        target.AutoStartSuspended = false;
+        target.AutoStartFailureCount = 0;
+        target.AutoStartRetryAfter = null;
     }
 
     private static Task<List<WindowsServiceTarget>> LoadRealServiceTargetsAsync(
