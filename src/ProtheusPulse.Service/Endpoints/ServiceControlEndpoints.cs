@@ -103,6 +103,7 @@ public static class ServiceControlEndpoints
             results.Add(await Task.Run(() => ExecuteServiceAction(target.ServiceName, normalizedAction), cancellationToken));
         }
 
+        ApplyObservedStatuses(component.WindowsServiceTargets, results, clock);
         AddAudit(dbContext, clock, principal, httpContext, "ServiceActionExecuted", nameof(Component), component.Id, new
         {
             action = normalizedAction,
@@ -122,7 +123,12 @@ public static class ServiceControlEndpoints
             .AsNoTracking()
             .Where(item => item.Name == MaintenanceModeName && item.StartsAt <= now && item.EndsAt > now)
             .MaxAsync(item => (DateTimeOffset?)item.EndsAt, cancellationToken);
-        return Results.Ok(new { active = endsAt.HasValue, endsAt });
+        var exclusive = await dbContext.Installations
+            .AsNoTracking()
+            .Where(item => !item.IsDemo && item.IsExclusive)
+            .Select(item => new ExclusiveInstallation(item.Id, item.Name))
+            .FirstOrDefaultAsync(cancellationToken);
+        return Results.Ok(new { active = endsAt.HasValue, endsAt, exclusiveInstallation = exclusive });
     }
 
     private static async Task<IResult> EnterMaintenanceAsync(
@@ -144,25 +150,37 @@ public static class ServiceControlEndpoints
             return Results.Conflict(new { message = "O modo manutenção está disponível somente no Windows." });
         }
 
-        var installationIds = await dbContext.Installations
+        var installations = await dbContext.Installations
             .AsNoTracking()
             .Where(item => !item.IsDemo)
-            .Select(item => item.Id)
+            .Select(item => new { item.Id, item.Name, item.IsExclusive })
             .ToArrayAsync(cancellationToken);
-        if (installationIds.Length == 0)
+        if (installations.Length == 0)
         {
             return Results.Conflict(new { message = "Nenhuma instalação real cadastrada para entrar em manutenção." });
+        }
+
+        var exclusive = installations.FirstOrDefault(item => item.IsExclusive);
+        // A instalação exclusiva continua no ar para compilar e salvar configurações,
+        // então ela não recebe janela de manutenção nem tem os serviços parados.
+        var suspended = installations.Where(item => !item.IsExclusive).ToArray();
+        if (suspended.Length == 0)
+        {
+            return Results.Conflict(new
+            {
+                message = "A instalação exclusiva é a única cadastrada; não há ambientes para suspender."
+            });
         }
 
         var now = clock.UtcNow;
         var durationMinutes = Math.Clamp(request?.DurationMinutes ?? 120, 15, 10_080);
         var endsAt = now.AddMinutes(durationMinutes);
         MaintenanceWindow? firstWindow = null;
-        foreach (var installationId in installationIds)
+        foreach (var installation in suspended)
         {
             var window = new MaintenanceWindow
             {
-                InstallationId = installationId,
+                InstallationId = installation.Id,
                 Name = MaintenanceModeName,
                 StartsAt = now,
                 EndsAt = endsAt,
@@ -172,14 +190,21 @@ public static class ServiceControlEndpoints
             firstWindow ??= window;
         }
 
-        var services = await ExecuteOnMonitoredServicesAsync(dbContext, "stop", cancellationToken);
+        var services = await ExecuteMaintenancePlanAsync(dbContext, exclusive?.Id, clock, cancellationToken);
         AddAudit(dbContext, clock, principal, httpContext, "MaintenanceModeEntered", nameof(MaintenanceWindow), firstWindow!.Id, new
         {
             durationMinutes,
-            services = services.Select(item => new { item.ServiceName, item.Success, item.Status }).ToArray()
+            exclusiveInstallation = exclusive?.Name,
+            suspendedInstallations = suspended.Length,
+            services = services.Select(item => new { item.ServiceName, item.Action, item.Success, item.Status }).ToArray()
         });
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Results.Ok(new { endsAt, services });
+        return Results.Ok(new
+        {
+            endsAt,
+            exclusiveInstallation = exclusive is null ? null : new ExclusiveInstallation(exclusive.Id, exclusive.Name),
+            services
+        });
     }
 
     private static async Task<IResult> ExitMaintenanceAsync(
@@ -209,48 +234,115 @@ public static class ServiceControlEndpoints
             window.EndsAt = now;
         }
 
-        var services = await ExecuteOnMonitoredServicesAsync(dbContext, "start", cancellationToken);
+        var services = await ExecuteOnMonitoredServicesAsync(dbContext, "start", clock, cancellationToken);
         AddAudit(dbContext, clock, principal, httpContext, "MaintenanceModeExited", nameof(MaintenanceWindow), activeWindows.FirstOrDefault()?.Id ?? Guid.Empty, new
         {
             closedWindows = activeWindows.Count,
-            services = services.Select(item => new { item.ServiceName, item.Success, item.Status }).ToArray()
+            services = services.Select(item => new { item.ServiceName, item.Action, item.Success, item.Status }).ToArray()
         });
         await dbContext.SaveChangesAsync(cancellationToken);
         return Results.Ok(new { services });
     }
 
+    /// <summary>
+    /// Para todos os serviços monitorados e sobe apenas os da instalação exclusiva.
+    /// </summary>
+    private static async Task<List<ServiceActionOutcome>> ExecuteMaintenancePlanAsync(
+        PulseDbContext dbContext,
+        Guid? exclusiveInstallationId,
+        IClock clock,
+        CancellationToken cancellationToken)
+    {
+        var targets = await LoadRealServiceTargetsAsync(dbContext, cancellationToken);
+        var plan = MaintenancePlanner.Create(targets.Select(target => new MonitoredService(
+            target.ServiceName,
+            exclusiveInstallationId.HasValue && target.Component.InstallationId == exclusiveInstallationId.Value)));
+
+        var results = new List<ServiceActionOutcome>();
+        foreach (var serviceName in plan.ToStop.Where(IsControllable))
+        {
+            results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, "stop"), cancellationToken));
+        }
+
+        foreach (var serviceName in plan.ToStart.Where(IsControllable))
+        {
+            results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, "start"), cancellationToken));
+        }
+
+        ApplyObservedStatuses(targets, results, clock);
+        return results;
+    }
+
     private static async Task<List<ServiceActionOutcome>> ExecuteOnMonitoredServicesAsync(
         PulseDbContext dbContext,
         string action,
+        IClock clock,
         CancellationToken cancellationToken)
     {
-        var serviceNames = await dbContext.Components
-            .AsNoTracking()
-            .Where(item => !item.IsDemo)
-            .SelectMany(item => item.WindowsServiceTargets)
-            .Select(item => item.ServiceName)
-            .Distinct()
-            .ToListAsync(cancellationToken);
+        var targets = await LoadRealServiceTargetsAsync(dbContext, cancellationToken);
+        var serviceNames = targets
+            .Select(target => target.ServiceName)
+            .Where(IsControllable)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var results = new List<ServiceActionOutcome>();
         foreach (var serviceName in serviceNames)
         {
-            if (string.Equals(serviceName, OwnServiceName, StringComparison.OrdinalIgnoreCase))
-            {
-                // O Pulse nunca para a si mesmo; sem ele o painel e a retomada deixariam de existir.
-                continue;
-            }
-
             results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, action), cancellationToken));
         }
 
+        ApplyObservedStatuses(targets, results, clock);
         return results;
+    }
+
+    private static Task<List<WindowsServiceTarget>> LoadRealServiceTargetsAsync(
+        PulseDbContext dbContext,
+        CancellationToken cancellationToken) =>
+        dbContext.WindowsServiceTargets
+            .Include(item => item.Component)
+            .Where(item => !item.Component.IsDemo)
+            .ToListAsync(cancellationToken);
+
+    // O Pulse nunca controla a si mesmo; sem ele o painel e a retomada deixariam de existir.
+    private static bool IsControllable(string serviceName) =>
+        !string.Equals(serviceName, OwnServiceName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Guarda o estado observado depois da ação para que o painel desabilite de
+    /// imediato o botão correspondente ao status atual, sem esperar a próxima coleta.
+    /// </summary>
+    private static void ApplyObservedStatuses(
+        IEnumerable<WindowsServiceTarget> targets,
+        IReadOnlyCollection<ServiceActionOutcome> results,
+        IClock clock)
+    {
+        if (results.Count == 0)
+        {
+            return;
+        }
+
+        var observed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var result in results.Where(item => ServiceStateRules.IsKnown(item.Status)))
+        {
+            observed[result.ServiceName] = result.Status;
+        }
+
+        var now = clock.UtcNow;
+        foreach (var target in targets)
+        {
+            if (observed.TryGetValue(target.ServiceName, out var status))
+            {
+                target.LastStatus = status;
+                target.LastStatusAt = now;
+            }
+        }
     }
 
     private static ServiceActionOutcome ExecuteServiceAction(string serviceName, string action)
     {
         if (!OperatingSystem.IsWindows())
         {
-            return new ServiceActionOutcome(serviceName, false, "Unsupported", "Ações de serviço estão disponíveis somente no Windows.");
+            return new ServiceActionOutcome(serviceName, action, false, "Unsupported", "Ações de serviço estão disponíveis somente no Windows.");
         }
 
         try
@@ -263,7 +355,7 @@ public static class ServiceControlEndpoints
                 {
                     if (!controller.CanStop)
                     {
-                        return new ServiceActionOutcome(serviceName, false, controller.Status.ToString(), "O serviço não permite parada no momento.");
+                        return new ServiceActionOutcome(serviceName, action, false, controller.Status.ToString(), "O serviço não permite parada no momento.");
                     }
 
                     controller.Stop();
@@ -282,16 +374,16 @@ public static class ServiceControlEndpoints
             }
 
             controller.Refresh();
-            return new ServiceActionOutcome(serviceName, true, controller.Status.ToString(), "Ação concluída.");
+            return new ServiceActionOutcome(serviceName, action, true, controller.Status.ToString(), "Ação concluída.");
         }
         catch (System.ServiceProcess.TimeoutException)
         {
-            return new ServiceActionOutcome(serviceName, false, "Timeout", "O serviço não atingiu o estado esperado dentro do tempo limite.");
+            return new ServiceActionOutcome(serviceName, action, false, "Timeout", "O serviço não atingiu o estado esperado dentro do tempo limite.");
         }
         catch (InvalidOperationException exception)
         {
             var detail = exception.InnerException?.Message ?? exception.Message;
-            return new ServiceActionOutcome(serviceName, false, "Error", detail);
+            return new ServiceActionOutcome(serviceName, action, false, "Error", detail);
         }
     }
 
@@ -326,5 +418,7 @@ public static class ServiceControlEndpoints
 
     public sealed record MaintenanceRequest(int? DurationMinutes, string? Reason);
 
-    public sealed record ServiceActionOutcome(string ServiceName, bool Success, string Status, string Message);
+    public sealed record ExclusiveInstallation(Guid Id, string Name);
+
+    public sealed record ServiceActionOutcome(string ServiceName, string Action, bool Success, string Status, string Message);
 }

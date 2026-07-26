@@ -67,6 +67,7 @@ public sealed class PulseDbContext(DbContextOptions<PulseDbContext> options) : D
         {
             entity.Property(item => item.ServiceName).HasMaxLength(256);
             entity.Property(item => item.DisplayName).HasMaxLength(256);
+            entity.Property(item => item.LastStatus).HasMaxLength(32);
             entity.HasOne(item => item.Component).WithMany(item => item.WindowsServiceTargets).HasForeignKey(item => item.ComponentId).OnDelete(DeleteBehavior.Cascade);
         });
 

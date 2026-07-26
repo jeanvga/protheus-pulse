@@ -2,6 +2,19 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.2.0] - 2026-07-25
+
+### Added
+
+- Instalação exclusiva: uma instalação pode ser marcada como exclusiva e, ao entrar em modo manutenção, todos os demais ambientes são parados enquanto ela sobe e permanece no ar para compilar e salvar configurações. Serviços compartilhados com a instalação exclusiva nunca são parados.
+- Auto-start por instalação: um watchdog verifica os serviços Windows dos ambientes marcados e os religa automaticamente quando caem, com orçamento de três tentativas a cada quinze minutos, registro em auditoria (`AutoStartRecovered`/`AutoStartFailed`) e atualização do painel em tempo real. Ambientes suspensos pela manutenção ficam de fora; a instalação exclusiva continua protegida durante a janela.
+- Intervalo do watchdog configurável em `Pulse:AutoStartIntervalSeconds` (padrão 60 s, limites 15 s–3600 s).
+
+### Changed
+
+- Os botões iniciar, reiniciar e parar reconhecem o estado real do serviço no SCM: a ação equivalente ao estado atual fica desabilitada (serviço em execução não pode ser iniciado; serviço parado não pode ser parado nem reiniciado) e estados de transição bloqueiam todas as ações. Cada componente exibe o estado atual do serviço ao lado do nome.
+- O estado do serviço é gravado a cada coleta e após cada ação, de modo que o painel reflete a nova situação imediatamente, sem esperar o próximo ciclo.
+
 ## [1.1.0] - 2026-07-18
 
 ### Added

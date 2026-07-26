@@ -42,6 +42,7 @@ if (pulseOptions.HistoryRetentionDays is < 1 or > 365
     || pulseOptions.MetricAggregationAfterDays > pulseOptions.HistoryRetentionDays
     || pulseOptions.CollectionIntervalSeconds is < 10 or > 3_600
     || pulseOptions.CollectorTimeoutSeconds is < 1 or > 120
+    || pulseOptions.AutoStartIntervalSeconds is < 15 or > 3_600
     || pulseOptions.MaximumConcurrentCollectors is < 1 or > 16
     || pulseOptions.MaximumLogBytesPerCycle is < 4_096 or > 1_048_576
     || pulseOptions.DiskCriticalPercent is < 0 or > 100
@@ -225,6 +226,7 @@ else
 {
     builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<MonitoringWorker>());
     builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<RetentionWorker>());
+    builder.Services.AddHostedService<AutoStartWorker>();
 }
 
 var app = builder.Build();

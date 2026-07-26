@@ -30,6 +30,9 @@ export interface ComponentSnapshot {
   metricUnit?: string
   isDemo: boolean
   windowsServiceName?: string
+  windowsServiceStatus?: string
+  installationIsExclusive?: boolean
+  installationAutoStartEnabled?: boolean
 }
 
 export interface LogEventItem {
@@ -47,9 +50,22 @@ export type ServiceAction = 'start' | 'stop' | 'restart'
 
 export interface ServiceActionOutcome {
   serviceName: string
+  action: ServiceAction
   success: boolean
   status: string
   message: string
+}
+
+export interface ExclusiveInstallation {
+  id: string
+  name: string
+}
+
+export interface AutomationFlag {
+  id: string
+  name: string
+  isExclusive: boolean
+  autoStartEnabled: boolean
 }
 
 export interface ServiceActionResponse {
@@ -59,11 +75,13 @@ export interface ServiceActionResponse {
 export interface MaintenanceStatus {
   active: boolean
   endsAt?: string
+  exclusiveInstallation?: ExclusiveInstallation | null
 }
 
 export interface MaintenanceChangeResult {
   services: ServiceActionOutcome[]
   endsAt?: string
+  exclusiveInstallation?: ExclusiveInstallation | null
 }
 
 export interface AlertSnapshot {

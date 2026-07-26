@@ -1,7 +1,7 @@
 import * as signalR from '@microsoft/signalr'
 import { demoSummary } from './demoData'
 import type {
-  AuthStatus, AuthToken, CollectionResult, DashboardSummary, InstallationConfiguration,
+  AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, InstallationConfiguration,
   InstallationCreated, LogEventItem, MaintenanceChangeResult, MaintenanceStatus,
   PathDiscoveryResult, SaveInstallationInput, ServiceAction, ServiceActionResponse,
   ServiceDiscoveryResult,
@@ -102,6 +102,16 @@ export async function getLogEvents(): Promise<LogEventItem[]> {
 export async function executeServiceAction(componentId: string, action: ServiceAction): Promise<ServiceActionResponse> {
   if (staticDemo) throw new Error('Ações de serviço não estão disponíveis na demonstração estática.')
   return request<ServiceActionResponse>(`/api/v1/components/${componentId}/service/${action}`, { method: 'POST', body: '{}' })
+}
+
+export async function setExclusiveInstallation(installationId: string, enabled: boolean): Promise<AutomationFlag> {
+  if (staticDemo) throw new Error('A instalação exclusiva não pode ser definida na demonstração estática.')
+  return request<AutomationFlag>(`/api/v1/installations/${installationId}/exclusive`, { method: 'POST', body: JSON.stringify({ enabled }) })
+}
+
+export async function setAutoStart(installationId: string, enabled: boolean): Promise<AutomationFlag> {
+  if (staticDemo) throw new Error('O auto-start não pode ser alterado na demonstração estática.')
+  return request<AutomationFlag>(`/api/v1/installations/${installationId}/auto-start`, { method: 'POST', body: JSON.stringify({ enabled }) })
 }
 
 export async function getMaintenanceStatus(): Promise<MaintenanceStatus> {

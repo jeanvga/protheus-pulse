@@ -24,6 +24,8 @@ vi.mock('./api', () => ({
   enterMaintenance: vi.fn(),
   exitMaintenance: vi.fn(),
   getMaintenanceStatus: vi.fn().mockResolvedValue({ active: false }),
+  setExclusiveInstallation: vi.fn(),
+  setAutoStart: vi.fn(),
   login: vi.fn(),
   setup: vi.fn(),
   connectLiveUpdates: vi.fn(() => () => undefined),
@@ -31,9 +33,10 @@ vi.mock('./api', () => ({
 
 import {
   acknowledgeAlert, collectNow, createInstallation, deleteInstallation, discoverPaths,
-  discoverServices, getDashboard, getInstallationConfiguration, updateInstallation,
+  discoverServices, executeServiceAction, getDashboard, getInstallationConfiguration,
+  setAutoStart, setExclusiveInstallation, updateInstallation,
 } from './api'
-import App from './App'
+import App, { serviceActionAllowed } from './App'
 
 const realSummary = {
   ...demoSummary,
@@ -72,6 +75,13 @@ describe('App', () => {
     vi.mocked(discoverPaths).mockReset().mockResolvedValue({ dryRun: true, timedOut: false, durationMs: 1, candidates: [] })
     vi.mocked(collectNow).mockReset().mockResolvedValue({ processedComponents: 1, completedAt: new Date().toISOString() })
     vi.mocked(acknowledgeAlert).mockReset().mockResolvedValue(undefined)
+    vi.mocked(executeServiceAction).mockReset().mockResolvedValue({ results: [] })
+    vi.mocked(setExclusiveInstallation).mockReset().mockResolvedValue({
+      id: 'installation-real', name: 'ERP Produção', isExclusive: true, autoStartEnabled: false,
+    })
+    vi.mocked(setAutoStart).mockReset().mockResolvedValue({
+      id: 'installation-real', name: 'ERP Produção', isExclusive: false, autoStartEnabled: true,
+    })
   })
 
   it('exibe o resumo demonstrativo depois da autenticação', async () => {
@@ -195,5 +205,73 @@ describe('App', () => {
     fireEvent.click(acknowledgeButtons[0])
 
     await waitFor(() => expect(acknowledgeAlert).toHaveBeenCalled())
+  })
+
+  it('bloqueia a ação que corresponde ao estado atual do serviço', () => {
+    expect(serviceActionAllowed('Running', 'start')).toBe(false)
+    expect(serviceActionAllowed('Running', 'stop')).toBe(true)
+    expect(serviceActionAllowed('Running', 'restart')).toBe(true)
+    expect(serviceActionAllowed('Stopped', 'start')).toBe(true)
+    expect(serviceActionAllowed('Stopped', 'stop')).toBe(false)
+    expect(serviceActionAllowed('Stopped', 'restart')).toBe(false)
+    expect(serviceActionAllowed('StartPending', 'start')).toBe(false)
+    expect(serviceActionAllowed('StartPending', 'stop')).toBe(false)
+    expect(serviceActionAllowed(undefined, 'start')).toBe(true)
+    expect(serviceActionAllowed('NotFound', 'stop')).toBe(true)
+  })
+
+  it('desabilita iniciar quando o serviço já está em execução', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    vi.mocked(getDashboard).mockResolvedValue({
+      ...realSummary,
+      components: [{ ...realSummary.components[0], windowsServiceName: 'PulseAppServer', windowsServiceStatus: 'Running' }],
+    })
+
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
+
+    const start = await screen.findByRole('button', { name: 'Iniciar serviço de AppServer REST' })
+    expect(start).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Parar serviço de AppServer REST' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Reiniciar serviço de AppServer REST' })).toBeEnabled()
+    expect(screen.getByText('Em execução')).toBeInTheDocument()
+
+    fireEvent.click(start)
+    expect(executeServiceAction).not.toHaveBeenCalled()
+  })
+
+  it('desabilita parar e reiniciar quando o serviço está parado', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    vi.mocked(getDashboard).mockResolvedValue({
+      ...realSummary,
+      components: [{ ...realSummary.components[0], windowsServiceName: 'PulseAppServer', windowsServiceStatus: 'Stopped' }],
+    })
+
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
+
+    expect(await screen.findByRole('button', { name: 'Iniciar serviço de AppServer REST' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Parar serviço de AppServer REST' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reiniciar serviço de AppServer REST' })).toBeDisabled()
+  })
+
+  it('marca a instalação exclusiva e ativa o auto-start', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    vi.mocked(getDashboard).mockResolvedValue(realSummary)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /Definir como exclusivo/ }))
+    await waitFor(() => expect(setExclusiveInstallation).toHaveBeenCalledWith('installation-real', true))
+    expect(await screen.findByText(/agora é a instalação exclusiva/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Ativar auto-start/ }))
+    await waitFor(() => expect(setAutoStart).toHaveBeenCalledWith('installation-real', true))
+    expect(await screen.findByText(/Auto-start ativado/)).toBeInTheDocument()
   })
 })

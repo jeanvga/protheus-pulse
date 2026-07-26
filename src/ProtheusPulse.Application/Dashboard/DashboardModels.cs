@@ -34,7 +34,10 @@ public sealed record ComponentSnapshot(
     double? MetricValue,
     string? MetricUnit,
     bool IsDemo,
-    string? WindowsServiceName = null);
+    string? WindowsServiceName = null,
+    string? WindowsServiceStatus = null,
+    bool InstallationIsExclusive = false,
+    bool InstallationAutoStartEnabled = false);
 
 public sealed record AlertSnapshot(
     Guid Id,
@@ -56,7 +59,9 @@ public sealed record InstallationListItem(
     EnvironmentKind Environment,
     bool IsDemo,
     int ComponentCount,
-    HealthStatus Status);
+    HealthStatus Status,
+    bool IsExclusive = false,
+    bool AutoStartEnabled = false);
 
 public sealed record ComponentListItem(
     Guid Id,

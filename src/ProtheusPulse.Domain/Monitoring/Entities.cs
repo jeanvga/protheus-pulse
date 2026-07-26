@@ -9,6 +9,18 @@ public sealed class Installation : Entity
     public string? CustomEnvironmentName { get; set; }
     public string TagsJson { get; set; } = "[]";
     public bool IsDemo { get; set; }
+
+    /// <summary>
+    /// Instalação que permanece no ar durante o modo manutenção para compilar e salvar configurações.
+    /// No máximo uma instalação fica marcada por vez.
+    /// </summary>
+    public bool IsExclusive { get; set; }
+
+    /// <summary>
+    /// Religa automaticamente os serviços Windows desta instalação quando eles caem.
+    /// </summary>
+    public bool AutoStartEnabled { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public ICollection<Component> Components { get; set; } = new List<Component>();
 }
@@ -40,6 +52,8 @@ public sealed class WindowsServiceTarget : Entity
     public Guid ComponentId { get; set; }
     public required string ServiceName { get; set; }
     public string? DisplayName { get; set; }
+    public string? LastStatus { get; set; }
+    public DateTimeOffset? LastStatusAt { get; set; }
     public Component Component { get; set; } = null!;
 }
 

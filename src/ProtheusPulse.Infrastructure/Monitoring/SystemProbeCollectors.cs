@@ -45,7 +45,8 @@ public sealed class WindowsServiceProbeCollector(IClock clock) : IProbeCollector
         foreach (var target in component.WindowsServiceTargets)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var status = statuses.TryGetValue(target.ServiceName, out var serviceStatus)
+            var found = statuses.TryGetValue(target.ServiceName, out var serviceStatus);
+            var status = found
                 ? serviceStatus switch
                 {
                     ServiceControllerStatus.Running => HealthStatus.Healthy,
@@ -53,6 +54,11 @@ public sealed class WindowsServiceProbeCollector(IClock clock) : IProbeCollector
                     _ => HealthStatus.Critical
                 }
                 : HealthStatus.Critical;
+
+            // O painel usa o estado real do SCM para desabilitar a ação que já corresponde
+            // ao status atual; sem serviço registrado o estado fica indefinido.
+            target.LastStatus = found ? serviceStatus.ToString() : "NotFound";
+            target.LastStatusAt = clock.UtcNow;
             observations.Add(new CollectorSupport.TargetObservation(status, component.IsRequired));
         }
 

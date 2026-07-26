@@ -75,7 +75,10 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
                 metric?.Value,
                 metric?.Unit,
                 component.IsDemo,
-                component.WindowsServiceTargets.Select(target => target.ServiceName).FirstOrDefault());
+                component.WindowsServiceTargets.Select(target => target.ServiceName).FirstOrDefault(),
+                component.WindowsServiceTargets.Select(target => target.LastStatus).FirstOrDefault(),
+                component.Installation.IsExclusive,
+                component.Installation.AutoStartEnabled);
         }).ToArray();
 
         var alertSnapshots = alerts.Select(item => new AlertSnapshot(
@@ -113,7 +116,9 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
             item.Environment,
             item.IsDemo,
             item.Components.Count,
-            AggregateComponents(item.Components))).ToArray();
+            AggregateComponents(item.Components),
+            item.IsExclusive,
+            item.AutoStartEnabled)).ToArray();
     }
 
     public async Task<IReadOnlyList<ComponentListItem>> GetComponentsAsync(CancellationToken cancellationToken)

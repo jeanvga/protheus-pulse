@@ -2,16 +2,16 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Activity, AlertTriangle, Archive, Bell, Boxes, BriefcaseBusiness, Check, ChevronDown, CircleHelp,
-  Clock3, FileText, FolderSearch, Gauge, HeartPulse, LockKeyhole, LogOut, Menu, Moon,
+  Clock3, Crown, FileText, FolderSearch, Gauge, HeartPulse, LockKeyhole, LogOut, Menu, Moon,
   Pencil, Play, Plus, RefreshCw, RotateCw, Search, Server, Settings, ShieldCheck, Square, Sun,
-  TerminalSquare, Trash2, UserRound, Wrench, X,
+  TerminalSquare, Trash2, UserRound, Wrench, X, Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, deleteInstallation, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAuthStatus, getDashboard,
-  getInstallationConfiguration, getLogEvents, getMaintenanceStatus, login, session, setup,
-  updateInstallation,
+  getInstallationConfiguration, getLogEvents, getMaintenanceStatus, login, session, setAutoStart,
+  setExclusiveInstallation, setup, updateInstallation,
 } from './api'
 import type {
   AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EnvironmentKind,
@@ -147,7 +147,7 @@ export default function App() {
 
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => void loadSummary()}><RefreshCw size={15} /> Tentar novamente</button></div>}
         {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} goTo={setPage} addInstallation={() => setInstallationEditorId(null)} editInstallation={setInstallationEditorId} />}
-        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.1.0 · produto independente</span></footer>
+        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.2.0 · produto independente</span></footer>
       </main>
       {installationEditorId !== undefined && <InstallationDialog installationId={installationEditorId} close={() => setInstallationEditorId(undefined)} onSaved={installationCreated} />}
     </div>
@@ -292,17 +292,34 @@ function AlertList({ alerts, acknowledge, busyId }: { alerts: AlertSnapshot[]; a
   return <div className="alert-list">{alerts.map(alert => <div className="alert-row" key={alert.id}><div className={`alert-symbol ${alert.severity.toLowerCase()}`}>{alert.state === 'Resolved' ? <Check size={17} /> : <AlertTriangle size={17} />}</div><div className="alert-main"><div><strong>{alert.ruleName}</strong><StatusBadge status={alert.state === 'Resolved' ? 'Healthy' : alert.severity === 'Critical' ? 'Critical' : 'Warning'} label={stateLabel(alert.state)} /></div><span>{alert.componentName} · {alert.installationName}</span><p>{alert.evidence}</p></div><div className="alert-time"><strong>{formatRelative(alert.startedAt)}</strong><span>#{alert.correlationId.slice(0, 8)}</span>{alert.state === 'Active' && acknowledge && <button className="secondary-button alert-action" disabled={busyId === alert.id} onClick={() => acknowledge(alert.id)}>{busyId === alert.id ? 'Salvando…' : 'Reconhecer'}</button>}</div></div>)}</div>
 }
 
+interface InstallationGroup {
+  id: string
+  name: string
+  isExclusive: boolean
+  autoStartEnabled: boolean
+  components: ComponentSnapshot[]
+}
+
 function Installations({ summary, refresh, addInstallation, editInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void; editInstallation: (id: string) => void }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [maintenance, setMaintenance] = useState<MaintenanceStatus | null>(null)
   const [serviceBusyId, setServiceBusyId] = useState<string | null>(null)
+  const [automationBusyId, setAutomationBusyId] = useState<string | null>(null)
   const isAdministrator = session.role === 'Administrator'
-  const groups = useMemo(() => Object.values(summary.components.reduce<Record<string, { name: string; components: ComponentSnapshot[] }>>((result, item) => {
-    ;(result[item.installationId] ??= { name: item.installationName, components: [] }).components.push(item)
+  const groups = useMemo(() => Object.values(summary.components.reduce<Record<string, InstallationGroup>>((result, item) => {
+    const group = (result[item.installationId] ??= {
+      id: item.installationId,
+      name: item.installationName,
+      isExclusive: Boolean(item.installationIsExclusive),
+      autoStartEnabled: Boolean(item.installationAutoStartEnabled),
+      components: [],
+    })
+    group.components.push(item)
     return result
   }, {})), [summary.components])
+  const exclusiveGroup = groups.find(group => group.isExclusive)
 
   const loadMaintenance = useCallback(async () => {
     try { setMaintenance(await getMaintenanceStatus()) } catch { setMaintenance(null) }
@@ -311,16 +328,21 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
 
   const toggleMaintenance = async () => {
     const entering = !(maintenance?.active ?? false)
+    const exclusiveName = exclusiveGroup?.name ?? maintenance?.exclusiveInstallation?.name
     const confirmed = window.confirm(entering
-      ? 'Entrar em modo manutenção? Todos os serviços Windows monitorados serão PARADOS e os alertas ficarão suspensos.'
+      ? exclusiveName
+        ? `Entrar em modo manutenção? Todos os serviços Windows monitorados serão PARADOS, exceto os de “${exclusiveName}”, que permanece no ar para compilar e salvar configurações. Os alertas ficarão suspensos.`
+        : 'Entrar em modo manutenção? Todos os serviços Windows monitorados serão PARADOS e os alertas ficarão suspensos.'
       : 'Encerrar o modo manutenção? Os serviços monitorados serão iniciados novamente.')
     if (!confirmed) return
     setBusy(true); setError(null); setMessage(null)
     try {
       const result = entering ? await enterMaintenance() : await exitMaintenance()
       const failures = result.services.filter(item => !item.success)
+      const stopped = result.services.filter(item => item.action === 'stop' && item.success).length
+      const started = result.services.filter(item => item.action === 'start' && item.success).length
       const summaryText = entering
-        ? `Modo manutenção ativado. ${result.services.length - failures.length} serviço(s) parado(s)`
+        ? `Modo manutenção ativado. ${stopped} serviço(s) parado(s)${started > 0 ? ` e ${started} mantido(s) no ar em “${result.exclusiveInstallation?.name ?? exclusiveName}”` : ''}`
         : `Modo manutenção encerrado. ${result.services.length - failures.length} serviço(s) iniciado(s)`
       if (failures.length > 0) setError(`${summaryText}; falhas: ${failures.map(item => `${item.serviceName} (${item.message})`).join('; ')}`)
       else setMessage(`${summaryText}.`)
@@ -331,8 +353,37 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
     } finally { setBusy(false) }
   }
 
+  const toggleExclusive = async (group: InstallationGroup) => {
+    const enabling = !group.isExclusive
+    if (enabling && !window.confirm(`Tornar “${group.name}” a instalação exclusiva? No modo manutenção somente ela permanece no ar para compilar e salvar configurações.`)) return
+    setAutomationBusyId(group.id); setError(null); setMessage(null)
+    try {
+      const result = await setExclusiveInstallation(group.id, enabling)
+      setMessage(result.isExclusive
+        ? `“${result.name}” agora é a instalação exclusiva do modo manutenção.`
+        : `“${result.name}” não é mais a instalação exclusiva.`)
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível definir a instalação exclusiva.')
+    } finally { setAutomationBusyId(null) }
+  }
+
+  const toggleAutoStart = async (group: InstallationGroup) => {
+    setAutomationBusyId(group.id); setError(null); setMessage(null)
+    try {
+      const result = await setAutoStart(group.id, !group.autoStartEnabled)
+      setMessage(result.autoStartEnabled
+        ? `Auto-start ativado em “${result.name}”: serviços que caírem sobem automaticamente.`
+        : `Auto-start desativado em “${result.name}”.`)
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível alterar o auto-start.')
+    } finally { setAutomationBusyId(null) }
+  }
+
   const runServiceAction = async (component: ComponentSnapshot, action: ServiceAction) => {
     const verb = action === 'start' ? 'Iniciar' : action === 'stop' ? 'Parar' : 'Reiniciar'
+    if (!serviceActionAllowed(component.windowsServiceStatus, action)) return
     if (action !== 'start' && !window.confirm(`${verb} o serviço “${component.windowsServiceName}” de ${component.name}?`)) return
     setServiceBusyId(component.id); setError(null); setMessage(null)
     try {
@@ -371,20 +422,76 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
 
   return <div className="page-body">
     <section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Configure serviços, arquivos, portas e URLs sem sair do painel.</p></div><div className="intro-actions">{isAdministrator && <button className={maintenance?.active ? 'primary-button' : 'danger-button'} disabled={busy || summary.demoMode} onClick={() => void toggleMaintenance()}><Wrench size={16} /> {maintenance?.active ? 'Encerrar manutenção' : 'Modo manutenção'}</button>}<button className="secondary-button" disabled={busy || summary.demoMode} onClick={() => void runCollection()}><Play size={16} /> {busy ? 'Executando…' : 'Coletar agora'}</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
-    {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.</div>}
+    {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.{maintenance.exclusiveInstallation ? ` Somente “${maintenance.exclusiveInstallation.name}” segue no ar para compilar e salvar configurações.` : ''}</div>}
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
     {message && <div className="success-banner"><Check size={16} /> {message}</div>}
-    <div className="installation-grid">{groups.map(({ name, components }) => {
-      const installationId = components[0]?.installationId
+    <div className="installation-grid">{groups.map(group => {
+      const { id: installationId, name, components } = group
       const isDemo = components.every(item => item.isDemo)
+      const canAutomate = isAdministrator && !isDemo && !summary.demoMode
       return <article className="panel installation-card" key={installationId}>
-        <header><div><span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span><h3>{name}</h3></div><StatusBadge status={worstStatus(components)} /></header>
+        <header><div><span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span><h3>{name}</h3>{group.isExclusive && <span className="exclusive-tag"><Crown size={13} /> Exclusivo</span>}{group.autoStartEnabled && <span className="auto-start-tag"><Zap size={13} /> Auto-start</span>}</div><StatusBadge status={worstStatus(components)} /></header>
         <div className="installation-stat"><span>{components.length} componentes</span><span>{components.filter(item => item.status === 'Healthy').length} saudáveis</span></div>
-        {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span>{isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><button className="row-action" title={`Iniciar ${component.windowsServiceName}`} aria-label={`Iniciar serviço de ${component.name}`} disabled={busy || serviceBusyId === component.id} onClick={() => void runServiceAction(component, 'start')}>{serviceBusyId === component.id ? <RefreshCw className="spin" size={14} /> : <Play size={14} />}</button><button className="row-action" title={`Reiniciar ${component.windowsServiceName}`} aria-label={`Reiniciar serviço de ${component.name}`} disabled={busy || serviceBusyId === component.id} onClick={() => void runServiceAction(component, 'restart')}><RotateCw size={14} /></button><button className="row-action" title={`Parar ${component.windowsServiceName}`} aria-label={`Parar serviço de ${component.name}`} disabled={busy || serviceBusyId === component.id} onClick={() => void runServiceAction(component, 'stop')}><Square size={14} /></button></span>}</div><small>{component.summary}</small></div>)}
+        {canAutomate && <div className="automation-row">
+          <button className={group.isExclusive ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.isExclusive} title="Instalação que continua no ar durante o modo manutenção" onClick={() => void toggleExclusive(group)}><Crown size={14} /> {group.isExclusive ? 'Exclusivo na manutenção' : 'Definir como exclusivo'}</button>
+          <button className={group.autoStartEnabled ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.autoStartEnabled} title="Sobe automaticamente os serviços deste ambiente quando eles caem" onClick={() => void toggleAutoStart(group)}><Zap size={14} /> {group.autoStartEnabled ? 'Auto-start ativo' : 'Ativar auto-start'}</button>
+        </div>}
+        {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span>{component.windowsServiceName && <small className="service-state">{serviceStatusLabel(component.windowsServiceStatus)}</small>}{isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><ServiceActionButton component={component} action="start" icon={Play} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="restart" icon={RotateCw} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="stop" icon={Square} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /></span>}</div><small>{component.summary}</small></div>)}
         {!isDemo && installationId && <footer className="installation-actions"><button className="secondary-button" onClick={() => editInstallation(installationId)}><Pencil size={15} /> Configurar</button><button className="danger-button" disabled={busy} onClick={() => void remove(installationId, name)}><Trash2 size={15} /> Remover</button></footer>}
       </article>
     })}</div>
   </div>
+}
+
+const serviceActionLabels: Record<ServiceAction, string> = { start: 'Iniciar', restart: 'Reiniciar', stop: 'Parar' }
+
+function ServiceActionButton({ component, action, icon: Icon, busy, disabled, run }: {
+  component: ComponentSnapshot
+  action: ServiceAction
+  icon: LucideIcon
+  busy: boolean
+  disabled: boolean
+  run: (component: ComponentSnapshot, action: ServiceAction) => Promise<void>
+}) {
+  const verb = serviceActionLabels[action]
+  const allowed = serviceActionAllowed(component.windowsServiceStatus, action)
+  const title = allowed
+    ? `${verb} ${component.windowsServiceName}`
+    : `${component.windowsServiceName} já está ${serviceStatusLabel(component.windowsServiceStatus).toLowerCase()}`
+  return <button
+    className={`row-action ${allowed ? '' : 'is-current-state'}`}
+    title={title}
+    aria-label={`${verb} serviço de ${component.name}`}
+    disabled={disabled || busy || !allowed}
+    onClick={() => void run(component, action)}
+  >{busy && action === 'start' ? <RefreshCw className="spin" size={14} /> : <Icon size={14} />}</button>
+}
+
+const transitioningServiceStates = ['StartPending', 'StopPending', 'ContinuePending', 'PausePending']
+
+/**
+ * Espelha ServiceStateRules do backend: a ação que corresponde ao estado atual do
+ * serviço fica bloqueada, e um estado indefinido libera tudo para o operador agir.
+ */
+export function serviceActionAllowed(status: string | undefined, action: ServiceAction) {
+  if (transitioningServiceStates.includes(status ?? '')) return false
+  if (status === 'Running') return action !== 'start'
+  if (status === 'Stopped') return action === 'start'
+  return true
+}
+
+export function serviceStatusLabel(status: string | undefined) {
+  const labels: Record<string, string> = {
+    Running: 'Em execução',
+    Stopped: 'Parado',
+    StartPending: 'Iniciando',
+    StopPending: 'Parando',
+    ContinuePending: 'Retomando',
+    PausePending: 'Pausando',
+    Paused: 'Pausado',
+    NotFound: 'Serviço não encontrado',
+  }
+  return labels[status ?? ''] ?? 'Estado desconhecido'
 }
 
 interface TcpCheckDraft extends TcpCheckConfiguration { key: number }

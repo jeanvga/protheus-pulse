@@ -9,6 +9,10 @@ public sealed class PulseOptions
     public int MetricAggregationAfterDays { get; set; } = 7;
     public int CollectionIntervalSeconds { get; set; } = 30;
     public int CollectorTimeoutSeconds { get; set; } = 10;
+
+    /// <summary>Intervalo do watchdog que religa serviços das instalações com auto-start.</summary>
+    public int AutoStartIntervalSeconds { get; set; } = 60;
+
     public int MaximumConcurrentCollectors { get; set; } = 4;
     public int MaximumLogBytesPerCycle { get; set; } = 262_144;
     public double DiskWarningPercent { get; set; } = 15;
