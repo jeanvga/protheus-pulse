@@ -9,7 +9,7 @@ public sealed class MaintenancePlannerTests
     private static readonly string[] SingleProductionService = ["Producao-AppServer"];
 
     [Fact]
-    public void ExclusiveInstallationStartsWhileEverythingElseStops()
+    public void ExclusiveInstallationRestartsWhileEverythingElseStops()
     {
         var plan = MaintenancePlanner.Create(
         [
@@ -19,7 +19,7 @@ public sealed class MaintenancePlannerTests
         ]);
 
         Assert.Equal(ProductionServices, plan.ToStop);
-        Assert.Equal(ExclusiveServices, plan.ToStart);
+        Assert.Equal(ExclusiveServices, plan.ToRestart);
     }
 
     [Fact]
@@ -33,7 +33,7 @@ public sealed class MaintenancePlannerTests
         ]);
 
         Assert.Equal(SingleProductionService, plan.ToStop);
-        Assert.Single(plan.ToStart);
+        Assert.Single(plan.ToRestart);
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public sealed class MaintenancePlannerTests
         ]);
 
         Assert.Equal(SingleProductionService, plan.ToStop);
-        Assert.Empty(plan.ToStart);
+        Assert.Empty(plan.ToRestart);
     }
 }
 

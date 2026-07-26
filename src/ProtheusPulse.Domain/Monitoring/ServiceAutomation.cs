@@ -47,16 +47,20 @@ public static class ServiceStateRules
 /// <summary>Serviço monitorado com a origem que o operador enxerga no painel.</summary>
 public sealed record MonitoredService(string ServiceName, bool BelongsToExclusiveInstallation);
 
-/// <summary>Serviços que devem parar e serviços que devem subir ao entrar em manutenção.</summary>
+/// <summary>
+/// Serviços que devem parar e serviços da instalação exclusiva, que são reiniciados.
+/// Reiniciar — em vez de apenas manter no ar — derruba as sessões já conectadas,
+/// que é o que torna o ambiente realmente exclusivo durante a manutenção.
+/// </summary>
 public sealed record MaintenanceServicePlan(
     IReadOnlyList<string> ToStop,
-    IReadOnlyList<string> ToStart);
+    IReadOnlyList<string> ToRestart);
 
 public static class MaintenancePlanner
 {
     /// <summary>
-    /// Monta o plano do modo manutenção: a instalação exclusiva sobe e todo o
-    /// restante para. Um serviço compartilhado com a instalação exclusiva nunca
+    /// Monta o plano do modo manutenção: a instalação exclusiva é reiniciada e todo
+    /// o restante para. Um serviço compartilhado com a instalação exclusiva nunca
     /// entra na lista de parada, senão a manutenção derrubaria o próprio ambiente
     /// reservado para compilar e salvar configurações.
     /// </summary>

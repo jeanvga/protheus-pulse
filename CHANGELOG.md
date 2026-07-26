@@ -6,7 +6,7 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 
 ### Added
 
-- Instalação exclusiva: uma instalação pode ser marcada como exclusiva e, ao entrar em modo manutenção, todos os demais ambientes são parados enquanto ela sobe e permanece no ar para compilar e salvar configurações. Serviços compartilhados com a instalação exclusiva nunca são parados.
+- Instalação exclusiva: uma instalação pode ser marcada como exclusiva e, ao entrar em modo manutenção, todos os demais ambientes são parados enquanto ela é **reiniciada** — o restart derruba as sessões já conectadas, que é o que torna o ambiente exclusivo de fato — e permanece como o único no ar para compilar e salvar configurações. Serviços compartilhados com a instalação exclusiva nunca são parados.
 - Auto-start por instalação: um watchdog verifica os serviços Windows dos ambientes marcados e os religa automaticamente quando caem, com orçamento de três tentativas a cada quinze minutos, registro em auditoria (`AutoStartRecovered`/`AutoStartFailed`) e atualização do painel em tempo real. Ambientes suspensos pela manutenção ficam de fora; a instalação exclusiva continua protegida durante a janela.
 - Intervalo do watchdog configurável em `Pulse:AutoStartIntervalSeconds` (padrão 60 s, limites 15 s–3600 s).
 

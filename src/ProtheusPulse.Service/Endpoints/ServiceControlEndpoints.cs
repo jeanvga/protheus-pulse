@@ -245,7 +245,8 @@ public static class ServiceControlEndpoints
     }
 
     /// <summary>
-    /// Para todos os serviços monitorados e sobe apenas os da instalação exclusiva.
+    /// Para todos os serviços monitorados e reinicia apenas os da instalação exclusiva.
+    /// O restart derruba as sessões abertas, deixando o ambiente exclusivo de fato.
     /// </summary>
     private static async Task<List<ServiceActionOutcome>> ExecuteMaintenancePlanAsync(
         PulseDbContext dbContext,
@@ -264,9 +265,9 @@ public static class ServiceControlEndpoints
             results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, "stop"), cancellationToken));
         }
 
-        foreach (var serviceName in plan.ToStart.Where(IsControllable))
+        foreach (var serviceName in plan.ToRestart.Where(IsControllable))
         {
-            results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, "start"), cancellationToken));
+            results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, "restart"), cancellationToken));
         }
 
         ApplyObservedStatuses(targets, results, clock);

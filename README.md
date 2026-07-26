@@ -37,7 +37,7 @@ Este é um produto independente, não oficial e não afiliado à TOTVS. O reposi
 - Heartbeats com token aleatório exibido uma vez, somente hash no banco, rotação, janela operacional e rate limit.
 - Iniciar, reiniciar e parar serviços Windows monitorados pelo painel, com confirmação, perfil `Administrator` e auditoria.
 - Modo manutenção que para todos os serviços monitorados, suspende alertas e retoma tudo ao encerrar.
-- Instalação exclusiva: o ambiente marcado continua no ar durante a manutenção para compilar e salvar configurações, enquanto os demais são parados.
+- Instalação exclusiva: ao entrar em manutenção o ambiente marcado é reiniciado, derrubando as sessões conectadas, e permanece como o único no ar para compilar e salvar configurações, enquanto os demais são parados.
 - Auto-start por instalação: watchdog que religa automaticamente os serviços Windows que caírem, com limite de tentativas e registro em auditoria.
 - Botões de iniciar, reiniciar e parar sensíveis ao estado atual do serviço: a ação equivalente ao estado corrente fica desabilitada.
 - Página de logs com eventos reais coletados e sanitizados, busca e filtro por severidade.

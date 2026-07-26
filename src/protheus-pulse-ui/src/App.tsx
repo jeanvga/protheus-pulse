@@ -331,7 +331,7 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
     const exclusiveName = exclusiveGroup?.name ?? maintenance?.exclusiveInstallation?.name
     const confirmed = window.confirm(entering
       ? exclusiveName
-        ? `Entrar em modo manutenção? Todos os serviços Windows monitorados serão PARADOS, exceto os de “${exclusiveName}”, que permanece no ar para compilar e salvar configurações. Os alertas ficarão suspensos.`
+        ? `Entrar em modo manutenção? Todos os serviços Windows monitorados serão PARADOS e os de “${exclusiveName}” serão REINICIADOS, derrubando as sessões conectadas para que o ambiente fique exclusivo para compilar e salvar configurações. Os alertas ficarão suspensos.`
         : 'Entrar em modo manutenção? Todos os serviços Windows monitorados serão PARADOS e os alertas ficarão suspensos.'
       : 'Encerrar o modo manutenção? Os serviços monitorados serão iniciados novamente.')
     if (!confirmed) return
@@ -340,9 +340,9 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
       const result = entering ? await enterMaintenance() : await exitMaintenance()
       const failures = result.services.filter(item => !item.success)
       const stopped = result.services.filter(item => item.action === 'stop' && item.success).length
-      const started = result.services.filter(item => item.action === 'start' && item.success).length
+      const restarted = result.services.filter(item => item.action === 'restart' && item.success).length
       const summaryText = entering
-        ? `Modo manutenção ativado. ${stopped} serviço(s) parado(s)${started > 0 ? ` e ${started} mantido(s) no ar em “${result.exclusiveInstallation?.name ?? exclusiveName}”` : ''}`
+        ? `Modo manutenção ativado. ${stopped} serviço(s) parado(s)${restarted > 0 ? ` e ${restarted} reiniciado(s) em “${result.exclusiveInstallation?.name ?? exclusiveName}”, sem sessões remanescentes` : ''}`
         : `Modo manutenção encerrado. ${result.services.length - failures.length} serviço(s) iniciado(s)`
       if (failures.length > 0) setError(`${summaryText}; falhas: ${failures.map(item => `${item.serviceName} (${item.message})`).join('; ')}`)
       else setMessage(`${summaryText}.`)
@@ -355,7 +355,7 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
 
   const toggleExclusive = async (group: InstallationGroup) => {
     const enabling = !group.isExclusive
-    if (enabling && !window.confirm(`Tornar “${group.name}” a instalação exclusiva? No modo manutenção somente ela permanece no ar para compilar e salvar configurações.`)) return
+    if (enabling && !window.confirm(`Tornar “${group.name}” a instalação exclusiva? No modo manutenção ela é reiniciada e permanece como o único ambiente no ar para compilar e salvar configurações.`)) return
     setAutomationBusyId(group.id); setError(null); setMessage(null)
     try {
       const result = await setExclusiveInstallation(group.id, enabling)
@@ -422,7 +422,7 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
 
   return <div className="page-body">
     <section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Configure serviços, arquivos, portas e URLs sem sair do painel.</p></div><div className="intro-actions">{isAdministrator && <button className={maintenance?.active ? 'primary-button' : 'danger-button'} disabled={busy || summary.demoMode} onClick={() => void toggleMaintenance()}><Wrench size={16} /> {maintenance?.active ? 'Encerrar manutenção' : 'Modo manutenção'}</button>}<button className="secondary-button" disabled={busy || summary.demoMode} onClick={() => void runCollection()}><Play size={16} /> {busy ? 'Executando…' : 'Coletar agora'}</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
-    {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.{maintenance.exclusiveInstallation ? ` Somente “${maintenance.exclusiveInstallation.name}” segue no ar para compilar e salvar configurações.` : ''}</div>}
+    {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.{maintenance.exclusiveInstallation ? ` Somente “${maintenance.exclusiveInstallation.name}” segue no ar, reiniciado no início da janela para compilar e salvar configurações sem sessões antigas.` : ''}</div>}
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
     {message && <div className="success-banner"><Check size={16} /> {message}</div>}
     <div className="installation-grid">{groups.map(group => {
@@ -433,7 +433,7 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
         <header><div><span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span><h3>{name}</h3>{group.isExclusive && <span className="exclusive-tag"><Crown size={13} /> Exclusivo</span>}{group.autoStartEnabled && <span className="auto-start-tag"><Zap size={13} /> Auto-start</span>}</div><StatusBadge status={worstStatus(components)} /></header>
         <div className="installation-stat"><span>{components.length} componentes</span><span>{components.filter(item => item.status === 'Healthy').length} saudáveis</span></div>
         {canAutomate && <div className="automation-row">
-          <button className={group.isExclusive ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.isExclusive} title="Instalação que continua no ar durante o modo manutenção" onClick={() => void toggleExclusive(group)}><Crown size={14} /> {group.isExclusive ? 'Exclusivo na manutenção' : 'Definir como exclusivo'}</button>
+          <button className={group.isExclusive ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.isExclusive} title="Instalação reiniciada no início da manutenção, que permanece como o único ambiente no ar" onClick={() => void toggleExclusive(group)}><Crown size={14} /> {group.isExclusive ? 'Exclusivo na manutenção' : 'Definir como exclusivo'}</button>
           <button className={group.autoStartEnabled ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.autoStartEnabled} title="Sobe automaticamente os serviços deste ambiente quando eles caem" onClick={() => void toggleAutoStart(group)}><Zap size={14} /> {group.autoStartEnabled ? 'Auto-start ativo' : 'Ativar auto-start'}</button>
         </div>}
         {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span>{component.windowsServiceName && <small className="service-state">{serviceStatusLabel(component.windowsServiceStatus)}</small>}{isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><ServiceActionButton component={component} action="start" icon={Play} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="restart" icon={RotateCw} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="stop" icon={Square} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /></span>}</div><small>{component.summary}</small></div>)}
