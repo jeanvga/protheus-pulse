@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
-    [string]$Version = '1.1.0',
+    [ValidatePattern('^(\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?)?$')]
+    [string]$Version = '',
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
     [switch]$SkipTests,
@@ -11,6 +11,15 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $buildProps = [xml](Get-Content -LiteralPath (Join-Path $repositoryRoot 'Directory.Build.props'))
+    $Version = $buildProps.Project.PropertyGroup.Version
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        throw 'Directory.Build.props não define <Version> e nenhum -Version foi informado.'
+    }
+}
+
 $releaseRoot = Join-Path $repositoryRoot 'artifacts\release'
 $packageRoot = Join-Path $releaseRoot "protheus-pulse-$Version-$Runtime"
 $applicationRoot = Join-Path $packageRoot 'app'

@@ -3,10 +3,10 @@
 #endif
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.1.0"
+  #define MyAppVersion "1.2.0"
 #endif
 #ifndef SourceDirectory
-  #define SourceDirectory "..\artifacts\release\protheus-pulse-1.1.0-win-x64\app"
+  #define SourceDirectory "..\artifacts\release\protheus-pulse-" + MyAppVersion + "-win-x64\app"
 #endif
 #ifndef OutputDirectory
   #define OutputDirectory "..\artifacts\release"

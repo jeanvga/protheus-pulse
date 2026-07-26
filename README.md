@@ -1,120 +1,130 @@
 # Protheus Pulse
 
-Monitoramento técnico local, seguro e independente para instalações TOTVS Protheus em Windows Server.
+Painel local para monitorar e operar instalações TOTVS Protheus em Windows Server.
 
-> **Versão estável:** 1.1.0. O Protheus Pulse está pronto para implantação e operação, com configuração pelo painel local, descoberta assistida, coletores, alertas, heartbeats, retenção e instalador para Windows.
+Você instala em um servidor, cadastra seus ambientes e acompanha em uma tela só se cada serviço está no ar, se as portas respondem, se o certificado vence, se o disco está acabando e o que os logs mostraram. Também dá para iniciar, reiniciar e parar os serviços pelo painel.
 
-![Dashboard do Protheus Pulse em modo demonstração](docs/assets/dashboard-demo.png)
+Roda sozinho no seu servidor. Não usa nuvem, não manda dado para fora e não altera INI, RPO nem banco do Protheus.
 
-## Visão geral
+> Produto independente, sem vínculo ou afiliação com a TOTVS.
 
-O Pulse consolida estado atual, causa, evidência sanitizada e histórico técnico sem depender de nuvem. A coleta é somente leitura: o produto não executa binários Protheus e não altera INI, RPO, banco ou arquivos monitorados. Ações operacionais — iniciar, reiniciar ou parar serviços monitorados e o modo manutenção — são explícitas, restritas ao perfil `Administrator` e registradas na auditoria.
+![Dashboard do Protheus Pulse](docs/assets/dashboard-demo.png)
 
-Este é um produto independente, não oficial e não afiliado à TOTVS. O repositório público contém somente código-fonte, documentação, exemplos sintéticos e automação de build; não contém bibliotecas proprietárias, documentação restrita, logotipos ou dados reais de clientes.
+## Funcionalidades
 
-## Recursos
+**Monitoramento**
 
-- Host ASP.NET Core .NET 8 preparado para executar como Windows Service.
-- React, Vite e TypeScript compilados e servidos pelo mesmo processo.
-- SQLite com EF Core e migration inicial para todo o modelo mínimo.
-- Autenticação local JWT e perfis `Administrator`, `Operator` e `Viewer`.
-- Hash de senha PBKDF2-SHA256 com salt aleatório e 210 mil iterações.
-- Bind padrão em `127.0.0.1:5058`, limites de requisição e cabeçalhos de segurança.
-- Dashboard responsivo em português, temas claro/escuro e SignalR.
-- Health checks em `/health/live` e `/health/ready`.
-- OpenAPI/Swagger no ambiente de desenvolvimento local e no modo demonstração.
-- Modo `--demo` persistido, com dois ambientes, alerta de memória, job atrasado, TLS próximo do vencimento, erros agrupados e incidente que abre e se resolve.
-- Serilog com rotação diária, limite de tamanho e retenção de 14 arquivos.
-- Validação automatizada com xUnit, Vitest e Playwright em `windows-latest`.
-- Cadastro, edição e remoção de instalações pelo painel local, incluindo serviços Windows, executável, INI, logs, TCP e HTTP/HTTPS.
-- Descoberta assistida de serviços e arquivos e coleta imediata pelo navegador, sem PowerShell na configuração operacional.
-- Importação JSON/YAML com prévia, schema estrito e confirmação explícita.
-- Descoberta de serviços, caminhos e INI em modo somente leitura, com limites e mascaramento de segredos.
-- Agendador com concorrência e timeout limitados, execução manual administrativa e atualização por SignalR.
-- Coletores somente leitura de serviço/processo Windows, TCP, HTTP/TLS, arquivo, disco e logs incrementais sanitizados.
-- Regras automáticas/customizadas, falhas consecutivas, cooldown, reconhecimento, resolução e janelas de manutenção.
-- Webhooks HTTPS com configuração protegida e payload mínimo; retenção automática com agregação horária.
-- Heartbeats com token aleatório exibido uma vez, somente hash no banco, rotação, janela operacional e rate limit.
-- Iniciar, reiniciar e parar serviços Windows monitorados pelo painel, com confirmação, perfil `Administrator` e auditoria.
-- Modo manutenção que para todos os serviços monitorados, suspende alertas e retoma tudo ao encerrar.
-- Instalação exclusiva: ao entrar em manutenção o ambiente marcado é reiniciado, derrubando as sessões conectadas, e permanece como o único no ar para compilar e salvar configurações, enquanto os demais são parados.
-- Auto-start por instalação: watchdog que religa automaticamente os serviços Windows que caírem, com limite de tentativas e registro em auditoria.
-- Botões de iniciar, reiniciar e parar sensíveis ao estado atual do serviço: a ação equivalente ao estado corrente fica desabilitada.
-- Página de logs com eventos reais coletados e sanitizados, busca e filtro por severidade.
-- Serviço Windows sob `LocalSystem` (necessário para as ações de serviço), chave JWT em arquivo restrito, DPAPI, ACLs mínimas e recuperação automática.
-- `setup.exe` self-contained em Inno Setup, sem PowerShell no fluxo normal, com SHA-256, serviço `LocalSystem` e health check pós-instalação.
+- Verifica serviço Windows, processo, porta TCP, HTTP/HTTPS, validade de TLS, arquivos, espaço em disco e logs.
+- Cada ambiente aparece como Saudável, Atenção, Crítico, Desconhecido ou Em manutenção.
+- Atualização em tempo real na tela, sem precisar recarregar a página.
+- Página de logs com busca por mensagem, componente e ambiente, e filtro por severidade.
 
-## Instalação
+**Alertas**
 
-Para uso em Windows Server, utilize `protheus-pulse-1.1.0-win-x64-setup.exe` junto do arquivo `.sha256` correspondente. O instalador registra o serviço, gera a chave JWT local, preserva os dados entre atualizações e valida a disponibilidade ao concluir.
+- Regras prontas e regras próprias, com tolerância a falhas seguidas e cooldown para não encher de aviso repetido.
+- Reconhecer, resolver e abrir janela de manutenção para silenciar alertas planejados.
+- Envio por webhook HTTPS.
 
-Consulte [Instalação no Windows Server](docs/INSTALLATION.md) para pré-requisitos, verificação do pacote, primeiro acesso e permissões. Organizações que compilam o próprio pacote encontram o processo reproduzível em [installer/README.md](installer/README.md).
+**Operação dos serviços**
 
-## Avaliação local com dados sintéticos
+- Iniciar, reiniciar e parar serviços Windows direto do painel, com confirmação. Os botões respeitam o estado atual: serviço no ar não pode ser iniciado, serviço parado não pode ser parado.
+- **Modo manutenção:** para todos os ambientes monitorados de uma vez e suspende os alertas. Ao encerrar, sobe tudo de volta.
+- **Instalação exclusiva:** marque um ambiente como exclusivo e, ao entrar em manutenção, ele é reiniciado (derrubando as sessões conectadas) e fica sendo o único no ar — para compilar e salvar configuração sem ninguém dentro.
+- **Auto-start:** um watchdog religa sozinho os serviços que caírem. Se um serviço não sobe por erro de configuração ou licença, ele desiste depois de algumas tentativas em vez de ficar tentando para sempre.
+- Toda ação fica registrada em auditoria, com quem fez e quando.
 
-Pré-requisitos: SDK .NET 8 e Node.js 24 ou versão compatível com Vite 8.
+**Segurança**
+
+- Login local com perfis Administrator, Operator e Viewer. Só Administrator mexe em serviço.
+- Senha com PBKDF2-SHA256 e 210 mil iterações.
+- Escuta só em `127.0.0.1:5058` por padrão, com limite de requisições e cabeçalhos de segurança.
+- Coleta é somente leitura: o Pulse não executa binário do Protheus nem edita arquivo monitorado.
+- Segredos são mascarados nos logs e nas evidências.
+
+**Instalação**
+
+- Um único `setup.exe`, sem precisar abrir PowerShell.
+- Registra o serviço Windows, gera a chave de assinatura e configura recuperação automática.
+- Atualização preserva o banco e as configurações.
+
+## Baixar e instalar (uso normal)
+
+1. Vá em **[Releases](https://github.com/jeanvga/protheus-pulse/releases/latest)**.
+2. Baixe `protheus-pulse-<versão>-win-x64-setup.exe` e o `.sha256` do lado.
+3. No servidor, confira se o arquivo não veio corrompido:
+
+   ```powershell
+   Get-FileHash .\protheus-pulse-1.2.0-win-x64-setup.exe -Algorithm SHA256
+   ```
+
+   O resultado tem que ser igual ao que está dentro do arquivo `.sha256`.
+4. Execute o instalador como administrador e siga o assistente.
+5. Abra <http://127.0.0.1:5058> no servidor e crie o usuário administrador na primeira tela.
+
+O instalador não tem assinatura digital paga, então o Windows SmartScreen mostra um aviso. Depois de conferir o SHA-256, clique em **Mais informações → Executar assim mesmo**.
+
+Passo a passo completo, pré-requisitos e permissões: [docs/INSTALLATION.md](docs/INSTALLATION.md).
+
+## Testar sem instalar (modo demonstração)
+
+Se você só quer ver como é, dá para rodar o código com dados fictícios. Precisa de [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) e [Node.js 24](https://nodejs.org/).
 
 ```powershell
 git clone https://github.com/jeanvga/protheus-pulse.git
-Set-Location protheus-pulse
+cd protheus-pulse
 npm ci
 npm run ui:build
-dotnet restore ProtheusPulse.sln
 dotnet run --project .\src\ProtheusPulse.Service -- --demo
 ```
 
-Abra [http://127.0.0.1:5058](http://127.0.0.1:5058) e use:
+Abra <http://127.0.0.1:5058> e entre com:
 
 - usuário: `demo.admin`
 - senha: `PulseDemo!2026`
 
-Essas credenciais existem **somente** quando `--demo` está ativo. Dados simulados são marcados no banco e na interface.
+Esse usuário só existe com `--demo` ligado, e os dados são todos simulados e marcados como tal na tela. Nunca use isso em produção.
 
-Para executar o código-fonte fora do modo demonstração, defina uma chave JWT de pelo menos 32 caracteres:
+Para rodar o código com dados reais em vez do modo demo, defina uma chave de assinatura de pelo menos 32 caracteres antes:
 
 ```powershell
 $env:PULSE_JWT_SIGNING_KEY = '<segredo-aleatorio-com-pelo-menos-32-caracteres>'
 dotnet run --project .\src\ProtheusPulse.Service
 ```
 
-Na instalação Windows, o `setup.exe` gera um arquivo secreto e define `PULSE_JWT_SIGNING_KEY_FILE`; não é necessário expor a chave no ambiente interativo. Na primeira abertura, a API oferece a criação do administrador inicial. Nunca use a chave demonstrativa em produção.
+Quando você instala pelo `setup.exe`, isso é feito automaticamente e você não precisa mexer em variável de ambiente.
 
-## Arquitetura
+## Como é feito
 
-```mermaid
-flowchart LR
-    UI["React + TypeScript"] <-->|"REST + SignalR"| Host["ASP.NET Core / Windows Service"]
-    Host --> App["Application: casos de uso e contratos"]
-    App --> Domain["Domain: entidades e regras"]
-    Host --> Infra["Infrastructure: EF Core, auth e demo"]
-    Infra --> DB[("SQLite local")]
-    Collectors["Coletores somente leitura"] --> App
-```
-
-O domínio não referencia APIs do Windows. Coletores implementam `IProbeCollector`, recebem `CancellationToken` e devolvem um estado padronizado (`Healthy`, `Warning`, `Critical`, `Unknown` ou `Maintenance`). A regra de agregação impede que um componente seja saudável quando uma verificação obrigatória está crítica.
-
-Veja [Arquitetura e decisões](docs/ARCHITECTURE.md) e o [modelo de ameaças](docs/THREAT-MODEL.md).
-
-## Estrutura
+Backend em ASP.NET Core (.NET 8) rodando como Windows Service, frontend em React + TypeScript servido pelo mesmo processo, e SQLite local para os dados. Tudo empacotado em um executável self-contained.
 
 ```text
 src/
-  ProtheusPulse.Domain/          entidades e regras puras
-  ProtheusPulse.Application/     contratos e modelos de consulta
-  ProtheusPulse.Infrastructure/  SQLite, consultas, senha e dados demo
-  ProtheusPulse.Service/         host web/Windows Service, API e SignalR
-  protheus-pulse-ui/             React/Vite/TypeScript
-tests/
-  ProtheusPulse.UnitTests/
-  ProtheusPulse.IntegrationTests/
-  protheus-pulse-ui-tests/
-samples/                         somente dados sintéticos
-docs/                            arquitetura, operação e segurança
-installer/                       fonte reproduzível do Inno Setup
-scripts/                         build, release, instalação e execução local
+  ProtheusPulse.Domain/          regras de negócio
+  ProtheusPulse.Application/     casos de uso e contratos
+  ProtheusPulse.Infrastructure/  banco, autenticação e dados demo
+  ProtheusPulse.Service/         API, SignalR e host do Windows Service
+  protheus-pulse-ui/             interface React
+tests/                           testes unitários, integração e end-to-end
+docs/                            documentação
+installer/                       fonte do instalador Inno Setup
+scripts/                         build e instalação
 ```
 
-## Validação para contribuidores
+Detalhes em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Compilar seu próprio instalador
+
+Em uma máquina Windows com .NET 8, Node.js 24 e [Inno Setup 6.6+](https://jrsoftware.org/isinfo.php):
+
+```powershell
+.\scripts\build-release.ps1
+```
+
+O `setup.exe`, o ZIP e os arquivos `.sha256` saem em `artifacts\release`. Veja [installer/README.md](installer/README.md).
+
+## Contribuindo
+
+Antes de abrir um pull request, rode:
 
 ```powershell
 dotnet build ProtheusPulse.sln --configuration Release
@@ -123,21 +133,24 @@ npm run ui:test
 npm run ui:build
 npx playwright install chromium
 npm run ui:e2e
-npm audit --audit-level=moderate
 ```
+
+Leia [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar falha de segurança, siga [SECURITY.md](SECURITY.md) — não abra issue pública.
 
 ## Documentação
 
-- [Instalação no Windows Server](docs/INSTALLATION.md)
-- [Atualização e rollback](docs/UPDATE-ROLLBACK.md)
-- [Cadastro de instalações](docs/ADDING-INSTALLATIONS.md)
-- [Coletores e ciclo de monitoramento](docs/MONITORING.md)
-- [Alertas, manutenção e notificações](docs/ALERTING.md)
-- [Heartbeats autenticados](docs/HEARTBEATS.md)
-- [Privacidade e retenção](docs/PRIVACY-RETENTION.md)
-- [Checklist de implantação](docs/DEPLOYMENT-CHECKLIST.md)
-- [Threat model](docs/THREAT-MODEL.md)
-- [Como contribuir](CONTRIBUTING.md)
-- [Política de segurança](SECURITY.md)
+| Assunto | Onde |
+| --- | --- |
+| Instalar no Windows Server | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| Atualizar e voltar atrás | [docs/UPDATE-ROLLBACK.md](docs/UPDATE-ROLLBACK.md) |
+| Cadastrar seus ambientes | [docs/ADDING-INSTALLATIONS.md](docs/ADDING-INSTALLATIONS.md) |
+| Como o monitoramento funciona | [docs/MONITORING.md](docs/MONITORING.md) |
+| Alertas e manutenção | [docs/ALERTING.md](docs/ALERTING.md) |
+| Heartbeats | [docs/HEARTBEATS.md](docs/HEARTBEATS.md) |
+| Privacidade e retenção de dados | [docs/PRIVACY-RETENTION.md](docs/PRIVACY-RETENTION.md) |
+| Checklist de implantação | [docs/DEPLOYMENT-CHECKLIST.md](docs/DEPLOYMENT-CHECKLIST.md) |
+| Arquitetura | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Modelo de ameaças | [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) |
+| Histórico de versões | [CHANGELOG.md](CHANGELOG.md) |
 
-Licenciado sob a [MIT](LICENSE).
+Licenciado sob [MIT](LICENSE).
