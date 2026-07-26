@@ -98,9 +98,22 @@ public static class AutoStartPolicy
     public const int MaximumAttempts = 3;
     public static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(15);
 
-    public static bool ShouldAttempt(string? serviceStatus, AutoStartAttempt? attempt, DateTimeOffset now)
+    /// <param name="manuallySuspended">
+    /// O serviço foi parado pelo painel. Uma parada deliberada vale mais que o
+    /// watchdog: nada é religado até alguém iniciar o serviço pelo painel.
+    /// </param>
+    /// <param name="actionInFlight">
+    /// Há uma ação do painel executando neste serviço agora. Religar no meio de um
+    /// restart competiria com a própria ação e faria a espera pelo estado falhar.
+    /// </param>
+    public static bool ShouldAttempt(
+        string? serviceStatus,
+        AutoStartAttempt? attempt,
+        DateTimeOffset now,
+        bool manuallySuspended = false,
+        bool actionInFlight = false)
     {
-        if (!ServiceStateRules.IsStopped(serviceStatus))
+        if (manuallySuspended || actionInFlight || !ServiceStateRules.IsStopped(serviceStatus))
         {
             return false;
         }

@@ -8,6 +8,7 @@ using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Configuration;
 using ProtheusPulse.Service.Hubs;
+using ProtheusPulse.Service.Monitoring;
 
 namespace ProtheusPulse.Service.HostedServices;
 
@@ -21,6 +22,7 @@ public sealed partial class AutoStartWorker(
     IHubContext<PulseHub> hubContext,
     IClock clock,
     PulseOptions options,
+    ServiceActionCoordinator coordinator,
     ILogger<AutoStartWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(40);
@@ -80,6 +82,13 @@ public sealed partial class AutoStartWorker(
         foreach (var target in targets)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (coordinator.IsBusy(target.ServiceName))
+            {
+                // Uma ação do painel está executando neste serviço agora; ler ou
+                // religar no meio dela competiria com a própria ação.
+                continue;
+            }
+
             var status = ReadStatus(target.ServiceName);
             target.LastStatus = status;
             target.LastStatusAt = clock.UtcNow;
@@ -90,7 +99,12 @@ public sealed partial class AutoStartWorker(
             }
 
             var attempt = attempts.TryGetValue(target.ServiceName, out var previous) ? previous : null;
-            if (!AutoStartPolicy.ShouldAttempt(status, attempt, clock.UtcNow))
+            if (!AutoStartPolicy.ShouldAttempt(
+                status,
+                attempt,
+                clock.UtcNow,
+                target.AutoStartSuspended,
+                coordinator.IsBusy(target.ServiceName)))
             {
                 continue;
             }

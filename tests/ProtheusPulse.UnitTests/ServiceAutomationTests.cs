@@ -68,6 +68,19 @@ public sealed class AutoStartPolicyTests
     }
 
     [Fact]
+    public void ManualStopSuspendsRecoveryUntilAManualStart()
+    {
+        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", null, Now, manuallySuspended: true));
+        Assert.True(AutoStartPolicy.ShouldAttempt("Stopped", null, Now, manuallySuspended: false));
+    }
+
+    [Fact]
+    public void ServiceWithAnActionInFlightIsLeftAlone()
+    {
+        Assert.False(AutoStartPolicy.ShouldAttempt("Stopped", null, Now, actionInFlight: true));
+    }
+
+    [Fact]
     public void AttemptBudgetStopsTheLoopWithinTheWindow()
     {
         var attempt = new AutoStartAttempt(AutoStartPolicy.MaximumAttempts, Now.AddMinutes(-5));

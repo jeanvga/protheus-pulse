@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
+using ProtheusPulse.Service.Monitoring;
 
 namespace ProtheusPulse.Service.Endpoints;
 
@@ -23,10 +24,11 @@ public static class ServiceControlEndpoints
             string action,
             PulseDbContext dbContext,
             IClock clock,
+            ServiceActionCoordinator coordinator,
             ClaimsPrincipal principal,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
-            ExecuteComponentActionAsync(id, action, demoMode, dbContext, clock, principal, httpContext, cancellationToken))
+            ExecuteComponentActionAsync(id, action, demoMode, dbContext, clock, coordinator, principal, httpContext, cancellationToken))
             .RequireAuthorization("Administrator");
 
         api.MapGet("/maintenance/status", GetMaintenanceStatusAsync).RequireAuthorization("Viewer");
@@ -35,19 +37,21 @@ public static class ServiceControlEndpoints
             MaintenanceRequest? request,
             PulseDbContext dbContext,
             IClock clock,
+            ServiceActionCoordinator coordinator,
             ClaimsPrincipal principal,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
-            EnterMaintenanceAsync(request, demoMode, dbContext, clock, principal, httpContext, cancellationToken))
+            EnterMaintenanceAsync(request, demoMode, dbContext, clock, coordinator, principal, httpContext, cancellationToken))
             .RequireAuthorization("Administrator");
 
         api.MapPost("/maintenance/exit", (
             PulseDbContext dbContext,
             IClock clock,
+            ServiceActionCoordinator coordinator,
             ClaimsPrincipal principal,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
-            ExitMaintenanceAsync(demoMode, dbContext, clock, principal, httpContext, cancellationToken))
+            ExitMaintenanceAsync(demoMode, dbContext, clock, coordinator, principal, httpContext, cancellationToken))
             .RequireAuthorization("Administrator");
 
         return api;
@@ -59,6 +63,7 @@ public static class ServiceControlEndpoints
         bool demoMode,
         PulseDbContext dbContext,
         IClock clock,
+        ServiceActionCoordinator coordinator,
         ClaimsPrincipal principal,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -100,7 +105,10 @@ public static class ServiceControlEndpoints
         var results = new List<ServiceActionOutcome>();
         foreach (var target in component.WindowsServiceTargets)
         {
-            results.Add(await Task.Run(() => ExecuteServiceAction(target.ServiceName, normalizedAction), cancellationToken));
+            results.Add(await RunActionAsync(coordinator, target.ServiceName, normalizedAction, cancellationToken));
+            // Parar pelo painel é uma decisão deliberada: o watchdog não desfaz isso
+            // até que alguém inicie o serviço pelo painel novamente.
+            target.AutoStartSuspended = normalizedAction == "stop";
         }
 
         ApplyObservedStatuses(component.WindowsServiceTargets, results, clock);
@@ -136,6 +144,7 @@ public static class ServiceControlEndpoints
         bool demoMode,
         PulseDbContext dbContext,
         IClock clock,
+        ServiceActionCoordinator coordinator,
         ClaimsPrincipal principal,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -190,7 +199,7 @@ public static class ServiceControlEndpoints
             firstWindow ??= window;
         }
 
-        var services = await ExecuteMaintenancePlanAsync(dbContext, exclusive?.Id, clock, cancellationToken);
+        var services = await ExecuteMaintenancePlanAsync(dbContext, exclusive?.Id, clock, coordinator, cancellationToken);
         AddAudit(dbContext, clock, principal, httpContext, "MaintenanceModeEntered", nameof(MaintenanceWindow), firstWindow!.Id, new
         {
             durationMinutes,
@@ -211,6 +220,7 @@ public static class ServiceControlEndpoints
         bool demoMode,
         PulseDbContext dbContext,
         IClock clock,
+        ServiceActionCoordinator coordinator,
         ClaimsPrincipal principal,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -234,7 +244,7 @@ public static class ServiceControlEndpoints
             window.EndsAt = now;
         }
 
-        var services = await ExecuteOnMonitoredServicesAsync(dbContext, "start", clock, cancellationToken);
+        var services = await ExecuteOnMonitoredServicesAsync(dbContext, "start", clock, coordinator, cancellationToken);
         AddAudit(dbContext, clock, principal, httpContext, "MaintenanceModeExited", nameof(MaintenanceWindow), activeWindows.FirstOrDefault()?.Id ?? Guid.Empty, new
         {
             closedWindows = activeWindows.Count,
@@ -252,6 +262,7 @@ public static class ServiceControlEndpoints
         PulseDbContext dbContext,
         Guid? exclusiveInstallationId,
         IClock clock,
+        ServiceActionCoordinator coordinator,
         CancellationToken cancellationToken)
     {
         var targets = await LoadRealServiceTargetsAsync(dbContext, cancellationToken);
@@ -262,14 +273,16 @@ public static class ServiceControlEndpoints
         var results = new List<ServiceActionOutcome>();
         foreach (var serviceName in plan.ToStop.Where(IsControllable))
         {
-            results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, "stop"), cancellationToken));
+            results.Add(await RunActionAsync(coordinator, serviceName, "stop", cancellationToken));
         }
 
         foreach (var serviceName in plan.ToRestart.Where(IsControllable))
         {
-            results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, "restart"), cancellationToken));
+            results.Add(await RunActionAsync(coordinator, serviceName, "restart", cancellationToken));
         }
 
+        ApplySuspension(targets, plan.ToStop, suspended: true);
+        ApplySuspension(targets, plan.ToRestart, suspended: false);
         ApplyObservedStatuses(targets, results, clock);
         return results;
     }
@@ -278,6 +291,7 @@ public static class ServiceControlEndpoints
         PulseDbContext dbContext,
         string action,
         IClock clock,
+        ServiceActionCoordinator coordinator,
         CancellationToken cancellationToken)
     {
         var targets = await LoadRealServiceTargetsAsync(dbContext, cancellationToken);
@@ -289,11 +303,43 @@ public static class ServiceControlEndpoints
         var results = new List<ServiceActionOutcome>();
         foreach (var serviceName in serviceNames)
         {
-            results.Add(await Task.Run(() => ExecuteServiceAction(serviceName, action), cancellationToken));
+            results.Add(await RunActionAsync(coordinator, serviceName, action, cancellationToken));
         }
 
+        ApplySuspension(targets, serviceNames, suspended: action == "stop");
         ApplyObservedStatuses(targets, results, clock);
         return results;
+    }
+
+    /// <summary>
+    /// Executa a ação marcando o serviço como ocupado, para o watchdog do auto-start
+    /// não tentar religá-lo no meio de um restart.
+    /// </summary>
+    private static async Task<ServiceActionOutcome> RunActionAsync(
+        ServiceActionCoordinator coordinator,
+        string serviceName,
+        string action,
+        CancellationToken cancellationToken)
+    {
+        using var scope = coordinator.BeginAction(serviceName);
+        return await Task.Run(() => ExecuteServiceAction(serviceName, action), cancellationToken);
+    }
+
+    private static void ApplySuspension(
+        IEnumerable<WindowsServiceTarget> targets,
+        IReadOnlyCollection<string> serviceNames,
+        bool suspended)
+    {
+        if (serviceNames.Count == 0)
+        {
+            return;
+        }
+
+        var affected = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var target in targets.Where(target => affected.Contains(target.ServiceName)))
+        {
+            target.AutoStartSuspended = suspended;
+        }
     }
 
     private static Task<List<WindowsServiceTarget>> LoadRealServiceTargetsAsync(

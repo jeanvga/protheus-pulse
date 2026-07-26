@@ -78,7 +78,8 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
                 component.WindowsServiceTargets.Select(target => target.ServiceName).FirstOrDefault(),
                 component.WindowsServiceTargets.Select(target => target.LastStatus).FirstOrDefault(),
                 component.Installation.IsExclusive,
-                component.Installation.AutoStartEnabled);
+                component.Installation.AutoStartEnabled,
+                component.WindowsServiceTargets.Any(target => target.AutoStartSuspended));
         }).ToArray();
 
         var alertSnapshots = alerts.Select(item => new AlertSnapshot(

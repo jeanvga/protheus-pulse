@@ -54,6 +54,12 @@ public sealed class WindowsServiceTarget : Entity
     public string? DisplayName { get; set; }
     public string? LastStatus { get; set; }
     public DateTimeOffset? LastStatusAt { get; set; }
+
+    /// <summary>
+    /// Ligado quando o serviço é parado pelo painel: uma parada deliberada suspende
+    /// o auto-start até que alguém inicie o serviço pelo painel novamente.
+    /// </summary>
+    public bool AutoStartSuspended { get; set; }
     public Component Component { get; set; } = null!;
 }
 

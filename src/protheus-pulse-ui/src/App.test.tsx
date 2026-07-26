@@ -257,6 +257,26 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Reiniciar serviço de AppServer REST' })).toBeDisabled()
   })
 
+  it('sinaliza o auto-start suspenso por uma parada manual', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    vi.mocked(getDashboard).mockResolvedValue({
+      ...realSummary,
+      components: [{
+        ...realSummary.components[0],
+        windowsServiceName: 'PulseAppServer',
+        windowsServiceStatus: 'Stopped',
+        windowsServiceAutoStartSuspended: true,
+        installationAutoStartEnabled: true,
+      }],
+    })
+
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
+
+    expect(await screen.findByText(/Parado · auto-start suspenso/)).toBeInTheDocument()
+  })
+
   it('marca a instalação exclusiva e ativa o auto-start', async () => {
     sessionStorage.setItem('pulse.test.role', 'Administrator')
     vi.mocked(getDashboard).mockResolvedValue(realSummary)

@@ -190,6 +190,7 @@ builder.Services.AddSingleton<MonitoringWorker>();
 builder.Services.AddSingleton<RetentionService>();
 builder.Services.AddSingleton<RetentionWorker>();
 builder.Services.AddScoped<AlertEngine>();
+builder.Services.AddSingleton<ServiceActionCoordinator>();
 builder.Services.AddSingleton<NotificationConfigurationProtector>();
 builder.Services.AddSingleton<NotificationDispatcher>();
 builder.Services.AddSwaggerGen(options =>
