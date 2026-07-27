@@ -6,6 +6,8 @@ Você instala em um servidor, cadastra seus ambientes e acompanha em uma tela s�
 
 Roda sozinho no seu servidor. Não usa nuvem, não manda dado para fora e não altera INI, RPO nem banco do Protheus.
 
+Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desenvolvimento ADVPL para Protheus](https://pullsia.com.br/desenvolvimento-advpl-protheus).
+
 > Produto independente, sem vínculo ou afiliação com a TOTVS.
 
 ![Dashboard do Protheus Pulse](docs/assets/dashboard-demo.png)
@@ -152,5 +154,13 @@ Leia [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar falha de segurança, siga
 | Arquitetura | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Modelo de ameaças | [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) |
 | Histórico de versões | [CHANGELOG.md](CHANGELOG.md) |
+
+## Quem mantém
+
+O Protheus Pulse é mantido pela **[Pullsia Tecnologia](https://pullsia.com.br)**.
+
+- [Desenvolvimento ADVPL para Protheus](https://pullsia.com.br/desenvolvimento-advpl-protheus) — customizações MVC, pontos de entrada, relatórios, integrações via API REST e migração de ADVPL para TLPP.
+- [Pullsia KPI](https://kpi.pullsia.com.br) — indicadores financeiros e comerciais do ERP em tempo real, com drill-down até o documento e chat com IA.
+- Dúvida, ideia ou bug: abra uma [issue](https://github.com/jeanvga/protheus-pulse/issues). Assunto comercial: [contato@pullsia.com.br](mailto:contato@pullsia.com.br).
 
 Licenciado sob [MIT](LICENSE).
