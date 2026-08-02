@@ -150,7 +150,7 @@ public static class LogAgentEndpoints
         IngestLogEventsRequest request,
         PulseDbContext dbContext,
         IClock clock,
-        LogAlertMailQueue mailQueue,
+        LogAlertMailBuffer mailBuffer,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
@@ -215,7 +215,7 @@ public static class LogAgentEndpoints
         var queued = 0;
         foreach (var item in grouped.Where(item => item.Level is "Critical" or "Error"))
         {
-            mailQueue.Enqueue(new LogAlertNotice(
+            mailBuffer.Enqueue(new LogAlertNotice(
                 agent.Component.Installation.Name,
                 agent.Component.Name,
                 item.Level,

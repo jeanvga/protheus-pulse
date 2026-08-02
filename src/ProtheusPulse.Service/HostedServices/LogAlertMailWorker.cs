@@ -21,7 +21,7 @@ public sealed record LogAlertNotice(
 /// propósito: se o AppServer despejar milhares de erros, o Pulse descarta os mais
 /// antigos em vez de estourar a memória ou segurar a requisição do agente.
 /// </summary>
-public sealed class LogAlertMailQueue
+public sealed class LogAlertMailBuffer
 {
     private const int Capacity = 500;
 
@@ -46,7 +46,7 @@ public sealed class LogAlertMailQueue
 /// </summary>
 public sealed partial class LogAlertMailWorker(
     IServiceScopeFactory scopeFactory,
-    LogAlertMailQueue queue,
+    LogAlertMailBuffer buffer,
     EmailSender emailSender,
     NotificationConfigurationProtector protector,
     PulseOptions options,
@@ -60,7 +60,7 @@ public sealed partial class LogAlertMailWorker(
         {
             try
             {
-                if (!await queue.WaitToReadAsync(stoppingToken))
+                if (!await buffer.WaitToReadAsync(stoppingToken))
                 {
                     return;
                 }
@@ -88,7 +88,7 @@ public sealed partial class LogAlertMailWorker(
     private List<LogAlertNotice> Drain()
     {
         var notices = new List<LogAlertNotice>();
-        while (notices.Count < MaximumEventsPerDigest && queue.TryRead(out var notice))
+        while (notices.Count < MaximumEventsPerDigest && buffer.TryRead(out var notice))
         {
             notices.Add(notice);
         }

@@ -242,7 +242,7 @@ builder.Services.AddScoped<AlertEngine>();
 builder.Services.AddSingleton<ServiceActionCoordinator>();
 builder.Services.AddSingleton<NotificationConfigurationProtector>();
 builder.Services.AddSingleton<EmailSender>();
-builder.Services.AddSingleton<LogAlertMailQueue>();
+builder.Services.AddSingleton<LogAlertMailBuffer>();
 builder.Services.AddSingleton<NotificationDispatcher>();
 builder.Services.AddSwaggerGen(options =>
 {
