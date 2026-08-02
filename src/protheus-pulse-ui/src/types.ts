@@ -304,25 +304,3 @@ export interface EmailTestResult {
   success: boolean
   message: string
 }
-
-export interface LogAgentItem {
-  id: string
-  componentId: string
-  installationName: string
-  componentName: string
-  name: string
-  agentKey: string
-  enabled: boolean
-  createdAt: string
-  lastSeenAt?: string | null
-  receivedEventCount: number
-}
-
-export interface LogAgentToken {
-  id: string
-  agentKey: string
-  token: string
-  tokenShownOnce: boolean
-  ingestUrl: string
-  warning: string
-}

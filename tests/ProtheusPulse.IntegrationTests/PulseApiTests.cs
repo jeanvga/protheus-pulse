@@ -845,93 +845,70 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
-    public async Task LogAgentTokenGuardsIngestionAndStoredEventsAreSanitized()
+    public async Task LogErrorsCollectedInternallyAreSanitizedAndQueuedForEmail()
     {
-        var componentId = Guid.NewGuid();
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
-            dbContext.Installations.Add(new Installation
-            {
-                Name = $"Agente de log {Guid.NewGuid():N}",
-                Environment = EnvironmentKind.Development,
-                CreatedAt = DateTimeOffset.UtcNow,
-                Components =
-                [
-                    new Component
-                    {
-                        Id = componentId,
-                        Name = "AppServer sintético",
-                        Type = ComponentType.AppServer
-                    }
-                ]
-            });
-            await dbContext.SaveChangesAsync();
-        }
-
-        var administratorToken = await AuthenticateDemoAdministratorAsync();
-        using var createRequest = AuthorizedPost("/api/v1/log-agents", administratorToken, new
-        {
-            componentId,
-            name = "console.log sintético",
-            logPath = "D:\\Synthetic\\logs\\console.log"
-        });
-        var createResponse = await client.SendAsync(createRequest);
-        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
-        var created = await createResponse.Content.ReadFromJsonAsync<LogAgentTokenResponse>();
-        Assert.NotNull(created);
-        Assert.True(created.TokenShownOnce);
-
-        await using (var verificationScope = factory.Services.CreateAsyncScope())
-        {
-            var dbContext = verificationScope.ServiceProvider.GetRequiredService<PulseDbContext>();
-            var stored = await dbContext.LogAgents.AsNoTracking().SingleAsync(item => item.Id == created.Id);
-            Assert.Equal(64, stored.TokenHash?.Length);
-            Assert.DoesNotContain(created.Token, stored.TokenHash, StringComparison.Ordinal);
-        }
-
+        var root = Path.Combine(Path.GetTempPath(), "protheus-pulse-log-mail-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var logPath = Path.Combine(root, "console.log");
         const string secret = "synthetic-secret-must-not-persist";
-        var events = new[]
+        var componentId = Guid.NewGuid();
+        try
         {
-            new
+            await File.WriteAllTextAsync(logPath, $"[TOTVS][INFO ] AppServer iniciado{Environment.NewLine}");
+            await using (var scope = factory.Services.CreateAsyncScope())
             {
-                observedAt = DateTimeOffset.UtcNow,
-                level = "Error",
-                message = $"Thread Error ao conectar; password={secret}",
-                occurrenceCount = 3
+                var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+                dbContext.Installations.Add(new Installation
+                {
+                    Name = $"Erros de log {Guid.NewGuid():N}",
+                    Environment = EnvironmentKind.Development,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    Components =
+                    [
+                        new Component
+                        {
+                            Id = componentId,
+                            Name = "AppServer sintético",
+                            Type = ComponentType.AppServer,
+                            LogSources = [new LogSource { Path = logPath }]
+                        }
+                    ]
+                });
+                await dbContext.SaveChangesAsync();
             }
-        };
 
-        using var rejected = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/log-agents/{created.AgentKey}/events", UriKind.Relative))
+            // Primeiro ciclo posiciona o cursor no fim do arquivo.
+            var worker = factory.Services.GetRequiredService<MonitoringWorker>();
+            await worker.RunNowAsync(CancellationToken.None);
+            var buffer = factory.Services.GetRequiredService<LogAlertMailBuffer>();
+            while (buffer.TryRead(out _))
+            {
+                // Descarta o que outros testes possam ter deixado na fila.
+            }
+
+            await File.AppendAllTextAsync(
+                logPath,
+                $"[TOTVS][ERROR] Thread Error ao conectar; password={secret}{Environment.NewLine}");
+            await worker.RunNowAsync(CancellationToken.None);
+
+            Assert.True(buffer.TryRead(out var notice));
+            Assert.NotNull(notice);
+            Assert.Equal("Error", notice.Level);
+            Assert.Equal("AppServer sintético", notice.ComponentName);
+            Assert.DoesNotContain(secret, notice.Message, StringComparison.Ordinal);
+            Assert.Contains("[REDACTED]", notice.Message, StringComparison.Ordinal);
+            Assert.False(string.IsNullOrEmpty(notice.Fingerprint));
+
+            await using var verificationScope = factory.Services.CreateAsyncScope();
+            var verificationDb = verificationScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var stored = await verificationDb.LogEvents.AsNoTracking()
+                .SingleAsync(item => item.ComponentId == componentId && item.Level == "Error");
+            Assert.DoesNotContain(secret, stored.Message, StringComparison.Ordinal);
+        }
+        finally
         {
-            Content = JsonContent.Create(new { source = "D:\\Synthetic\\logs\\console.log", events })
-        };
-        rejected.Headers.Add("X-Pulse-Agent-Token", "invalid-synthetic-agent-token");
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(rejected)).StatusCode);
-
-        using var accepted = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/log-agents/{created.AgentKey}/events", UriKind.Relative))
-        {
-            Content = JsonContent.Create(new { source = "D:\\Synthetic\\logs\\console.log", events })
-        };
-        accepted.Headers.Add("X-Pulse-Agent-Token", created.Token);
-        var acceptedResponse = await client.SendAsync(accepted);
-        Assert.Equal(HttpStatusCode.Accepted, acceptedResponse.StatusCode);
-
-        await using var finalScope = factory.Services.CreateAsyncScope();
-        var finalDb = finalScope.ServiceProvider.GetRequiredService<PulseDbContext>();
-        var logEvent = await finalDb.LogEvents.AsNoTracking().SingleAsync(item => item.ComponentId == componentId);
-        Assert.Equal("Error", logEvent.Level);
-        Assert.Equal(3, logEvent.OccurrenceCount);
-        Assert.DoesNotContain(secret, logEvent.Message, StringComparison.Ordinal);
-        Assert.Contains("[REDACTED]", logEvent.Message, StringComparison.Ordinal);
-
-        // A origem alimentada pelo agente não pode ser lida também pelo coletor interno.
-        var source = await finalDb.LogSources.AsNoTracking().SingleAsync(item => item.ComponentId == componentId);
-        Assert.True(source.IsAgentManaged);
-
-        var agent = await finalDb.LogAgents.AsNoTracking().SingleAsync(item => item.Id == created.Id);
-        Assert.NotNull(agent.LastSeenAt);
-        Assert.Equal(3, agent.ReceivedEventCount);
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     private static HttpRequestMessage AuthorizedPost(string path, string token, object content)
@@ -989,7 +966,6 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
     private sealed record HeartbeatTokenResponse(Guid Id, string JobKey, string Token, bool TokenShownOnce);
-    private sealed record LogAgentTokenResponse(Guid Id, string AgentKey, string Token, bool TokenShownOnce);
     private sealed record ServerResourcesResponse(ServerSnapshotResponse Server, ServerThresholdsResponse Thresholds);
     private sealed record ServerSnapshotResponse(
         string HostName,

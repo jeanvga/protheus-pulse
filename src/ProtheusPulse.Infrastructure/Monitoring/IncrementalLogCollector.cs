@@ -9,16 +9,14 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
 {
     private const int MaximumEventsPerCycle = 200;
 
-    // Origens alimentadas por agente chegam prontas pela API; ler o mesmo arquivo
-    // aqui duplicaria cada evento.
-    public bool CanCollect(Component component) => component.LogSources.Any(item => !item.IsAgentManaged);
+    public bool CanCollect(Component component) => component.LogSources.Count > 0;
 
     public async Task<LogCollectionResult> CollectAsync(Component component, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         var targetObservations = new List<CollectorSupport.TargetObservation>();
         var events = new List<LogEventObservation>();
-        foreach (var source in component.LogSources.Where(item => !item.IsAgentManaged))
+        foreach (var source in component.LogSources)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(source.Path))

@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Threading.Channels;
+using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Configuration;
 using ProtheusPulse.Service.Monitoring;
@@ -13,13 +14,14 @@ public sealed record LogAlertNotice(
     string ComponentName,
     string Level,
     string Message,
+    string Fingerprint,
     int OccurrenceCount,
     DateTimeOffset ObservedAt);
 
 /// <summary>
-/// Fila em memória entre a ingestão dos agentes e o e-mail. É limitada de
-/// propósito: se o AppServer despejar milhares de erros, o Pulse descarta os mais
-/// antigos em vez de estourar a memória ou segurar a requisição do agente.
+/// Fila em memória entre a coleta de logs e o e-mail. É limitada de propósito: se
+/// o AppServer despejar milhares de erros, o Pulse descarta os mais antigos em vez
+/// de estourar a memória ou atrasar o ciclo de monitoramento.
 /// </summary>
 public sealed class LogAlertMailBuffer
 {
@@ -50,9 +52,19 @@ public sealed partial class LogAlertMailWorker(
     EmailSender emailSender,
     NotificationConfigurationProtector protector,
     PulseOptions options,
+    IClock clock,
     ILogger<LogAlertMailWorker> logger) : BackgroundService
 {
     private const int MaximumEventsPerDigest = 100;
+
+    /// <summary>
+    /// Uma falha que se repete a cada ciclo não pode virar um e-mail a cada janela.
+    /// A mesma assinatura de mensagem só volta a ser enviada depois deste intervalo;
+    /// a página de Logs continua registrando todas as ocorrências.
+    /// </summary>
+    private static readonly TimeSpan RepeatSuppression = TimeSpan.FromMinutes(30);
+
+    private readonly Dictionary<string, DateTimeOffset> lastSentByFingerprint = new(StringComparer.Ordinal);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -96,12 +108,48 @@ public sealed partial class LogAlertMailWorker(
         return notices;
     }
 
-    private async Task SendDigestAsync(IReadOnlyList<LogAlertNotice> notices, CancellationToken cancellationToken)
+    /// <summary>
+    /// Descarta o que já foi enviado há pouco e devolve quantas mensagens foram
+    /// omitidas, para que o e-mail possa dizer que elas existiram.
+    /// </summary>
+    private (List<LogAlertNotice> Fresh, int Suppressed) FilterRepeats(IReadOnlyList<LogAlertNotice> notices)
+    {
+        var now = clock.UtcNow;
+        var limit = now - RepeatSuppression;
+        foreach (var expired in lastSentByFingerprint.Where(item => item.Value < limit).Select(item => item.Key).ToArray())
+        {
+            lastSentByFingerprint.Remove(expired);
+        }
+
+        var fresh = new List<LogAlertNotice>();
+        var suppressed = 0;
+        foreach (var notice in notices)
+        {
+            if (lastSentByFingerprint.ContainsKey(notice.Fingerprint))
+            {
+                suppressed++;
+                continue;
+            }
+
+            lastSentByFingerprint[notice.Fingerprint] = now;
+            fresh.Add(notice);
+        }
+
+        return (fresh, suppressed);
+    }
+
+    private async Task SendDigestAsync(IReadOnlyList<LogAlertNotice> pending, CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
         var settings = await EmailSettingsAccess.LoadEnabledAsync(dbContext, protector, cancellationToken);
         if (settings is null || !settings.NotifyLogErrors)
+        {
+            return;
+        }
+
+        var (notices, suppressed) = FilterRepeats(pending);
+        if (notices.Count == 0)
         {
             return;
         }
@@ -134,8 +182,16 @@ public sealed partial class LogAlertMailWorker(
 
         body.Append("Total de ").Append(occurrences.ToString(CultureInfo.InvariantCulture))
             .Append(" ocorrência(s) em ").Append(notices.Count.ToString(CultureInfo.InvariantCulture))
-            .AppendLine(" mensagem(ns) distinta(s).")
-            .AppendLine("As mensagens já estão registradas na página de Logs do Pulse.");
+            .AppendLine(" mensagem(ns) distinta(s).");
+        if (suppressed > 0)
+        {
+            body.Append(suppressed.ToString(CultureInfo.InvariantCulture))
+                .Append(" mensagem(ns) repetida(s) nos últimos ")
+                .Append(((int)RepeatSuppression.TotalMinutes).ToString(CultureInfo.InvariantCulture))
+                .AppendLine(" minutos foram omitidas deste e-mail.");
+        }
+
+        body.AppendLine("Todas as ocorrências estão registradas na página de Logs do Pulse.");
         var result = await emailSender.SendAsync(settings, subject, body.ToString(), cancellationToken);
         if (!result.Success)
         {

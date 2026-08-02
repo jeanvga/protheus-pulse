@@ -2,6 +2,17 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.4.0] - 2026-08-02
+
+### Added
+
+- O resumo de erros por e-mail passou a valer para todo log monitorado: os eventos de nível `Error` e `Critical` encontrados pela coleta interna são agrupados por janela e enviados com a mensagem, a contagem de ocorrências e o componente. Antes o alerta avisava que o componente tinha caído, mas era preciso abrir o painel para saber o que o Protheus escreveu.
+- Supressão de repetição no e-mail de erros: a mesma assinatura de mensagem só volta a ser enviada depois de 30 minutos, e o e-mail informa quantas repetições foram omitidas. Um incidente que despeja erro a cada ciclo rende um e-mail em vez de um a cada janela; a página de Logs continua registrando todas as ocorrências.
+
+### Removed
+
+- Agente externo de log em Python, junto com a API de ingestão (`/api/v1/log-agents`), a tabela `LogAgents`, os tokens de agente e a seção correspondente na aba Configurações. O agente existia para levar o `console.log` até o Pulse, mas o coletor interno já lê o mesmo arquivo e agora produz o mesmo e-mail — a superfície extra (token, endpoint anônimo, tabela, processo Python no servidor) não pagava o que entregava. Para AppServer em outro servidor, a rota continua sendo montar o compartilhamento e apontar o caminho no componente.
+
 ## [1.3.0] - 2026-08-02
 
 ### Added

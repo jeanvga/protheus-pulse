@@ -1,6 +1,6 @@
 # Envio de e-mail
 
-O Pulse manda e-mail em duas situações: quando um alerta abre, resolve ou reabre, e quando um agente de log encontra erros no `console.log` do AppServer. Os dois usam o mesmo servidor SMTP, configurado em **Configurações → Dados para envio de e-mail**.
+O Pulse manda e-mail em duas situações: quando um alerta abre, resolve ou reabre, e quando a coleta encontra erros nos logs monitorados. As duas usam o mesmo servidor SMTP, configurado em **Configurações → Dados para envio de e-mail**.
 
 Só o perfil `Administrator` vê e altera esses dados.
 
@@ -17,7 +17,7 @@ Só o perfil `Administrator` vê e altera esses dados.
 | **Remetente** e **Nome do remetente** | Endereço que aparece no "De". Alguns provedores exigem que seja o mesmo do usuário autenticado. |
 | **Destinatários** | Um por linha, até 20. |
 | **Avisar sobre alertas** | Manda e-mail nas mudanças de alerta. |
-| **Avisar sobre erros de log** | Manda o resumo dos erros recebidos dos agentes. |
+| **Avisar sobre erros de log** | Manda o resumo dos erros encontrados nos logs monitorados. |
 | **Aceitar certificado que não valida** | Só para relay interno com certificado próprio. |
 
 ## Qual segurança escolher
@@ -53,8 +53,9 @@ Consequência do DPAPI: restaurar o banco em **outro** servidor invalida o segre
 ## Quantos e-mails esperar
 
 - **Alertas:** um e-mail por ciclo de monitoramento, com todas as mudanças daquele ciclo. Não é um e-mail por alerta.
-- **Erros de log:** os eventos que chegam dos agentes são agrupados por uma janela (padrão de 120 segundos, ajustável em `Pulse:LogAlertDigestSeconds`) e viram um único resumo, com contagem de ocorrências por mensagem.
+- **Erros de log:** os eventos de nível `Error` e `Critical` encontrados na coleta são agrupados por uma janela (padrão de 120 segundos, ajustável em `Pulse:LogAlertDigestSeconds`) e viram um único resumo, com contagem de ocorrências por mensagem.
 - Mensagens iguais são agrupadas por assinatura antes de contar, então uma falha que repete mil vezes vira uma linha com `1000x`.
+- A mesma mensagem não é reenviada por 30 minutos. Um incidente que despeja erro a cada ciclo rende um e-mail, não um a cada janela; o e-mail informa quantas repetições foram omitidas e a página de Logs continua com tudo.
 
 Se o SMTP estiver fora do ar, o Pulse registra o motivo no log do serviço e segue. Alerta e evento de log já estão gravados no banco: o e-mail é aviso, não é o registro.
 

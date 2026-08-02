@@ -199,22 +199,6 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 AutoReplenishment = true
             }));
-    // Ingestão dos agentes de log: cada agente envia um lote por ciclo, então o
-    // limite acomoda vários agentes na mesma origem sem virar canal de despejo.
-    options.AddPolicy("agentIngest", context =>
-    {
-        var origin = context.Connection.RemoteIpAddress?.ToString() ?? "local";
-        var agentKey = context.Request.RouteValues["agentKey"]?.ToString() ?? "unknown";
-        return RateLimitPartition.GetFixedWindowLimiter(
-            $"{origin}:{agentKey}",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 60,
-                QueueLimit = 0,
-                Window = TimeSpan.FromMinutes(1),
-                AutoReplenishment = true
-            });
-    });
     options.AddPolicy("heartbeat", context =>
     {
         var origin = context.Connection.RemoteIpAddress?.ToString() ?? "local";

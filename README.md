@@ -30,9 +30,8 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 
 **Erros do AppServer por e-mail**
 
-- Um **agente em Python** acompanha o `console.log`, reconhece as linhas de erro com a pilha ADVPL, agrupa as repetições e manda para o Pulse.
-- O Pulse grava tudo na página de Logs e envia um resumo por e-mail, agrupando os erros de uma janela em uma mensagem só.
-- Serve para AppServer em outro servidor ou em pasta que o serviço não pode ler. Veja [docs/LOG-AGENT.md](docs/LOG-AGENT.md) e [agents/appserver-log-agent](agents/appserver-log-agent/README.md).
+- Os erros encontrados no `console.log` viram um resumo por e-mail, com a mensagem, a contagem de ocorrências e o componente — não só um aviso de que algo caiu.
+- Mensagens iguais são agrupadas por assinatura e uma falha que se repete não é reenviada por 30 minutos, para o incidente não virar enxurrada de e-mail.
 
 **Operação dos serviços**
 
@@ -63,7 +62,7 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 3. No servidor, confira se o arquivo não veio corrompido:
 
    ```powershell
-   Get-FileHash .\protheus-pulse-1.3.0-win-x64-setup.exe -Algorithm SHA256
+   Get-FileHash .\protheus-pulse-1.4.0-win-x64-setup.exe -Algorithm SHA256
    ```
 
    O resultado tem que ser igual ao que está dentro do arquivo `.sha256`.
@@ -156,7 +155,6 @@ Leia [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar falha de segurança, siga
 | Como o monitoramento funciona | [docs/MONITORING.md](docs/MONITORING.md) |
 | Alertas e manutenção | [docs/ALERTING.md](docs/ALERTING.md) |
 | Envio de e-mail (SMTP) | [docs/EMAIL.md](docs/EMAIL.md) |
-| Agente de log do AppServer | [docs/LOG-AGENT.md](docs/LOG-AGENT.md) |
 | Heartbeats | [docs/HEARTBEATS.md](docs/HEARTBEATS.md) |
 | Privacidade e retenção de dados | [docs/PRIVACY-RETENTION.md](docs/PRIVACY-RETENTION.md) |
 | Checklist de implantação | [docs/DEPLOYMENT-CHECKLIST.md](docs/DEPLOYMENT-CHECKLIST.md) |

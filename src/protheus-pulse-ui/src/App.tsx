@@ -2,23 +2,23 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Activity, AlertTriangle, Archive, Bell, Boxes, BriefcaseBusiness, Check, ChevronDown, CircleHelp,
-  Clock3, Copy, Cpu, Crown, FileText, FolderSearch, Gauge, HardDrive, HeartPulse, KeyRound, LockKeyhole,
-  LogOut, Mail, Menu, MemoryStick, Moon, Pencil, Play, Plus, RefreshCw, RotateCw, Search, Send, Server,
-  Settings, ShieldCheck, Square, Sun, TerminalSquare, Trash2, UserRound, Wrench, X, Zap,
+  Clock3, Cpu, Crown, FileText, FolderSearch, Gauge, HardDrive, HeartPulse, LockKeyhole, LogOut, Mail,
+  Menu, MemoryStick, Moon, Pencil, Play, Plus, RefreshCw, RotateCw, Search, Send, Server, Settings,
+  ShieldCheck, Square, Sun, TerminalSquare, Trash2, UserRound, Wrench, X, Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, createLogAgent, deleteInstallation,
-  deleteLogAgent, discoverPaths, discoverServices, enterMaintenance, executeServiceAction, exitMaintenance,
-  getAuthStatus, getDashboard, getEmailSettings, getInstallationConfiguration, getLogAgents, getLogEvents,
-  getMaintenanceStatus, getServerResources, login, rotateLogAgentToken, saveEmailSettings, sendTestEmail,
-  session, setAutoStart, setExclusiveInstallation, setup, updateInstallation,
+  acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, deleteInstallation, discoverPaths,
+  discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAuthStatus, getDashboard,
+  getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getServerResources,
+  login, saveEmailSettings, sendTestEmail, session, setAutoStart, setExclusiveInstallation, setup,
+  updateInstallation,
 } from './api'
 import type {
   AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
-  EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogAgentItem, LogAgentToken, LogEventItem,
-  MaintenanceStatus, PathCandidate, SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction,
-  ServiceCandidate, SmtpSecurity, TcpCheckConfiguration,
+  EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, MaintenanceStatus, PathCandidate,
+  SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
+  TcpCheckConfiguration,
 } from './types'
 
 type Page = 'server' | 'overview' | 'installations' | 'logs' | 'jobs' | 'alerts' | 'settings' | 'audit' | 'diagnostics'
@@ -151,7 +151,7 @@ export default function App() {
 
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => void loadSummary()}><RefreshCw size={15} /> Tentar novamente</button></div>}
         {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} goTo={setPage} addInstallation={() => setInstallationEditorId(null)} editInstallation={setInstallationEditorId} />}
-        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.3.0 · produto independente</span></footer>
+        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.4.0 · produto independente</span></footer>
       </main>
       {installationEditorId !== undefined && <InstallationDialog installationId={installationEditorId} close={() => setInstallationEditorId(undefined)} onSaved={installationCreated} />}
     </div>
@@ -240,7 +240,7 @@ function PageContent({ page, summary, refresh, goTo, addInstallation, editInstal
     case 'logs': return <LogsPage />
     case 'jobs': return <JobsPage components={summary.components} />
     case 'alerts': return <AlertsPage alerts={summary.alerts} refresh={refresh} />
-    case 'settings': return <SettingsPage components={summary.components} />
+    case 'settings': return <SettingsPage />
     case 'audit': return <AuditPage />
     case 'diagnostics': return <DiagnosticsPage demo={summary.demoMode} />
   }
@@ -942,12 +942,12 @@ function AlertsPage({ alerts, refresh }: { alerts: AlertSnapshot[]; refresh: () 
   return <div className="page-body">{error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}<section className="summary-chips"><button className="active">Ativos <strong>{alerts.filter(item => item.state === 'Active').length}</strong></button><button>Reconhecidos <strong>{alerts.filter(item => item.state === 'Acknowledged').length}</strong></button><button>Resolvidos <strong>{alerts.filter(item => item.state === 'Resolved').length}</strong></button><button>Silenciados <strong>{alerts.filter(item => item.state === 'Silenced').length}</strong></button></section><article className="panel"><AlertList alerts={alerts} acknowledge={id => void acknowledge(id)} busyId={busyId} /></article></div>
 }
 
-function SettingsPage({ components }: { components: ComponentSnapshot[] }) {
+function SettingsPage() {
   const isAdministrator = session.role === 'Administrator'
   const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · E-mail · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
   return <div className="page-body">
     {isAdministrator
-      ? <><EmailSettingsCard /><LogAgentsCard components={components} /></>
+      ? <EmailSettingsCard />
       : <div className="read-only-notice"><LockKeyhole size={22} /><div><strong>Somente administradores</strong><p>Os dados de envio de e-mail e os tokens dos agentes de log só aparecem para o perfil Administrator.</p></div></div>}
     <div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div>
     <div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Coleta segura e ações auditadas</strong><p>A coleta é somente leitura e não escreve nas pastas monitoradas. Iniciar, reiniciar ou parar serviços exige perfil Administrator e fica registrado na auditoria.</p></div></div>
@@ -1140,123 +1140,6 @@ function EmailSettingsCard() {
       </footer>
       {!configured && <p className="field-hint">Salve os dados antes de enviar o teste.</p>}
     </form>}
-  </article>
-}
-
-function LogAgentsCard({ components }: { components: ComponentSnapshot[] }) {
-  const [agents, setAgents] = useState<LogAgentItem[]>([])
-  const [componentId, setComponentId] = useState('')
-  const [name, setName] = useState('')
-  const [logPath, setLogPath] = useState('')
-  const [issued, setIssued] = useState<LogAgentToken | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const eligible = components.filter(item => !item.isDemo)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      setAgents(await getLogAgents())
-      setError(null)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os agentes.')
-    } finally { setLoading(false) }
-  }, [])
-  useEffect(() => { void load() }, [load])
-
-  const create = async (event: FormEvent) => {
-    event.preventDefault()
-    setBusy(true); setError(null); setMessage(null)
-    try {
-      setIssued(await createLogAgent(componentId, name.trim(), logPath))
-      setName(''); setLogPath('')
-      await load()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível criar o agente.')
-    } finally { setBusy(false) }
-  }
-
-  const rotate = async (agent: LogAgentItem) => {
-    if (!window.confirm(`Gerar um novo token para “${agent.name}”? O token atual para de funcionar imediatamente.`)) return
-    setBusy(true); setError(null); setMessage(null)
-    try {
-      setIssued(await rotateLogAgentToken(agent.id))
-      await load()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível rotacionar o token.')
-    } finally { setBusy(false) }
-  }
-
-  const remove = async (agent: LogAgentItem) => {
-    if (!window.confirm(`Remover o agente “${agent.name}”?`)) return
-    setBusy(true); setError(null); setMessage(null)
-    try {
-      await deleteLogAgent(agent.id)
-      setMessage('Agente removido.')
-      await load()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível remover o agente.')
-    } finally { setBusy(false) }
-  }
-
-  const copy = (value: string) => {
-    void navigator.clipboard?.writeText(value).then(
-      () => setMessage('Copiado para a área de transferência.'),
-      () => setError('O navegador não permitiu copiar; selecione o texto manualmente.'))
-  }
-
-  return <article className="panel settings-panel">
-    <PanelHeader title="Agentes de log" subtitle="Tokens usados pelo agente Python que lê o console.log do AppServer" />
-    <div className="settings-form">
-      {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
-      {message && <div className="success-banner"><Check size={16} /> {message}</div>}
-
-      {issued && <div className="token-panel">
-        <div><KeyRound size={18} /><strong>Token gerado — copie agora</strong></div>
-        <p>{issued.warning}</p>
-        <dl>
-          <div><dt>Chave</dt><dd><code>{issued.agentKey}</code><button type="button" className="row-action" aria-label="Copiar chave" onClick={() => copy(issued.agentKey)}><Copy size={14} /></button></dd></div>
-          <div><dt>Token</dt><dd><code>{issued.token}</code><button type="button" className="row-action" aria-label="Copiar token" onClick={() => copy(issued.token)}><Copy size={14} /></button></dd></div>
-        </dl>
-        <button type="button" className="secondary-button" onClick={() => setIssued(null)}><Check size={15} /> Já guardei</button>
-      </div>}
-
-      {loading
-        ? <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando agentes…</div>
-        : agents.length === 0
-          ? <div className="empty-state"><KeyRound size={20} /> Nenhum agente cadastrado.</div>
-          : <div className="table-wrap"><table><thead><tr><th>Agente</th><th>Componente</th><th>Chave</th><th>Último envio</th><th>Eventos</th><th /></tr></thead><tbody>
-            {agents.map(agent => <tr key={agent.id}>
-              <td><strong>{agent.name}</strong></td>
-              <td><div className="installation-name">{agent.componentName}<small>{agent.installationName}</small></div></td>
-              <td><code>{agent.agentKey}</code></td>
-              <td>{agent.lastSeenAt ? formatRelative(agent.lastSeenAt) : 'nunca'}</td>
-              <td>{agent.receivedEventCount}</td>
-              <td><span className="mini-component-actions">
-                <button type="button" className="row-action" title="Gerar novo token" aria-label={`Rotacionar token de ${agent.name}`} disabled={busy} onClick={() => void rotate(agent)}><RotateCw size={14} /></button>
-                <button type="button" className="row-action" title="Remover agente" aria-label={`Remover agente ${agent.name}`} disabled={busy} onClick={() => void remove(agent)}><Trash2 size={14} /></button>
-              </span></td>
-            </tr>)}
-          </tbody></table></div>}
-
-      <form className="agent-form" onSubmit={create}>
-        <div className="target-form-grid">
-          <label>Componente
-            <select aria-label="Componente do agente" value={componentId} onChange={event => setComponentId(event.target.value)} required>
-              <option value="">Selecione…</option>
-              {eligible.map(item => <option key={item.id} value={item.id}>{item.installationName} · {item.name}</option>)}
-            </select>
-          </label>
-          <label>Nome do agente<input aria-label="Nome do agente" value={name} onChange={event => setName(event.target.value)} placeholder="Ex.: console.log do ERP" maxLength={160} required /></label>
-          <label className="wide-field">Caminho do log (opcional)<input aria-label="Caminho do log do agente" value={logPath} onChange={event => setLogPath(event.target.value)} placeholder={'D:\\TOTVS\\Protheus\\appserver\\console.log'} /></label>
-        </div>
-        <button className="primary-button" disabled={busy || eligible.length === 0}><Plus size={16} /> Novo agente</button>
-        {eligible.length === 0 && <p className="field-hint">Cadastre uma instalação real antes de criar um agente.</p>}
-      </form>
-      <p className="field-hint">O agente Python fica em <code>agents/appserver-log-agent</code>. Ele lê o log, envia os erros para cá e o Pulse manda o e-mail.</p>
-    </div>
   </article>
 }
 

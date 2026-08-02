@@ -43,7 +43,7 @@ Cada componente recebe um escopo isolado do SQLite. Mudanças de estado são per
 - **TLS:** usa TLS 1.2/1.3, valida a cadeia quando configurado e mede dias até o vencimento.
 - **Arquivo:** verifica existência e sinaliza reparse points; não altera nem interpreta o conteúdo.
 - **Disco:** calcula o menor percentual livre entre os volumes dos alvos cadastrados.
-- **Log:** lê somente bytes novos, mantém cursor local, limita volume/linha, mascara segredos e agrupa mensagens equivalentes. Caminhos alimentados por um agente externo são ignorados aqui — ver [LOG-AGENT.md](LOG-AGENT.md).
+- **Log:** lê somente bytes novos, mantém cursor local, limita volume/linha, mascara segredos e agrupa mensagens equivalentes.
 - **Heartbeat:** compara o último evento autenticado com intervalo e tolerância; respeita janela diária no horário local e nunca aceita horário fornecido pelo cliente.
 
 ## Estados

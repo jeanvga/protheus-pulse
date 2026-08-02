@@ -33,17 +33,13 @@ vi.mock('./api', () => ({
   getEmailSettings: vi.fn(),
   saveEmailSettings: vi.fn(),
   sendTestEmail: vi.fn(),
-  getLogAgents: vi.fn(),
-  createLogAgent: vi.fn(),
-  rotateLogAgentToken: vi.fn(),
-  deleteLogAgent: vi.fn(),
 }))
 
 import {
   acknowledgeAlert, collectNow, createInstallation, deleteInstallation, discoverPaths,
   discoverServices, executeServiceAction, getDashboard, getEmailSettings, getInstallationConfiguration,
-  getLogAgents, getServerResources, saveEmailSettings, sendTestEmail, setAutoStart,
-  setExclusiveInstallation, updateInstallation,
+  getServerResources, saveEmailSettings, sendTestEmail, setAutoStart, setExclusiveInstallation,
+  updateInstallation,
 } from './api'
 import App, { serviceActionAllowed } from './App'
 
@@ -112,7 +108,6 @@ describe('App', () => {
     vi.mocked(getEmailSettings).mockReset().mockResolvedValue(emailSettings)
     vi.mocked(saveEmailSettings).mockReset().mockResolvedValue(undefined)
     vi.mocked(sendTestEmail).mockReset().mockResolvedValue({ success: true, message: 'Mensagem entregue a 1 destinatário(s).' })
-    vi.mocked(getLogAgents).mockReset().mockResolvedValue([])
   })
 
   it('exibe o resumo demonstrativo depois da autenticação', async () => {

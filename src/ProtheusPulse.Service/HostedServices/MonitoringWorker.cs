@@ -14,6 +14,7 @@ public sealed partial class MonitoringWorker(
     IHubContext<PulseHub> hubContext,
     IClock clock,
     PulseOptions options,
+    LogAlertMailBuffer mailBuffer,
     ILogger<MonitoringWorker> logger) : BackgroundService
 {
     private readonly SemaphoreSlim cycleGate = new(1, 1);
@@ -105,6 +106,7 @@ public sealed partial class MonitoringWorker(
         var serviceProvider = scope.ServiceProvider;
         var dbContext = serviceProvider.GetRequiredService<PulseDbContext>();
         var component = await dbContext.Components
+            .Include(item => item.Installation)
             .Include(item => item.WindowsServiceTargets)
             .Include(item => item.ProcessTargets)
             .Include(item => item.FileTargets)
@@ -134,6 +136,7 @@ public sealed partial class MonitoringWorker(
                 Fingerprint = item.Fingerprint,
                 OccurrenceCount = item.OccurrenceCount
             }));
+            QueueLogErrorsForEmail(component, logResult.Events);
         }
 
         foreach (var item in observations)
@@ -195,6 +198,25 @@ public sealed partial class MonitoringWorker(
         await dbContext.SaveChangesAsync(cancellationToken);
         await serviceProvider.GetRequiredService<NotificationDispatcher>().DispatchAsync(transitions, cancellationToken);
         return observations.Count > 0;
+    }
+
+    /// <summary>
+    /// Erro e crítico encontrados no log entram na fila do resumo por e-mail. O
+    /// alerta avisa que o componente caiu; o resumo diz o que o Protheus escreveu.
+    /// </summary>
+    private void QueueLogErrorsForEmail(Component component, IReadOnlyList<LogEventObservation> events)
+    {
+        foreach (var item in events.Where(item => item.Level is "Critical" or "Error"))
+        {
+            mailBuffer.Enqueue(new LogAlertNotice(
+                component.Installation.Name,
+                component.Name,
+                item.Level,
+                item.Message,
+                item.Fingerprint,
+                item.OccurrenceCount,
+                item.ObservedAt));
+        }
     }
 
     private async Task<ProbeObservation> CollectSafelyAsync(

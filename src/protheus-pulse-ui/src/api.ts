@@ -2,9 +2,9 @@ import * as signalR from '@microsoft/signalr'
 import { demoServerResources, demoSummary } from './demoData'
 import type {
   AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, EmailSettings, EmailTestResult,
-  InstallationConfiguration, InstallationCreated, LogAgentItem, LogAgentToken, LogEventItem,
-  MaintenanceChangeResult, MaintenanceStatus, PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput,
-  ServerResources, ServiceAction, ServiceActionResponse, ServiceDiscoveryResult,
+  InstallationConfiguration, InstallationCreated, LogEventItem, MaintenanceChangeResult, MaintenanceStatus,
+  PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
+  ServiceActionResponse, ServiceDiscoveryResult,
 } from './types'
 
 const staticDemo = import.meta.env.VITE_DEMO_STATIC === 'true'
@@ -152,29 +152,6 @@ export async function saveEmailSettings(input: SaveEmailSettingsInput): Promise<
 export async function sendTestEmail(): Promise<EmailTestResult> {
   if (staticDemo) throw new Error('O teste de envio não está disponível na demonstração estática.')
   return request<EmailTestResult>('/api/v1/settings/email/test', { method: 'POST', body: '{}' })
-}
-
-export async function getLogAgents(): Promise<LogAgentItem[]> {
-  if (staticDemo) return []
-  return request<LogAgentItem[]>('/api/v1/log-agents')
-}
-
-export async function createLogAgent(componentId: string, name: string, logPath?: string): Promise<LogAgentToken> {
-  if (staticDemo) throw new Error('Agentes não podem ser criados na demonstração estática.')
-  return request<LogAgentToken>('/api/v1/log-agents', {
-    method: 'POST',
-    body: JSON.stringify({ componentId, name, logPath: logPath?.trim() || undefined }),
-  })
-}
-
-export async function rotateLogAgentToken(id: string): Promise<LogAgentToken> {
-  if (staticDemo) throw new Error('Tokens não podem ser rotacionados na demonstração estática.')
-  return request<LogAgentToken>(`/api/v1/log-agents/${id}/rotate`, { method: 'POST', body: '{}' })
-}
-
-export async function deleteLogAgent(id: string): Promise<void> {
-  if (staticDemo) throw new Error('Agentes não podem ser removidos na demonstração estática.')
-  await request<void>(`/api/v1/log-agents/${id}`, { method: 'DELETE' })
 }
 
 export function connectLiveUpdates(onUpdate: () => void): () => void {
