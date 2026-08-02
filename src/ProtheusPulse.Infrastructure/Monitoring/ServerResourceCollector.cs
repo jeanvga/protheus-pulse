@@ -152,7 +152,7 @@ public sealed class ServerResourceCollector : IServerResourceMonitor
         return new ServerMemoryUsage(total, used, available, Math.Round(used * 100d / total, 1));
     }
 
-    private IReadOnlyList<ServerDiskUsage> ReadDisks()
+    private List<ServerDiskUsage> ReadDisks()
     {
         var disks = new List<ServerDiskUsage>();
         DriveInfo[] drives;
