@@ -1,0 +1,279 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text.Json;
+using MimeKit;
+using ProtheusPulse.Application.Abstractions;
+using ProtheusPulse.Domain.Monitoring;
+using ProtheusPulse.Infrastructure.Persistence;
+using ProtheusPulse.Service.Monitoring;
+
+namespace ProtheusPulse.Service.Endpoints;
+
+/// <summary>
+/// Dados de envio de e-mail da aba Configurações. A senha entra, mas nunca sai:
+/// o GET informa apenas se existe uma senha guardada.
+/// </summary>
+public static class SettingsEndpoints
+{
+    private const int MaximumRecipients = 20;
+
+    public static RouteGroupBuilder MapEmailSettings(this RouteGroupBuilder api)
+    {
+        api.MapGet("/settings/email", GetAsync).RequireAuthorization("Administrator");
+        api.MapPut("/settings/email", SaveAsync).RequireAuthorization("Administrator");
+        api.MapPost("/settings/email/test", SendTestAsync).RequireAuthorization("Administrator").RequireRateLimiting("serviceControl");
+        return api;
+    }
+
+    private static async Task<IResult> GetAsync(
+        PulseDbContext dbContext,
+        NotificationConfigurationProtector protector,
+        CancellationToken cancellationToken)
+    {
+        var channel = await EmailSettingsAccess.FindChannelAsync(dbContext, cancellationToken);
+        var settings = ReadSettings(channel, protector);
+        return Results.Ok(new EmailSettingsResponse(
+            channel is not null,
+            channel?.Enabled ?? false,
+            settings?.Host ?? string.Empty,
+            settings?.Port ?? 587,
+            settings?.Security ?? SmtpSecurity.Auto,
+            settings?.Username,
+            !string.IsNullOrEmpty(settings?.Password),
+            settings?.FromAddress ?? string.Empty,
+            settings?.FromName,
+            settings?.Recipients ?? [],
+            settings?.TimeoutSeconds ?? 20,
+            settings?.AllowInvalidCertificate ?? false,
+            settings?.NotifyAlerts ?? true,
+            settings?.NotifyLogErrors ?? true));
+    }
+
+    private static async Task<IResult> SaveAsync(
+        SaveEmailSettingsRequest request,
+        PulseDbContext dbContext,
+        NotificationConfigurationProtector protector,
+        IClock clock,
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var recipients = (request.Recipients ?? [])
+            .Select(item => item?.Trim() ?? string.Empty)
+            .Where(item => item.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var errors = Validate(request, recipients);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var channel = await EmailSettingsAccess.FindChannelAsync(dbContext, cancellationToken);
+        var current = ReadSettings(channel, protector);
+        // Senha ausente no corpo significa "mantenha a que já está guardada"; string
+        // vazia significa "apague". Assim a tela nunca precisa reexibir o segredo.
+        var password = request.Password is null ? current?.Password : NullIfEmpty(request.Password);
+        var settings = new SmtpSettings
+        {
+            Host = request.Host!.Trim(),
+            Port = request.Port,
+            Security = request.Security ?? SmtpSecurity.Auto,
+            Username = NullIfEmpty(request.Username),
+            Password = password,
+            FromAddress = request.FromAddress!.Trim(),
+            FromName = NullIfEmpty(request.FromName),
+            Recipients = recipients,
+            TimeoutSeconds = request.TimeoutSeconds,
+            AllowInvalidCertificate = request.AllowInvalidCertificate,
+            NotifyAlerts = request.NotifyAlerts,
+            NotifyLogErrors = request.NotifyLogErrors
+        };
+
+        if (channel is null)
+        {
+            channel = new NotificationChannel
+            {
+                Name = EmailSettingsAccess.ChannelName,
+                Type = NotificationChannelType.Smtp,
+                Enabled = request.Enabled
+            };
+            dbContext.NotificationChannels.Add(channel);
+        }
+        else
+        {
+            channel.Enabled = request.Enabled;
+        }
+
+        channel.ProtectedConfiguration = protector.Protect(new NotificationChannelConfiguration(Smtp: settings));
+        AddAudit(dbContext, clock, principal, httpContext, "EmailSettingsUpdated", channel.Id, new
+        {
+            settings.Port,
+            security = settings.Security.ToString(),
+            channel.Enabled,
+            recipientCount = recipients.Length,
+            hasCredentials = !string.IsNullOrEmpty(settings.Username),
+            settings.AllowInvalidCertificate
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> SendTestAsync(
+        PulseDbContext dbContext,
+        NotificationConfigurationProtector protector,
+        EmailSender emailSender,
+        IClock clock,
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var channel = await EmailSettingsAccess.FindChannelAsync(dbContext, cancellationToken);
+        var settings = ReadSettings(channel, protector);
+        if (channel is null || settings is null)
+        {
+            return Results.Conflict(new { message = "Salve os dados de envio antes de testar." });
+        }
+
+        var result = await emailSender.SendAsync(
+            settings,
+            "[Protheus Pulse] Teste de envio",
+            $"""
+             Este é um teste de configuração do Protheus Pulse.
+
+             Servidor: {settings.Host}:{settings.Port} ({settings.Security})
+             Enviado em {EmailSettingsAccess.FormatTimestamp(clock.UtcNow)}
+
+             Se você recebeu esta mensagem, os alertas e os erros de log chegarão por aqui.
+             """,
+            cancellationToken);
+        AddAudit(dbContext, clock, principal, httpContext, "EmailSettingsTested", channel.Id, new { result.Success });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return result.Success
+            ? Results.Ok(new { result.Success, result.Message })
+            : Results.Json(new { result.Success, result.Message }, statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    private static SmtpSettings? ReadSettings(NotificationChannel? channel, NotificationConfigurationProtector protector)
+    {
+        if (channel is null || string.IsNullOrEmpty(channel.ProtectedConfiguration))
+        {
+            return null;
+        }
+
+        try
+        {
+            return protector.Unprotect(channel.ProtectedConfiguration).Smtp;
+        }
+        catch (Exception exception) when (exception is CryptographicException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static Dictionary<string, string[]> Validate(SaveEmailSettingsRequest request, IReadOnlyList<string> recipients)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        if (!IsValidHost(request.Host)) errors["host"] = ["Informe o servidor SMTP, sem espaços."];
+        if (request.Port is < 1 or > 65_535) errors["port"] = ["A porta deve estar entre 1 e 65535."];
+        if (request.Security.HasValue && !Enum.IsDefined(request.Security.Value)) errors["security"] = ["Modo de segurança inválido."];
+        if (!IsValidAddress(request.FromAddress)) errors["fromAddress"] = ["Informe um remetente válido."];
+        if (request.FromName is not null && !IsValidText(request.FromName, 120)) errors["fromName"] = ["O nome do remetente deve ter até 120 caracteres."];
+        if (request.Username is not null && !IsValidText(request.Username, 200)) errors["username"] = ["O usuário deve ter até 200 caracteres."];
+        if (request.Password is not null && request.Password.Length > 200) errors["password"] = ["A senha deve ter até 200 caracteres."];
+        if (request.TimeoutSeconds is < 5 or > 120) errors["timeoutSeconds"] = ["O tempo limite deve estar entre 5 e 120 segundos."];
+        if (recipients.Count == 0 || recipients.Count > MaximumRecipients)
+        {
+            errors["recipients"] = [$"Informe de 1 a {MaximumRecipients} destinatários."];
+        }
+        else if (recipients.Any(item => !IsValidAddress(item)))
+        {
+            errors["recipients"] = ["Há um endereço de destinatário inválido."];
+        }
+
+        return errors;
+    }
+
+    private static bool IsValidHost(string? value)
+    {
+        var trimmed = value?.Trim();
+        return !string.IsNullOrEmpty(trimmed)
+            && trimmed.Length <= 253
+            && !trimmed.Any(character => char.IsWhiteSpace(character) || char.IsControl(character));
+    }
+
+    private static bool IsValidAddress(string? value)
+    {
+        var trimmed = value?.Trim();
+        return !string.IsNullOrEmpty(trimmed)
+            && trimmed.Length <= 254
+            && MailboxAddress.TryParse(trimmed, out _);
+    }
+
+    private static bool IsValidText(string? value, int maximumLength)
+    {
+        var trimmed = value?.Trim();
+        return trimmed is not null && trimmed.Length <= maximumLength && !trimmed.Any(char.IsControl);
+    }
+
+    private static string? NullIfEmpty(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
+
+    private static void AddAudit(
+        PulseDbContext dbContext,
+        IClock clock,
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        string action,
+        Guid entityId,
+        object details)
+    {
+        var userClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        dbContext.AuditEvents.Add(new AuditEvent
+        {
+            UserId = Guid.TryParse(userClaim, out var userId) ? userId : null,
+            Action = action,
+            EntityType = nameof(NotificationChannel),
+            EntityId = entityId.ToString(),
+            SanitizedDetailsJson = JsonSerializer.Serialize(details),
+            RemoteAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
+            OccurredAt = clock.UtcNow
+        });
+    }
+
+    public sealed record EmailSettingsResponse(
+        bool Configured,
+        bool Enabled,
+        string Host,
+        int Port,
+        SmtpSecurity Security,
+        string? Username,
+        bool HasPassword,
+        string FromAddress,
+        string? FromName,
+        IReadOnlyList<string> Recipients,
+        int TimeoutSeconds,
+        bool AllowInvalidCertificate,
+        bool NotifyAlerts,
+        bool NotifyLogErrors);
+
+    public sealed record SaveEmailSettingsRequest(
+        bool Enabled,
+        string? Host,
+        int Port,
+        SmtpSecurity? Security,
+        string? Username,
+        string? Password,
+        string? FromAddress,
+        string? FromName,
+        IReadOnlyList<string?>? Recipients,
+        int TimeoutSeconds,
+        bool AllowInvalidCertificate,
+        bool NotifyAlerts,
+        bool NotifyLogErrors);
+}

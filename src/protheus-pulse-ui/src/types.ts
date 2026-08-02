@@ -209,3 +209,120 @@ export interface CollectionResult {
   processedComponents: number
   completedAt: string
 }
+
+export interface ServerMemoryUsage {
+  totalBytes: number
+  usedBytes: number
+  availableBytes: number
+  usedPercent: number
+}
+
+export interface ServerDiskUsage {
+  name: string
+  label?: string | null
+  format: string
+  totalBytes: number
+  usedBytes: number
+  freeBytes: number
+  usedPercent: number
+  freePercent: number
+  status: HealthStatus
+}
+
+export interface ServerResourceSample {
+  at: string
+  cpuPercent?: number | null
+  memoryPercent?: number | null
+}
+
+export interface ServerSnapshot {
+  observedAt: string
+  hostName: string
+  operatingSystem: string
+  processorCount: number
+  uptimeSeconds: number
+  cpuUsagePercent?: number | null
+  cpuStatus: HealthStatus
+  memory?: ServerMemoryUsage | null
+  memoryStatus: HealthStatus
+  disks: ServerDiskUsage[]
+  history: ServerResourceSample[]
+  notice?: string | null
+}
+
+export interface ServerThresholds {
+  cpuWarningPercent: number
+  cpuCriticalPercent: number
+  memoryWarningPercent: number
+  memoryCriticalPercent: number
+  diskFreeWarningPercent: number
+  diskFreeCriticalPercent: number
+}
+
+export interface ServerResources {
+  server: ServerSnapshot
+  thresholds: ServerThresholds
+}
+
+export type SmtpSecurity = 'Auto' | 'None' | 'StartTls' | 'SslOnConnect'
+
+export interface EmailSettings {
+  configured: boolean
+  enabled: boolean
+  host: string
+  port: number
+  security: SmtpSecurity
+  username?: string | null
+  hasPassword: boolean
+  fromAddress: string
+  fromName?: string | null
+  recipients: string[]
+  timeoutSeconds: number
+  allowInvalidCertificate: boolean
+  notifyAlerts: boolean
+  notifyLogErrors: boolean
+}
+
+export interface SaveEmailSettingsInput {
+  enabled: boolean
+  host: string
+  port: number
+  security: SmtpSecurity
+  username?: string
+  /** Ausente mantém a senha guardada; string vazia apaga. */
+  password?: string
+  fromAddress: string
+  fromName?: string
+  recipients: string[]
+  timeoutSeconds: number
+  allowInvalidCertificate: boolean
+  notifyAlerts: boolean
+  notifyLogErrors: boolean
+}
+
+export interface EmailTestResult {
+  success: boolean
+  message: string
+}
+
+export interface LogAgentItem {
+  id: string
+  componentId: string
+  installationName: string
+  componentName: string
+  name: string
+  agentKey: string
+  enabled: boolean
+  createdAt: string
+  lastSeenAt?: string | null
+  receivedEventCount: number
+}
+
+export interface LogAgentToken {
+  id: string
+  agentKey: string
+  token: string
+  tokenShownOnce: boolean
+  ingestUrl: string
+  warning: string
+}

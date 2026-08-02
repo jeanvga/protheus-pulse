@@ -19,6 +19,7 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private static readonly string[] UpdatedConfigurationTags = ["piloto", "configurado-na-interface"];
     private static readonly string[] PilotTags = ["piloto", "servidor-a"];
     private static readonly string[] SampleWindowsRoots = ["C:\\TOTVS"];
+    private static readonly string[] EmailRecipients = ["ti@exemplo.invalid", "plantao@exemplo.invalid"];
     private static string? cachedAdministratorToken;
     private readonly HttpClient client;
     private readonly PulseWebApplicationFactory factory;
@@ -771,6 +772,168 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         Assert.Equal(2, await finalDb.ProbeResults.CountAsync(item => item.ComponentId == componentId && item.ProbeType == ProbeType.Heartbeat));
     }
 
+    [Fact]
+    public async Task ServerResourcesRequireAuthenticationAndDescribeTheLocalMachine()
+    {
+        var anonymous = await client.GetAsync(new Uri("/api/v1/server/resources", UriKind.Relative));
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        var token = await AuthenticateDemoAdministratorAsync();
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/v1/server/resources", token);
+        var response = await client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<ServerResourcesResponse>();
+        Assert.NotNull(payload);
+        Assert.Equal(Environment.MachineName, payload.Server.HostName);
+        Assert.Equal(Environment.ProcessorCount, payload.Server.ProcessorCount);
+        Assert.True(payload.Thresholds.CpuWarningPercent < payload.Thresholds.CpuCriticalPercent);
+        Assert.All(payload.Server.Disks, disk => Assert.True(disk.TotalBytes > 0));
+    }
+
+    [Fact]
+    public async Task EmailSettingsRoundTripWithoutEverReturningThePassword()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        const string smtpPassword = "synthetic-smtp-password-value";
+        using var saveRequest = AuthorizedRequest(HttpMethod.Put, "/api/v1/settings/email", token, new
+        {
+            enabled = false,
+            host = "smtp.exemplo.invalid",
+            port = 465,
+            security = "SslOnConnect",
+            username = "pulse@exemplo.invalid",
+            password = smtpPassword,
+            fromAddress = "pulse@exemplo.invalid",
+            fromName = "Protheus Pulse",
+            recipients = EmailRecipients,
+            timeoutSeconds = 20,
+            allowInvalidCertificate = false,
+            notifyAlerts = true,
+            notifyLogErrors = true
+        });
+        var saveResponse = await client.SendAsync(saveRequest);
+        Assert.Equal(HttpStatusCode.NoContent, saveResponse.StatusCode);
+
+        using var getRequest = AuthorizedRequest(HttpMethod.Get, "/api/v1/settings/email", token);
+        var getResponse = await client.SendAsync(getRequest);
+        getResponse.EnsureSuccessStatusCode();
+        var body = await getResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(smtpPassword, body, StringComparison.Ordinal);
+        Assert.Contains("\"hasPassword\":true", body, StringComparison.Ordinal);
+        Assert.Contains("\"port\":465", body, StringComparison.Ordinal);
+        Assert.Contains("\"security\":\"SslOnConnect\"", body, StringComparison.Ordinal);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+        var channel = await dbContext.NotificationChannels.AsNoTracking()
+            .SingleAsync(item => item.Type == NotificationChannelType.Smtp);
+        Assert.DoesNotContain(smtpPassword, channel.ProtectedConfiguration, StringComparison.Ordinal);
+
+        using var invalidRequest = AuthorizedRequest(HttpMethod.Put, "/api/v1/settings/email", token, new
+        {
+            enabled = true,
+            host = "smtp.exemplo.invalid",
+            port = 70_000,
+            security = "StartTls",
+            fromAddress = "sem-arroba",
+            recipients = Array.Empty<string>(),
+            timeoutSeconds = 20
+        });
+        var invalidResponse = await client.SendAsync(invalidRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task LogAgentTokenGuardsIngestionAndStoredEventsAreSanitized()
+    {
+        var componentId = Guid.NewGuid();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            dbContext.Installations.Add(new Installation
+            {
+                Name = $"Agente de log {Guid.NewGuid():N}",
+                Environment = EnvironmentKind.Development,
+                CreatedAt = DateTimeOffset.UtcNow,
+                Components =
+                [
+                    new Component
+                    {
+                        Id = componentId,
+                        Name = "AppServer sintético",
+                        Type = ComponentType.AppServer
+                    }
+                ]
+            });
+            await dbContext.SaveChangesAsync();
+        }
+
+        var administratorToken = await AuthenticateDemoAdministratorAsync();
+        using var createRequest = AuthorizedPost("/api/v1/log-agents", administratorToken, new
+        {
+            componentId,
+            name = "console.log sintético",
+            logPath = "D:\\Synthetic\\logs\\console.log"
+        });
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        var created = await createResponse.Content.ReadFromJsonAsync<LogAgentTokenResponse>();
+        Assert.NotNull(created);
+        Assert.True(created.TokenShownOnce);
+
+        await using (var verificationScope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = verificationScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var stored = await dbContext.LogAgents.AsNoTracking().SingleAsync(item => item.Id == created.Id);
+            Assert.Equal(64, stored.TokenHash?.Length);
+            Assert.DoesNotContain(created.Token, stored.TokenHash, StringComparison.Ordinal);
+        }
+
+        const string secret = "synthetic-secret-must-not-persist";
+        var events = new[]
+        {
+            new
+            {
+                observedAt = DateTimeOffset.UtcNow,
+                level = "Error",
+                message = $"Thread Error ao conectar; password={secret}",
+                occurrenceCount = 3
+            }
+        };
+
+        using var rejected = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/log-agents/{created.AgentKey}/events", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new { source = "D:\\Synthetic\\logs\\console.log", events })
+        };
+        rejected.Headers.Add("X-Pulse-Agent-Token", "invalid-synthetic-agent-token");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(rejected)).StatusCode);
+
+        using var accepted = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/log-agents/{created.AgentKey}/events", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new { source = "D:\\Synthetic\\logs\\console.log", events })
+        };
+        accepted.Headers.Add("X-Pulse-Agent-Token", created.Token);
+        var acceptedResponse = await client.SendAsync(accepted);
+        Assert.Equal(HttpStatusCode.Accepted, acceptedResponse.StatusCode);
+
+        await using var finalScope = factory.Services.CreateAsyncScope();
+        var finalDb = finalScope.ServiceProvider.GetRequiredService<PulseDbContext>();
+        var logEvent = await finalDb.LogEvents.AsNoTracking().SingleAsync(item => item.ComponentId == componentId);
+        Assert.Equal("Error", logEvent.Level);
+        Assert.Equal(3, logEvent.OccurrenceCount);
+        Assert.DoesNotContain(secret, logEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("[REDACTED]", logEvent.Message, StringComparison.Ordinal);
+
+        // A origem alimentada pelo agente não pode ser lida também pelo coletor interno.
+        var source = await finalDb.LogSources.AsNoTracking().SingleAsync(item => item.ComponentId == componentId);
+        Assert.True(source.IsAgentManaged);
+
+        var agent = await finalDb.LogAgents.AsNoTracking().SingleAsync(item => item.Id == created.Id);
+        Assert.NotNull(agent.LastSeenAt);
+        Assert.Equal(3, agent.ReceivedEventCount);
+    }
+
     private static HttpRequestMessage AuthorizedPost(string path, string token, object content)
     {
         return AuthorizedRequest(HttpMethod.Post, path, token, content);
@@ -826,6 +989,15 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
     private sealed record HeartbeatTokenResponse(Guid Id, string JobKey, string Token, bool TokenShownOnce);
+    private sealed record LogAgentTokenResponse(Guid Id, string AgentKey, string Token, bool TokenShownOnce);
+    private sealed record ServerResourcesResponse(ServerSnapshotResponse Server, ServerThresholdsResponse Thresholds);
+    private sealed record ServerSnapshotResponse(
+        string HostName,
+        int ProcessorCount,
+        long UptimeSeconds,
+        List<ServerDiskResponse> Disks);
+    private sealed record ServerDiskResponse(string Name, long TotalBytes, double FreePercent);
+    private sealed record ServerThresholdsResponse(double CpuWarningPercent, double CpuCriticalPercent);
 }
 
 public sealed class PulseWebApplicationFactory : WebApplicationFactory<Program>

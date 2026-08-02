@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -13,16 +15,19 @@ public sealed partial class NotificationDispatcher : IDisposable
 {
     private readonly IServiceScopeFactory scopeFactory;
     private readonly NotificationConfigurationProtector protector;
+    private readonly EmailSender emailSender;
     private readonly ILogger<NotificationDispatcher> logger;
     private readonly HttpClient client;
 
     public NotificationDispatcher(
         IServiceScopeFactory scopeFactory,
         NotificationConfigurationProtector protector,
+        EmailSender emailSender,
         ILogger<NotificationDispatcher> logger)
     {
         this.scopeFactory = scopeFactory;
         this.protector = protector;
+        this.emailSender = emailSender;
         this.logger = logger;
         var handler = new SocketsHttpHandler
         {
@@ -68,6 +73,19 @@ public sealed partial class NotificationDispatcher : IDisposable
                 continue;
             }
 
+            if (channel.Type == NotificationChannelType.Smtp)
+            {
+                // Uma mensagem por ciclo: um e-mail por transição vira caixa de entrada cheia.
+                await SendAlertEmailAsync(configuration.Smtp, transitions, cancellationToken);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(configuration.Url))
+            {
+                LogInvalidConfiguration(logger, channel.Id, new InvalidOperationException("Canal sem URL configurada."));
+                continue;
+            }
+
             foreach (var transition in transitions)
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -98,6 +116,53 @@ public sealed partial class NotificationDispatcher : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    private async Task SendAlertEmailAsync(
+        SmtpSettings? settings,
+        IReadOnlyList<AlertTransition> transitions,
+        CancellationToken cancellationToken)
+    {
+        if (settings is null || !settings.NotifyAlerts)
+        {
+            return;
+        }
+
+        var opened = transitions.Count(item => item.Kind == AlertTransitionKind.Opened);
+        var subject = transitions.Count == 1
+            ? $"[Protheus Pulse] {DescribeKind(transitions[0].Kind)}: {transitions[0].RuleName}"
+            : $"[Protheus Pulse] {transitions.Count} atualizações de alerta ({opened} nova(s))";
+        var body = new StringBuilder()
+            .AppendLine("O Protheus Pulse registrou as seguintes mudanças de alerta:")
+            .AppendLine();
+        foreach (var transition in transitions)
+        {
+            body.Append("- ")
+                .Append(DescribeKind(transition.Kind))
+                .Append(" · severidade ")
+                .Append(transition.Severity)
+                .Append(" · ")
+                .Append(transition.RuleName)
+                .Append(" · correlação ")
+                .AppendLine(transition.CorrelationId.ToString("N", CultureInfo.InvariantCulture));
+        }
+
+        body.AppendLine()
+            .Append("Gerado em ")
+            .AppendLine(EmailSettingsAccess.FormatTimestamp(DateTimeOffset.UtcNow))
+            .AppendLine("Abra o painel para ver a evidência completa.");
+        var result = await emailSender.SendAsync(settings, subject, body.ToString(), cancellationToken);
+        if (!result.Success)
+        {
+            LogEmailRejected(logger, result.Message);
+        }
+    }
+
+    private static string DescribeKind(AlertTransitionKind kind) => kind switch
+    {
+        AlertTransitionKind.Opened => "Alerta aberto",
+        AlertTransitionKind.Resolved => "Alerta resolvido",
+        _ => "Alerta reaberto"
+    };
+
     private static object CreatePayload(NotificationChannelType type, AlertTransition transition)
     {
         var text = $"Protheus Pulse: alerta {transition.Kind} ({transition.Severity}) · correlação {transition.CorrelationId:N}";
@@ -125,6 +190,9 @@ public sealed partial class NotificationDispatcher : IDisposable
 
     [LoggerMessage(EventId = 1203, Level = LogLevel.Warning, Message = "Falha controlada ao enviar notificação pelo canal {ChannelId}.")]
     private static partial void LogDeliveryFailure(ILogger logger, Guid channelId, Exception exception);
+
+    [LoggerMessage(EventId = 1204, Level = LogLevel.Warning, Message = "O e-mail de alerta não foi entregue: {Reason}")]
+    private static partial void LogEmailRejected(ILogger logger, string reason);
 }
 
 public sealed class NotificationConfigurationProtector(IDataProtectionProvider provider)
@@ -139,4 +207,8 @@ public sealed class NotificationConfigurationProtector(IDataProtectionProvider p
         ?? throw new JsonException("Configuração protegida vazia.");
 }
 
-public sealed record NotificationChannelConfiguration(string Url);
+/// <summary>
+/// Configuração cifrada do canal. Webhooks usam <see cref="Url"/>; o canal de
+/// e-mail usa <see cref="Smtp"/>. Registros antigos continuam desserializando.
+/// </summary>
+public sealed record NotificationChannelConfiguration(string? Url = null, SmtpSettings? Smtp = null);

@@ -1,6 +1,8 @@
-import type { DashboardSummary } from './types'
+import type { DashboardSummary, ServerResources } from './types'
 
 const now = Date.now()
+
+const gigabyte = 1024 ** 3
 
 export const demoSummary: DashboardSummary = {
   generatedAt: new Date(now).toISOString(),
@@ -51,4 +53,42 @@ export const demoSummary: DashboardSummary = {
     at: new Date(now - (11 - index) * 3600000).toISOString(),
     value: Number((98.1 + Math.sin(index * 0.8) * 0.8 - (index === 8 ? 2.4 : 0)).toFixed(1)),
   })),
+}
+
+export const demoServerResources: ServerResources = {
+  server: {
+    observedAt: new Date(now).toISOString(),
+    hostName: 'SRV-PROTHEUS-DEMO',
+    operatingSystem: 'Microsoft Windows Server 2022 Standard',
+    processorCount: 16,
+    uptimeSeconds: 9 * 86400 + 7 * 3600 + 12 * 60,
+    cpuUsagePercent: 38.4,
+    cpuStatus: 'Healthy',
+    memory: {
+      totalBytes: 64 * gigabyte,
+      usedBytes: Math.round(39.2 * gigabyte),
+      availableBytes: Math.round(24.8 * gigabyte),
+      usedPercent: 61.2,
+    },
+    memoryStatus: 'Healthy',
+    disks: [
+      { name: 'C:\\', label: 'Sistema', format: 'NTFS', totalBytes: 240 * gigabyte, usedBytes: Math.round(186.2 * gigabyte), freeBytes: Math.round(53.8 * gigabyte), usedPercent: 77.6, freePercent: 22.4, status: 'Healthy' },
+      { name: 'D:\\', label: 'TOTVS', format: 'NTFS', totalBytes: 2048 * gigabyte, usedBytes: Math.round(1863 * gigabyte), freeBytes: Math.round(185 * gigabyte), usedPercent: 91, freePercent: 9, status: 'Warning' },
+      { name: 'E:\\', label: 'Backup', format: 'NTFS', totalBytes: 4096 * gigabyte, usedBytes: Math.round(3973 * gigabyte), freeBytes: Math.round(123 * gigabyte), usedPercent: 97, freePercent: 3, status: 'Critical' },
+    ],
+    history: Array.from({ length: 24 }, (_, index) => ({
+      at: new Date(now - (23 - index) * 5000).toISOString(),
+      cpuPercent: Number((38 + Math.sin(index * 0.7) * 14 + (index === 17 ? 22 : 0)).toFixed(1)),
+      memoryPercent: Number((61 + Math.sin(index * 0.35) * 3).toFixed(1)),
+    })),
+    notice: null,
+  },
+  thresholds: {
+    cpuWarningPercent: 80,
+    cpuCriticalPercent: 92,
+    memoryWarningPercent: 85,
+    memoryCriticalPercent: 94,
+    diskFreeWarningPercent: 15,
+    diskFreeCriticalPercent: 5,
+  },
 }

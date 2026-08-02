@@ -28,6 +28,8 @@ public static class DependencyInjection
         services.AddSingleton<IProbeCollector, DiskProbeCollector>();
         services.AddSingleton<IProbeCollector, HeartbeatProbeCollector>();
         services.AddSingleton<IIncrementalLogCollector, IncrementalLogCollector>();
+        // Singleton: o uso de CPU é a diferença entre duas leituras consecutivas.
+        services.AddSingleton<IServerResourceMonitor, ServerResourceCollector>();
         return services;
     }
 }

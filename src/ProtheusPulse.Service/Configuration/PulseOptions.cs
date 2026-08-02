@@ -17,6 +17,20 @@ public sealed class PulseOptions
     public int MaximumLogBytesPerCycle { get; set; } = 262_144;
     public double DiskWarningPercent { get; set; } = 15;
     public double DiskCriticalPercent { get; set; } = 5;
+
+    /// <summary>Intervalo entre as amostras de processador, memória e disco do servidor.</summary>
+    public int ServerSampleIntervalSeconds { get; set; } = 5;
+
+    /// <summary>Amostras mantidas em memória para o gráfico da aba Servidor.</summary>
+    public int ServerHistorySamples { get; set; } = 120;
+
+    public double CpuWarningPercent { get; set; } = 80;
+    public double CpuCriticalPercent { get; set; } = 92;
+    public double MemoryWarningPercent { get; set; } = 85;
+    public double MemoryCriticalPercent { get; set; } = 94;
+
+    /// <summary>Janela de agrupamento dos erros recebidos dos agentes antes de disparar o e-mail.</summary>
+    public int LogAlertDigestSeconds { get; set; } = 120;
 }
 
 public sealed class SecurityOptions

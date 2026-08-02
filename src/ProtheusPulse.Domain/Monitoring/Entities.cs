@@ -41,6 +41,7 @@ public sealed class Component : Entity
     public ICollection<TcpCheck> TcpChecks { get; set; } = new List<TcpCheck>();
     public ICollection<HttpCheck> HttpChecks { get; set; } = new List<HttpCheck>();
     public ICollection<LogSource> LogSources { get; set; } = new List<LogSource>();
+    public ICollection<LogAgent> LogAgents { get; set; } = new List<LogAgent>();
     public ICollection<HeartbeatDefinition> HeartbeatDefinitions { get; set; } = new List<HeartbeatDefinition>();
     public ICollection<ProbeResult> ProbeResults { get; set; } = new List<ProbeResult>();
     public ICollection<MetricSample> MetricSamples { get; set; } = new List<MetricSample>();
@@ -119,8 +120,31 @@ public sealed class LogSource : Entity
     public long CursorOffset { get; set; }
     public string? FileIdentity { get; set; }
     public DateTimeOffset? LastReadAt { get; set; }
+
+    /// <summary>
+    /// Origem alimentada por um agente externo. O coletor incremental ignora estes
+    /// caminhos para que o mesmo arquivo não seja lido duas vezes.
+    /// </summary>
+    public bool IsAgentManaged { get; set; }
     public Component Component { get; set; } = null!;
     public ICollection<LogEvent> Events { get; set; } = new List<LogEvent>();
+}
+
+/// <summary>
+/// Agente externo autorizado a enviar eventos de log de um componente. O token é
+/// exibido uma única vez e guardado apenas como hash, como nos heartbeats.
+/// </summary>
+public sealed class LogAgent : Entity
+{
+    public Guid ComponentId { get; set; }
+    public required string Name { get; set; }
+    public required string AgentKey { get; set; }
+    public string? TokenHash { get; set; }
+    public bool Enabled { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? LastSeenAt { get; set; }
+    public long ReceivedEventCount { get; set; }
+    public Component Component { get; set; } = null!;
 }
 
 public sealed class LogEvent : Entity

@@ -14,6 +14,8 @@
 **/secrets.json
 *.ini
 !samples/appserver-ini/appserver.example.ini
+!agents/appserver-log-agent/config.example.ini
+agents/**/pulse-agent-state.json
 *.cer
 *.crt
 *.jks

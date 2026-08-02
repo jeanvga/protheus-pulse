@@ -9,6 +9,7 @@
     <ProjectReference Include="..\ProtheusPulse.Infrastructure\ProtheusPulse.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />

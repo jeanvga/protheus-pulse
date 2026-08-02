@@ -2,26 +2,29 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Activity, AlertTriangle, Archive, Bell, Boxes, BriefcaseBusiness, Check, ChevronDown, CircleHelp,
-  Clock3, Crown, FileText, FolderSearch, Gauge, HeartPulse, LockKeyhole, LogOut, Menu, Moon,
-  Pencil, Play, Plus, RefreshCw, RotateCw, Search, Server, Settings, ShieldCheck, Square, Sun,
-  TerminalSquare, Trash2, UserRound, Wrench, X, Zap,
+  Clock3, Copy, Cpu, Crown, FileText, FolderSearch, Gauge, HardDrive, HeartPulse, KeyRound, LockKeyhole,
+  LogOut, Mail, Menu, MemoryStick, Moon, Pencil, Play, Plus, RefreshCw, RotateCw, Search, Send, Server,
+  Settings, ShieldCheck, Square, Sun, TerminalSquare, Trash2, UserRound, Wrench, X, Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, deleteInstallation, discoverPaths,
-  discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAuthStatus, getDashboard,
-  getInstallationConfiguration, getLogEvents, getMaintenanceStatus, login, session, setAutoStart,
-  setExclusiveInstallation, setup, updateInstallation,
+  acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, createLogAgent, deleteInstallation,
+  deleteLogAgent, discoverPaths, discoverServices, enterMaintenance, executeServiceAction, exitMaintenance,
+  getAuthStatus, getDashboard, getEmailSettings, getInstallationConfiguration, getLogAgents, getLogEvents,
+  getMaintenanceStatus, getServerResources, login, rotateLogAgentToken, saveEmailSettings, sendTestEmail,
+  session, setAutoStart, setExclusiveInstallation, setup, updateInstallation,
 } from './api'
 import type {
-  AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EnvironmentKind,
-  HealthStatus, HttpCheckConfiguration, LogEventItem, MaintenanceStatus, PathCandidate, SaveInstallationInput,
-  ServiceAction, ServiceCandidate, TcpCheckConfiguration,
+  AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
+  EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogAgentItem, LogAgentToken, LogEventItem,
+  MaintenanceStatus, PathCandidate, SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction,
+  ServiceCandidate, SmtpSecurity, TcpCheckConfiguration,
 } from './types'
 
-type Page = 'overview' | 'installations' | 'logs' | 'jobs' | 'alerts' | 'settings' | 'audit' | 'diagnostics'
+type Page = 'server' | 'overview' | 'installations' | 'logs' | 'jobs' | 'alerts' | 'settings' | 'audit' | 'diagnostics'
 
 const navItems: Array<{ id: Page; label: string; icon: LucideIcon }> = [
+  { id: 'server', label: 'Servidor', icon: Cpu },
   { id: 'overview', label: 'Visão geral', icon: Gauge },
   { id: 'installations', label: 'Instalações', icon: Server },
   { id: 'logs', label: 'Logs', icon: FileText },
@@ -36,6 +39,7 @@ const secondaryNav: Array<{ id: Page; label: string; icon: LucideIcon }> = [
 ]
 
 const pageTitles: Record<Page, { title: string; eyebrow: string }> = {
+  server: { title: 'Servidor', eyebrow: 'Processador, memória e discos' },
   overview: { title: 'Visão geral', eyebrow: 'Operação em tempo real' },
   installations: { title: 'Instalações', eyebrow: 'Ambientes e componentes' },
   logs: { title: 'Logs', eyebrow: 'Eventos sanitizados' },
@@ -147,7 +151,7 @@ export default function App() {
 
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => void loadSummary()}><RefreshCw size={15} /> Tentar novamente</button></div>}
         {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} goTo={setPage} addInstallation={() => setInstallationEditorId(null)} editInstallation={setInstallationEditorId} />}
-        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.2.0 · produto independente</span></footer>
+        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.3.0 · produto independente</span></footer>
       </main>
       {installationEditorId !== undefined && <InstallationDialog installationId={installationEditorId} close={() => setInstallationEditorId(undefined)} onSaved={installationCreated} />}
     </div>
@@ -230,15 +234,170 @@ function LoginScreen({ status, onAuthenticated, error: initialError }: { status:
 
 function PageContent({ page, summary, refresh, goTo, addInstallation, editInstallation }: { page: Page; summary: DashboardSummary; refresh: () => Promise<void>; goTo: (page: Page) => void; addInstallation: () => void; editInstallation: (id: string) => void }) {
   switch (page) {
+    case 'server': return <ServerPage />
     case 'overview': return <Overview summary={summary} refresh={refresh} goTo={goTo} addInstallation={addInstallation} />
     case 'installations': return <Installations summary={summary} refresh={refresh} addInstallation={addInstallation} editInstallation={editInstallation} />
     case 'logs': return <LogsPage />
     case 'jobs': return <JobsPage components={summary.components} />
     case 'alerts': return <AlertsPage alerts={summary.alerts} refresh={refresh} />
-    case 'settings': return <SettingsPage />
+    case 'settings': return <SettingsPage components={summary.components} />
     case 'audit': return <AuditPage />
     case 'diagnostics': return <DiagnosticsPage demo={summary.demoMode} />
   }
+}
+
+const serverRefreshMilliseconds = 5_000
+
+function ServerPage() {
+  const [resources, setResources] = useState<ServerResources | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    try {
+      setResources(await getServerResources())
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível ler os recursos do servidor.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+    const timer = window.setInterval(() => void load(), serverRefreshMilliseconds)
+    return () => window.clearInterval(timer)
+  }, [load])
+
+  if (loading && !resources) {
+    return <div className="page-body"><div className="modal-loading"><RefreshCw className="spin" size={20} /> Lendo os recursos do servidor…</div></div>
+  }
+
+  if (!resources) {
+    return <div className="page-body"><div className="form-error"><AlertTriangle size={16} /> {error ?? 'Recursos indisponíveis.'}</div></div>
+  }
+
+  const { server, thresholds } = resources
+  const worstDisk = server.disks.reduce<ServerDiskUsage | null>(
+    (worst, disk) => (worst === null || disk.freePercent < worst.freePercent ? disk : worst), null)
+
+  return <div className="page-body">
+    <section className="intro-row">
+      <div>
+        <h2>{server.hostName}</h2>
+        <p>{server.operatingSystem} · {server.processorCount} processadores lógicos · no ar há {formatUptime(server.uptimeSeconds)}</p>
+      </div>
+      <div className="intro-actions">
+        <span className="refresh-hint"><span className="live-dot" /> leitura a cada {serverRefreshMilliseconds / 1_000} s</span>
+        <button className="secondary-button" onClick={() => void load()}><RefreshCw size={16} /> Atualizar</button>
+      </div>
+    </section>
+
+    {server.notice && <div className="maintenance-banner"><CircleHelp size={16} /> {server.notice}</div>}
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+
+    <section className="resource-grid">
+      <ResourceCard
+        icon={Cpu}
+        label="Processador"
+        value={formatPercent(server.cpuUsagePercent)}
+        detail={`atenção em ${thresholds.cpuWarningPercent}% · crítico em ${thresholds.cpuCriticalPercent}%`}
+        status={server.cpuStatus}
+        percent={server.cpuUsagePercent ?? 0}
+      />
+      <ResourceCard
+        icon={MemoryStick}
+        label="Memória"
+        value={formatPercent(server.memory?.usedPercent)}
+        detail={server.memory
+          ? `${formatBytes(server.memory.usedBytes)} de ${formatBytes(server.memory.totalBytes)} · ${formatBytes(server.memory.availableBytes)} livres`
+          : 'leitura indisponível nesta plataforma'}
+        status={server.memoryStatus}
+        percent={server.memory?.usedPercent ?? 0}
+      />
+      <ResourceCard
+        icon={HardDrive}
+        label="Disco mais cheio"
+        value={worstDisk ? `${worstDisk.usedPercent.toFixed(1)}%` : '—'}
+        detail={worstDisk
+          ? `${worstDisk.name} · ${formatBytes(worstDisk.freeBytes)} livres de ${formatBytes(worstDisk.totalBytes)}`
+          : 'nenhum disco fixo encontrado'}
+        status={worstDisk?.status ?? 'Unknown'}
+        percent={worstDisk?.usedPercent ?? 0}
+      />
+    </section>
+
+    <article className="panel resource-history">
+      <PanelHeader title="Uso nos últimos minutos" subtitle="Processador e memória, amostrados pelo próprio serviço" />
+      <ResourceHistoryChart history={server.history} />
+      <div className="chart-legend">
+        <span><i className="legend-cpu" /> Processador</span>
+        <span><i className="legend-memory" /> Memória</span>
+        <strong>{new Date(server.observedAt).toLocaleTimeString('pt-BR')} <small>última leitura</small></strong>
+      </div>
+    </article>
+
+    <article className="panel disk-panel">
+      <PanelHeader title="Discos fixos" subtitle={`Atenção abaixo de ${thresholds.diskFreeWarningPercent}% livre · crítico abaixo de ${thresholds.diskFreeCriticalPercent}%`} />
+      {server.disks.length === 0
+        ? <div className="empty-state"><CircleHelp size={22} /> Nenhum disco fixo pôde ser lido.</div>
+        : server.disks.map(disk => <div className="disk-row" key={disk.name}>
+          <div className="disk-name"><span><HardDrive size={17} /></span><div><strong>{disk.name}{disk.label ? ` · ${disk.label}` : ''}</strong><small>{disk.format} · {formatBytes(disk.totalBytes)} no total</small></div></div>
+          <ResourceBar percent={disk.usedPercent} status={disk.status} />
+          <div className="disk-figures"><strong>{formatBytes(disk.freeBytes)} livres</strong><small>{disk.usedPercent.toFixed(1)}% usado</small></div>
+          <StatusBadge status={disk.status} />
+        </div>)}
+    </article>
+  </div>
+}
+
+function ResourceCard({ icon: Icon, label, value, detail, status, percent }: {
+  icon: LucideIcon
+  label: string
+  value: string
+  detail: string
+  status: HealthStatus
+  percent: number
+}) {
+  return <article className="panel resource-card">
+    <header><span className={`resource-icon ${status.toLowerCase()}`}><Icon size={20} /></span><div><h3>{label}</h3><p>{detail}</p></div><StatusBadge status={status} /></header>
+    <strong className="resource-value">{value}</strong>
+    <ResourceBar percent={percent} status={status} />
+  </article>
+}
+
+function ResourceBar({ percent, status }: { percent: number; status: HealthStatus }) {
+  const bounded = Math.min(100, Math.max(0, percent))
+  return <div className="resource-bar" role="img" aria-label={`${bounded.toFixed(0)}% em uso`}>
+    <i className={status.toLowerCase()} style={{ width: `${bounded}%` }} />
+  </div>
+}
+
+function ResourceHistoryChart({ history }: { history: ServerResources['server']['history'] }) {
+  const width = 640
+  const height = 150
+  if (history.length < 2) {
+    return <div className="empty-state"><Clock3 size={22} /> Coletando as primeiras amostras…</div>
+  }
+
+  const line = (pick: (sample: ServerResources['server']['history'][number]) => number | null | undefined) => history
+    .map((sample, index) => {
+      const value = Math.min(100, Math.max(0, pick(sample) ?? 0))
+      return `${(index / (history.length - 1)) * width},${height - (value / 100) * (height - 16) - 8}`
+    })
+    .join(' ')
+
+  return <div className="chart resource-chart">
+    <div className="chart-y"><span>100%</span><span>66%</span><span>33%</span><span>0%</span></div>
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Uso de processador e memória ao longo do tempo">
+      <line x1="0" y1="38" x2={width} y2="38" />
+      <line x1="0" y1="75" x2={width} y2="75" />
+      <line x1="0" y1="112" x2={width} y2="112" />
+      <polyline className="cpu-line" points={line(sample => sample.cpuPercent)} fill="none" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+      <polyline className="memory-line" points={line(sample => sample.memoryPercent)} fill="none" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  </div>
 }
 
 function Overview({ summary, refresh, goTo, addInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; goTo: (page: Page) => void; addInstallation: () => void }) {
@@ -783,9 +942,322 @@ function AlertsPage({ alerts, refresh }: { alerts: AlertSnapshot[]; refresh: () 
   return <div className="page-body">{error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}<section className="summary-chips"><button className="active">Ativos <strong>{alerts.filter(item => item.state === 'Active').length}</strong></button><button>Reconhecidos <strong>{alerts.filter(item => item.state === 'Acknowledged').length}</strong></button><button>Resolvidos <strong>{alerts.filter(item => item.state === 'Resolved').length}</strong></button><button>Silenciados <strong>{alerts.filter(item => item.state === 'Silenced').length}</strong></button></section><article className="panel"><AlertList alerts={alerts} acknowledge={id => void acknowledge(id)} busyId={busyId} /></article></div>
 }
 
-function SettingsPage() {
-  const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
-  return <div className="page-body"><div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div><div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Coleta segura e ações auditadas</strong><p>A coleta é somente leitura e não escreve nas pastas monitoradas. Iniciar, reiniciar ou parar serviços exige perfil Administrator e fica registrado na auditoria.</p></div></div></div>
+function SettingsPage({ components }: { components: ComponentSnapshot[] }) {
+  const isAdministrator = session.role === 'Administrator'
+  const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · E-mail · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
+  return <div className="page-body">
+    {isAdministrator
+      ? <><EmailSettingsCard /><LogAgentsCard components={components} /></>
+      : <div className="read-only-notice"><LockKeyhole size={22} /><div><strong>Somente administradores</strong><p>Os dados de envio de e-mail e os tokens dos agentes de log só aparecem para o perfil Administrator.</p></div></div>}
+    <div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div>
+    <div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Coleta segura e ações auditadas</strong><p>A coleta é somente leitura e não escreve nas pastas monitoradas. Iniciar, reiniciar ou parar serviços exige perfil Administrator e fica registrado na auditoria.</p></div></div>
+  </div>
+}
+
+const smtpSecurityOptions: Array<{ value: SmtpSecurity; label: string; port: number; hint: string }> = [
+  { value: 'Auto', label: 'Automático', port: 587, hint: 'Escolhe TLS implícito ou STARTTLS conforme a porta e o servidor.' },
+  { value: 'StartTls', label: 'STARTTLS', port: 587, hint: 'Conexão aberta em texto puro e promovida a TLS. Porta usual: 587.' },
+  { value: 'SslOnConnect', label: 'SSL/TLS implícito', port: 465, hint: 'TLS desde o primeiro byte, sem texto puro. Porta usual: 465.' },
+  { value: 'None', label: 'Sem criptografia', port: 25, hint: 'Só em relay interno na mesma rede. A senha trafega legível.' },
+]
+
+const knownSmtpPorts = smtpSecurityOptions.map(option => option.port)
+
+interface EmailDraft {
+  enabled: boolean
+  host: string
+  port: string
+  security: SmtpSecurity
+  username: string
+  fromAddress: string
+  fromName: string
+  recipients: string
+  timeoutSeconds: string
+  allowInvalidCertificate: boolean
+  notifyAlerts: boolean
+  notifyLogErrors: boolean
+}
+
+const emptyEmailDraft: EmailDraft = {
+  enabled: false, host: '', port: '587', security: 'Auto', username: '', fromAddress: '', fromName: 'Protheus Pulse',
+  recipients: '', timeoutSeconds: '20', allowInvalidCertificate: false, notifyAlerts: true, notifyLogErrors: true,
+}
+
+function toDraft(settings: EmailSettings): EmailDraft {
+  return {
+    enabled: settings.enabled,
+    host: settings.host,
+    port: String(settings.port),
+    security: settings.security,
+    username: settings.username ?? '',
+    fromAddress: settings.fromAddress,
+    fromName: settings.fromName ?? '',
+    recipients: settings.recipients.join('\n'),
+    timeoutSeconds: String(settings.timeoutSeconds),
+    allowInvalidCertificate: settings.allowInvalidCertificate,
+    notifyAlerts: settings.notifyAlerts,
+    notifyLogErrors: settings.notifyLogErrors,
+  }
+}
+
+function EmailSettingsCard() {
+  const [draft, setDraft] = useState<EmailDraft>(emptyEmailDraft)
+  const [hasPassword, setHasPassword] = useState(false)
+  const [password, setPassword] = useState('')
+  const [clearPassword, setClearPassword] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [configured, setConfigured] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const settings = await getEmailSettings()
+      setDraft(toDraft(settings))
+      setHasPassword(settings.hasPassword)
+      setConfigured(settings.configured)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os dados de e-mail.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const update = (change: Partial<EmailDraft>) => setDraft(current => ({ ...current, ...change }))
+
+  // Trocar o modo de segurança ajusta a porta, mas só quando ela ainda é uma das
+  // portas padrão: uma porta digitada à mão não pode ser sobrescrita.
+  const changeSecurity = (security: SmtpSecurity) => {
+    const suggested = smtpSecurityOptions.find(option => option.value === security)?.port
+    const keepPort = !knownSmtpPorts.includes(Number(draft.port))
+    update({ security, port: keepPort || suggested === undefined ? draft.port : String(suggested) })
+  }
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true); setError(null); setMessage(null)
+    try {
+      await saveEmailSettings({
+        enabled: draft.enabled,
+        host: draft.host.trim(),
+        port: Number(draft.port),
+        security: draft.security,
+        username: draft.username.trim() || undefined,
+        password: clearPassword ? '' : password || undefined,
+        fromAddress: draft.fromAddress.trim(),
+        fromName: draft.fromName.trim() || undefined,
+        recipients: draft.recipients.split(/[\n,;]/).map(item => item.trim()).filter(Boolean),
+        timeoutSeconds: Number(draft.timeoutSeconds),
+        allowInvalidCertificate: draft.allowInvalidCertificate,
+        notifyAlerts: draft.notifyAlerts,
+        notifyLogErrors: draft.notifyLogErrors,
+      })
+      setPassword('')
+      setClearPassword(false)
+      setMessage('Dados de envio salvos.')
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar os dados de e-mail.')
+    } finally { setBusy(false) }
+  }
+
+  const test = async () => {
+    setTesting(true); setError(null); setMessage(null)
+    try {
+      const result = await sendTestEmail()
+      if (result.success) setMessage(`Teste enviado: ${result.message}`)
+      else setError(`O teste falhou: ${result.message}`)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível enviar o teste.')
+    } finally { setTesting(false) }
+  }
+
+  const securityHint = smtpSecurityOptions.find(option => option.value === draft.security)?.hint
+
+  return <article className="panel settings-panel">
+    <PanelHeader title="Dados para envio de e-mail" subtitle="Servidor SMTP usado nos alertas e nos erros de log enviados pelos agentes" />
+    {loading ? <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando…</div> : <form className="settings-form" onSubmit={submit}>
+      {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+      {message && <div className="success-banner"><Check size={16} /> {message}</div>}
+
+      <label className="checkbox-label toggle-row">
+        <input type="checkbox" aria-label="Ativar envio de e-mail" checked={draft.enabled} onChange={event => update({ enabled: event.target.checked })} />
+        <span><strong>Enviar e-mail</strong><small>Desligado, o Pulse continua registrando tudo, só não avisa por e-mail.</small></span>
+      </label>
+
+      <div className="target-form-grid">
+        <label>Servidor SMTP<input aria-label="Servidor SMTP" value={draft.host} onChange={event => update({ host: event.target.value })} placeholder="smtp.suaempresa.com.br" maxLength={253} required /></label>
+        <label>Porta<input aria-label="Porta SMTP" type="number" min="1" max="65535" value={draft.port} onChange={event => update({ port: event.target.value })} required /></label>
+        <label>Segurança
+          <select aria-label="Segurança SMTP" value={draft.security} onChange={event => changeSecurity(event.target.value as SmtpSecurity)}>
+            {smtpSecurityOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label>Tempo limite (s)<input aria-label="Tempo limite SMTP" type="number" min="5" max="120" value={draft.timeoutSeconds} onChange={event => update({ timeoutSeconds: event.target.value })} /></label>
+        {securityHint && <p className="field-hint wide-field">{securityHint}</p>}
+
+        <label>Usuário<input aria-label="Usuário SMTP" autoComplete="off" value={draft.username} onChange={event => update({ username: event.target.value })} placeholder="Deixe vazio para relay sem autenticação" maxLength={200} /></label>
+        <label>Senha
+          <input
+            aria-label="Senha SMTP"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            disabled={clearPassword}
+            onChange={event => setPassword(event.target.value)}
+            placeholder={hasPassword ? 'Guardada — preencha só para trocar' : 'Senha do usuário SMTP'}
+            maxLength={200}
+          />
+        </label>
+        {hasPassword && <label className="checkbox-label wide-field">
+          <input type="checkbox" checked={clearPassword} onChange={event => { setClearPassword(event.target.checked); setPassword('') }} /> Remover a senha guardada
+        </label>}
+
+        <label>Remetente<input aria-label="Endereço do remetente" type="email" value={draft.fromAddress} onChange={event => update({ fromAddress: event.target.value })} placeholder="pulse@suaempresa.com.br" maxLength={254} required /></label>
+        <label>Nome do remetente<input aria-label="Nome do remetente" value={draft.fromName} onChange={event => update({ fromName: event.target.value })} placeholder="Protheus Pulse" maxLength={120} /></label>
+        <label className="wide-field">Destinatários, um por linha
+          <textarea aria-label="Destinatários" value={draft.recipients} onChange={event => update({ recipients: event.target.value })} placeholder={'ti@suaempresa.com.br\nplantao@suaempresa.com.br'} required />
+        </label>
+      </div>
+
+      <div className="settings-options">
+        <label className="checkbox-label"><input type="checkbox" checked={draft.notifyAlerts} onChange={event => update({ notifyAlerts: event.target.checked })} /> Avisar sobre alertas</label>
+        <label className="checkbox-label"><input type="checkbox" checked={draft.notifyLogErrors} onChange={event => update({ notifyLogErrors: event.target.checked })} /> Avisar sobre erros de log dos agentes</label>
+        <label className="checkbox-label"><input type="checkbox" checked={draft.allowInvalidCertificate} onChange={event => update({ allowInvalidCertificate: event.target.checked })} /> Aceitar certificado que não valida</label>
+      </div>
+      {draft.allowInvalidCertificate && <div className="inline-warning"><AlertTriangle size={14} /> Aceitar certificado inválido só faz sentido em relay interno com certificado próprio.</div>}
+
+      <footer className="modal-actions">
+        <button type="button" className="secondary-button" disabled={busy || testing || !configured} onClick={() => void test()}>
+          {testing ? <RefreshCw className="spin" size={16} /> : <Send size={16} />}{testing ? 'Enviando…' : 'Enviar teste'}
+        </button>
+        <button className="primary-button" disabled={busy}>{busy ? <RefreshCw className="spin" size={16} /> : <Mail size={16} />}{busy ? 'Salvando…' : 'Salvar dados de envio'}</button>
+      </footer>
+      {!configured && <p className="field-hint">Salve os dados antes de enviar o teste.</p>}
+    </form>}
+  </article>
+}
+
+function LogAgentsCard({ components }: { components: ComponentSnapshot[] }) {
+  const [agents, setAgents] = useState<LogAgentItem[]>([])
+  const [componentId, setComponentId] = useState('')
+  const [name, setName] = useState('')
+  const [logPath, setLogPath] = useState('')
+  const [issued, setIssued] = useState<LogAgentToken | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const eligible = components.filter(item => !item.isDemo)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      setAgents(await getLogAgents())
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os agentes.')
+    } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const create = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true); setError(null); setMessage(null)
+    try {
+      setIssued(await createLogAgent(componentId, name.trim(), logPath))
+      setName(''); setLogPath('')
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível criar o agente.')
+    } finally { setBusy(false) }
+  }
+
+  const rotate = async (agent: LogAgentItem) => {
+    if (!window.confirm(`Gerar um novo token para “${agent.name}”? O token atual para de funcionar imediatamente.`)) return
+    setBusy(true); setError(null); setMessage(null)
+    try {
+      setIssued(await rotateLogAgentToken(agent.id))
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível rotacionar o token.')
+    } finally { setBusy(false) }
+  }
+
+  const remove = async (agent: LogAgentItem) => {
+    if (!window.confirm(`Remover o agente “${agent.name}”?`)) return
+    setBusy(true); setError(null); setMessage(null)
+    try {
+      await deleteLogAgent(agent.id)
+      setMessage('Agente removido.')
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível remover o agente.')
+    } finally { setBusy(false) }
+  }
+
+  const copy = (value: string) => {
+    void navigator.clipboard?.writeText(value).then(
+      () => setMessage('Copiado para a área de transferência.'),
+      () => setError('O navegador não permitiu copiar; selecione o texto manualmente.'))
+  }
+
+  return <article className="panel settings-panel">
+    <PanelHeader title="Agentes de log" subtitle="Tokens usados pelo agente Python que lê o console.log do AppServer" />
+    <div className="settings-form">
+      {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+      {message && <div className="success-banner"><Check size={16} /> {message}</div>}
+
+      {issued && <div className="token-panel">
+        <div><KeyRound size={18} /><strong>Token gerado — copie agora</strong></div>
+        <p>{issued.warning}</p>
+        <dl>
+          <div><dt>Chave</dt><dd><code>{issued.agentKey}</code><button type="button" className="row-action" aria-label="Copiar chave" onClick={() => copy(issued.agentKey)}><Copy size={14} /></button></dd></div>
+          <div><dt>Token</dt><dd><code>{issued.token}</code><button type="button" className="row-action" aria-label="Copiar token" onClick={() => copy(issued.token)}><Copy size={14} /></button></dd></div>
+        </dl>
+        <button type="button" className="secondary-button" onClick={() => setIssued(null)}><Check size={15} /> Já guardei</button>
+      </div>}
+
+      {loading
+        ? <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando agentes…</div>
+        : agents.length === 0
+          ? <div className="empty-state"><KeyRound size={20} /> Nenhum agente cadastrado.</div>
+          : <div className="table-wrap"><table><thead><tr><th>Agente</th><th>Componente</th><th>Chave</th><th>Último envio</th><th>Eventos</th><th /></tr></thead><tbody>
+            {agents.map(agent => <tr key={agent.id}>
+              <td><strong>{agent.name}</strong></td>
+              <td><div className="installation-name">{agent.componentName}<small>{agent.installationName}</small></div></td>
+              <td><code>{agent.agentKey}</code></td>
+              <td>{agent.lastSeenAt ? formatRelative(agent.lastSeenAt) : 'nunca'}</td>
+              <td>{agent.receivedEventCount}</td>
+              <td><span className="mini-component-actions">
+                <button type="button" className="row-action" title="Gerar novo token" aria-label={`Rotacionar token de ${agent.name}`} disabled={busy} onClick={() => void rotate(agent)}><RotateCw size={14} /></button>
+                <button type="button" className="row-action" title="Remover agente" aria-label={`Remover agente ${agent.name}`} disabled={busy} onClick={() => void remove(agent)}><Trash2 size={14} /></button>
+              </span></td>
+            </tr>)}
+          </tbody></table></div>}
+
+      <form className="agent-form" onSubmit={create}>
+        <div className="target-form-grid">
+          <label>Componente
+            <select aria-label="Componente do agente" value={componentId} onChange={event => setComponentId(event.target.value)} required>
+              <option value="">Selecione…</option>
+              {eligible.map(item => <option key={item.id} value={item.id}>{item.installationName} · {item.name}</option>)}
+            </select>
+          </label>
+          <label>Nome do agente<input aria-label="Nome do agente" value={name} onChange={event => setName(event.target.value)} placeholder="Ex.: console.log do ERP" maxLength={160} required /></label>
+          <label className="wide-field">Caminho do log (opcional)<input aria-label="Caminho do log do agente" value={logPath} onChange={event => setLogPath(event.target.value)} placeholder={'D:\\TOTVS\\Protheus\\appserver\\console.log'} /></label>
+        </div>
+        <button className="primary-button" disabled={busy || eligible.length === 0}><Plus size={16} /> Novo agente</button>
+        {eligible.length === 0 && <p className="field-hint">Cadastre uma instalação real antes de criar um agente.</p>}
+      </form>
+      <p className="field-hint">O agente Python fica em <code>agents/appserver-log-agent</code>. Ele lê o log, envia os erros para cá e o Pulse manda o e-mail.</p>
+    </div>
+  </article>
 }
 
 function AuditPage() {
@@ -815,6 +1287,28 @@ function formatRelative(value?: string) {
   if (seconds < 3600) return `há ${Math.floor(seconds / 60)} min`
   if (seconds < 86400) return `há ${Math.floor(seconds / 3600)} h`
   return `há ${Math.floor(seconds / 86400)} d`
+}
+
+const byteUnits = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '0 B'
+  const index = Math.min(byteUnits.length - 1, Math.floor(Math.log(value) / Math.log(1024)))
+  const scaled = value / 1024 ** index
+  return `${scaled.toFixed(index === 0 || scaled >= 100 ? 0 : 1)} ${byteUnits[index]}`
+}
+
+function formatUptime(totalSeconds: number) {
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  if (days > 0) return `${days} d ${hours} h`
+  if (hours > 0) return `${hours} h ${minutes} min`
+  return `${minutes} min`
+}
+
+function formatPercent(value?: number | null) {
+  return value == null ? '—' : `${value.toFixed(1)}%`
 }
 
 function typeLabel(type: string) {

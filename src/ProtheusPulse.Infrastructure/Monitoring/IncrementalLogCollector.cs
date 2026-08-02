@@ -1,26 +1,24 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
 
 namespace ProtheusPulse.Infrastructure.Monitoring;
 
-public sealed partial class IncrementalLogCollector(IClock clock, ProbeCollectorOptions options) : IIncrementalLogCollector
+public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions options) : IIncrementalLogCollector
 {
     private const int MaximumEventsPerCycle = 200;
-    private const int MaximumLineCharacters = 4_096;
-    private const string Redacted = "$1=[REDACTED]";
 
-    public bool CanCollect(Component component) => component.LogSources.Count > 0;
+    // Origens alimentadas por agente chegam prontas pela API; ler o mesmo arquivo
+    // aqui duplicaria cada evento.
+    public bool CanCollect(Component component) => component.LogSources.Any(item => !item.IsAgentManaged);
 
     public async Task<LogCollectionResult> CollectAsync(Component component, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         var targetObservations = new List<CollectorSupport.TargetObservation>();
         var events = new List<LogEventObservation>();
-        foreach (var source in component.LogSources)
+        foreach (var source in component.LogSources.Where(item => !item.IsAgentManaged))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(source.Path))
@@ -120,19 +118,19 @@ public sealed partial class IncrementalLogCollector(IClock clock, ProbeCollector
         for (var index = startIndex; index < lines.Length && grouped.Count < MaximumEventsPerCycle; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var line = Sanitize(lines[index]);
+            var line = LogTextSanitizer.Sanitize(lines[index]);
             if (line.Length == 0)
             {
                 continue;
             }
 
-            var level = DetectLevel(line);
+            var level = LogTextSanitizer.DetectLevel(line);
             if (level == "Debug")
             {
                 continue;
             }
 
-            var fingerprint = CreateFingerprint(line);
+            var fingerprint = LogTextSanitizer.CreateFingerprint(line);
             if (grouped.TryGetValue(fingerprint, out var existing))
             {
                 existing.Count++;
@@ -161,61 +159,6 @@ public sealed partial class IncrementalLogCollector(IClock clock, ProbeCollector
         "ascii" => Encoding.ASCII,
         _ => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false)
     };
-
-    private static string Sanitize(string line)
-    {
-        var bounded = line.Length <= MaximumLineCharacters ? line : line[..MaximumLineCharacters];
-        var clean = new string(bounded.Select(character => char.IsControl(character) ? ' ' : character).ToArray()).Trim();
-        clean = SensitiveAssignmentRegex().Replace(clean, Redacted);
-        clean = BearerTokenRegex().Replace(clean, "Bearer [REDACTED]");
-        return clean.Length <= 1_000 ? clean : clean[..1_000];
-    }
-
-    private static string DetectLevel(string line)
-    {
-        if (line.Contains("fatal", StringComparison.OrdinalIgnoreCase)
-            || line.Contains("critical", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Critical";
-        }
-
-        if (line.Contains("error", StringComparison.OrdinalIgnoreCase)
-            || line.Contains("exception", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Error";
-        }
-
-        if (line.Contains("warn", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Warning";
-        }
-
-        if (line.Contains("debug", StringComparison.OrdinalIgnoreCase)
-            || line.Contains("trace", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Debug";
-        }
-
-        return "Information";
-    }
-
-    private static string CreateFingerprint(string line)
-    {
-        var normalized = new string(line.ToLowerInvariant().Select(character => char.IsDigit(character) ? '#' : character).ToArray());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
-    }
-
-    [GeneratedRegex(
-        "(?i)(password|passwd|pwd|secret|token|credential|authorization|privatekey|cryptkey|accesskey|apikey|clientsecret)\\s*[:=]\\s*[\\\"']?[^,;\\s\\\"']+",
-        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
-        matchTimeoutMilliseconds: 100)]
-    private static partial Regex SensitiveAssignmentRegex();
-
-    [GeneratedRegex(
-        "(?i)Bearer\\s+[A-Za-z0-9._~+/=-]+",
-        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
-        matchTimeoutMilliseconds: 100)]
-    private static partial Regex BearerTokenRegex();
 
     private sealed class MutableLogEvent(
         Guid logSourceId,

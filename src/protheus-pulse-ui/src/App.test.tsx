@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { demoSummary } from './demoData'
+import { demoServerResources, demoSummary } from './demoData'
 
 vi.mock('./api', () => ({
   session: {
@@ -29,14 +29,40 @@ vi.mock('./api', () => ({
   login: vi.fn(),
   setup: vi.fn(),
   connectLiveUpdates: vi.fn(() => () => undefined),
+  getServerResources: vi.fn(),
+  getEmailSettings: vi.fn(),
+  saveEmailSettings: vi.fn(),
+  sendTestEmail: vi.fn(),
+  getLogAgents: vi.fn(),
+  createLogAgent: vi.fn(),
+  rotateLogAgentToken: vi.fn(),
+  deleteLogAgent: vi.fn(),
 }))
 
 import {
   acknowledgeAlert, collectNow, createInstallation, deleteInstallation, discoverPaths,
-  discoverServices, executeServiceAction, getDashboard, getInstallationConfiguration,
-  setAutoStart, setExclusiveInstallation, updateInstallation,
+  discoverServices, executeServiceAction, getDashboard, getEmailSettings, getInstallationConfiguration,
+  getLogAgents, getServerResources, saveEmailSettings, sendTestEmail, setAutoStart,
+  setExclusiveInstallation, updateInstallation,
 } from './api'
 import App, { serviceActionAllowed } from './App'
+
+const emailSettings = {
+  configured: true,
+  enabled: true,
+  host: 'smtp.exemplo.com.br',
+  port: 587,
+  security: 'StartTls' as const,
+  username: 'pulse@exemplo.com.br',
+  hasPassword: true,
+  fromAddress: 'pulse@exemplo.com.br',
+  fromName: 'Protheus Pulse',
+  recipients: ['ti@exemplo.com.br'],
+  timeoutSeconds: 20,
+  allowInvalidCertificate: false,
+  notifyAlerts: true,
+  notifyLogErrors: true,
+}
 
 const realSummary = {
   ...demoSummary,
@@ -82,6 +108,11 @@ describe('App', () => {
     vi.mocked(setAutoStart).mockReset().mockResolvedValue({
       id: 'installation-real', name: 'ERP Produção', isExclusive: false, autoStartEnabled: true,
     })
+    vi.mocked(getServerResources).mockReset().mockResolvedValue(demoServerResources)
+    vi.mocked(getEmailSettings).mockReset().mockResolvedValue(emailSettings)
+    vi.mocked(saveEmailSettings).mockReset().mockResolvedValue(undefined)
+    vi.mocked(sendTestEmail).mockReset().mockResolvedValue({ success: true, message: 'Mensagem entregue a 1 destinatário(s).' })
+    vi.mocked(getLogAgents).mockReset().mockResolvedValue([])
   })
 
   it('exibe o resumo demonstrativo depois da autenticação', async () => {
@@ -205,6 +236,77 @@ describe('App', () => {
     fireEvent.click(acknowledgeButtons[0])
 
     await waitFor(() => expect(acknowledgeAlert).toHaveBeenCalled())
+  })
+
+  it('abre a aba Servidor com processador, memória e discos', async () => {
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Servidor' }))
+
+    expect(await screen.findByText('SRV-PROTHEUS-DEMO')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Processador' })).toBeInTheDocument()
+    expect(screen.getByText('38.4%')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Memória' })).toBeInTheDocument()
+    expect(screen.getByText('61.2%')).toBeInTheDocument()
+    expect(screen.getByText(/C:\\ · Sistema/)).toBeInTheDocument()
+    expect(screen.getByText(/E:\\ · Backup/)).toBeInTheDocument()
+    expect(getServerResources).toHaveBeenCalled()
+  })
+
+  it('marca o disco sem espaço como crítico na aba Servidor', async () => {
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Servidor' }))
+
+    await screen.findByText('Discos fixos')
+    expect(screen.getAllByText('Crítico').length).toBeGreaterThan(0)
+    expect(screen.getByText('97.0% usado')).toBeInTheDocument()
+  })
+
+  it('salva os dados de envio de e-mail sem reenviar a senha guardada', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurações' }))
+    expect(await screen.findByLabelText('Servidor SMTP')).toHaveValue('smtp.exemplo.com.br')
+
+    fireEvent.change(screen.getByLabelText('Segurança SMTP'), { target: { value: 'SslOnConnect' } })
+    expect(screen.getByLabelText('Porta SMTP')).toHaveValue(465)
+
+    fireEvent.click(screen.getByRole('button', { name: /Salvar dados de envio/ }))
+
+    await waitFor(() => expect(saveEmailSettings).toHaveBeenCalledWith(expect.objectContaining({
+      host: 'smtp.exemplo.com.br',
+      port: 465,
+      security: 'SslOnConnect',
+      recipients: ['ti@exemplo.com.br'],
+      password: undefined,
+    })))
+  })
+
+  it('envia o e-mail de teste pela aba Configurações', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Configurações' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /Enviar teste/ }))
+
+    await waitFor(() => expect(sendTestEmail).toHaveBeenCalled())
+    expect(await screen.findByText(/Teste enviado/)).toBeInTheDocument()
+  })
+
+  it('esconde os dados de e-mail de quem não é administrador', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Viewer')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Configurações' }))
+
+    expect(await screen.findByText('Somente administradores')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Servidor SMTP')).not.toBeInTheDocument()
+    expect(getEmailSettings).not.toHaveBeenCalled()
   })
 
   it('bloqueia a ação que corresponde ao estado atual do serviço', () => {

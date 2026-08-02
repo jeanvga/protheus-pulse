@@ -2,6 +2,28 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.0] - 2026-08-02
+
+### Added
+
+- Aba **Servidor**, primeira da navegação: uso de processador, memória física e espaço em todos os discos fixos da máquina onde o Pulse roda, com gráfico dos últimos minutos, barras por disco e classificação em saudável, atenção e crítico. A amostragem roda em segundo plano (`Pulse:ServerSampleIntervalSeconds`, padrão 5 s) e fica em memória: a tela lê a última amostra em vez de consultar o sistema operacional a cada requisição. Limites configuráveis em `Pulse:CpuWarningPercent`, `CpuCriticalPercent`, `MemoryWarningPercent` e `MemoryCriticalPercent`.
+- Envio de e-mail configurável na aba **Configurações**: servidor, porta, modo de segurança (automático, STARTTLS, SSL/TLS implícito ou sem criptografia), usuário, senha, remetente, destinatários, tempo limite e aceite opcional de certificado que não valida. Trocar o modo de segurança ajusta a porta padrão, e o botão de teste envia uma mensagem real e mostra o motivo exato de uma eventual falha. Alertas passam a sair por e-mail além do webhook, com uma mensagem por ciclo em vez de uma por alerta.
+- Agente de log em Python (`agents/appserver-log-agent`), sem dependências externas: acompanha o `console.log` do AppServer, reconhece os erros do Protheus junto com a pilha ADVPL das linhas seguintes, agrupa as repetições, mascara segredos e envia para o Pulse. Entende rotação e truncamento do arquivo, começa do fim na primeira execução e só avança o cursor depois que o Pulse confirma o recebimento — se o painel estiver fora do ar, o mesmo trecho é reenviado no ciclo seguinte.
+- Ingestão autenticada de eventos de log em `POST /api/v1/log-agents/{chave}/events`, com token exibido uma única vez, guardado como hash SHA-256, comparado em tempo constante e rotacionável pelo painel. Os eventos recebidos aparecem na página de Logs e, quando são erro ou crítico, viram um resumo por e-mail agrupado por janela (`Pulse:LogAlertDigestSeconds`, padrão 120 s).
+- Gestão dos agentes de log na aba Configurações: criar, rotacionar token e remover, com registro em auditoria (`LogAgentCreated`, `LogAgentTokenRotated`, `LogAgentDeleted`).
+
+### Security
+
+- A senha do SMTP é cifrada com Data Protection junto do restante da configuração do canal e nunca volta pela API: o `GET /api/v1/settings/email` informa apenas se existe uma senha guardada.
+- Tudo que chega dos agentes é saneado de novo no servidor, com as mesmas regras do coletor interno. O agente é tratado como fonte, não como autoridade: nível desconhecido é reclassificado pela mensagem, horário fora de faixa é substituído pelo relógio do servidor e o lote é limitado a 200 eventos.
+- Nova política de limite de taxa para a ingestão dos agentes: 60 requisições por minuto por origem e chave.
+- Corrigida a ordem de mascaramento nas linhas de log: em `Authorization: Bearer <token>`, a regra de atribuição consumia apenas a palavra `Bearer` e deixava o token visível na página de Logs. O token agora é mascarado primeiro.
+
+### Changed
+
+- Origens de log alimentadas por agente são marcadas no banco e ignoradas pela leitura incremental do próprio Pulse, para que o mesmo arquivo não seja contado duas vezes.
+- A aba Configurações deixou de ser informativa: administradores veem os formulários de e-mail e de agentes; os demais perfis continuam vendo apenas o resumo das políticas.
+
 ## [1.2.0] - 2026-07-25
 
 ### Added

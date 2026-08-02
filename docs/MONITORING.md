@@ -12,6 +12,26 @@ Os limites ficam em `Pulse` no `appsettings.json`:
 - `MaximumLogBytesPerCycle`: aplicado entre 4 KiB e 1 MiB;
 - `DiskWarningPercent` e `DiskCriticalPercent`: percentuais de espaço livre.
 
+## Recursos do próprio servidor
+
+A aba **Servidor** mostra processador, memória e discos da máquina onde o Pulse está instalado — não de um componente, e sim do Windows Server inteiro. Um `ServerResourceWorker` lê os valores em intervalos curtos e guarda as amostras em memória; a tela consulta a última leitura, sem tocar no sistema operacional a cada requisição.
+
+- **Processador:** diferença entre duas leituras de `GetSystemTimes`. A primeira amostra depois de subir o serviço ainda não tem com que se comparar e aparece como indefinida.
+- **Memória:** física total e disponível, por `GlobalMemoryStatusEx`.
+- **Discos:** todos os volumes fixos prontos, com espaço livre e total. Unidades removíveis e de rede ficam de fora.
+
+Fora do Windows a leitura de CPU e memória fica indisponível e a aba avisa; os discos continuam sendo lidos.
+
+Limites, em `Pulse`:
+
+- `ServerSampleIntervalSeconds`: de 2 a 300 segundos (padrão 5);
+- `ServerHistorySamples`: de 10 a 2880 amostras guardadas para o gráfico (padrão 120);
+- `CpuWarningPercent` / `CpuCriticalPercent`: percentuais de **uso** (padrão 80 e 92);
+- `MemoryWarningPercent` / `MemoryCriticalPercent`: percentuais de **uso** (padrão 85 e 94);
+- `DiskWarningPercent` / `DiskCriticalPercent`: percentuais de espaço **livre**, os mesmos do coletor de disco.
+
+Nada disso é persistido: reiniciar o serviço zera o histórico da aba. É medição operacional de agora, não série histórica.
+
 Cada componente recebe um escopo isolado do SQLite. Mudanças de estado são persistidas com probes e métricas, e o dashboard é avisado pelo SignalR para reler os DTOs autorizados.
 
 ## Coletores
@@ -23,7 +43,7 @@ Cada componente recebe um escopo isolado do SQLite. Mudanças de estado são per
 - **TLS:** usa TLS 1.2/1.3, valida a cadeia quando configurado e mede dias até o vencimento.
 - **Arquivo:** verifica existência e sinaliza reparse points; não altera nem interpreta o conteúdo.
 - **Disco:** calcula o menor percentual livre entre os volumes dos alvos cadastrados.
-- **Log:** lê somente bytes novos, mantém cursor local, limita volume/linha, mascara segredos e agrupa mensagens equivalentes.
+- **Log:** lê somente bytes novos, mantém cursor local, limita volume/linha, mascara segredos e agrupa mensagens equivalentes. Caminhos alimentados por um agente externo são ignorados aqui — ver [LOG-AGENT.md](LOG-AGENT.md).
 - **Heartbeat:** compara o último evento autenticado com intervalo e tolerância; respeita janela diária no horário local e nunca aceita horário fornecido pelo cliente.
 
 ## Estados

@@ -48,6 +48,9 @@ public static class ApiEndpoints
         api.MapServiceControl(demoMode);
         api.MapAutomation();
         api.MapHeartbeats();
+        api.MapServerResources();
+        api.MapEmailSettings();
+        api.MapLogAgents();
 
         api.MapGet("/components", async (IDashboardQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.GetComponentsAsync(cancellationToken))).RequireAuthorization("Viewer");

@@ -47,7 +47,16 @@ if (pulseOptions.HistoryRetentionDays is < 1 or > 365
     || pulseOptions.MaximumLogBytesPerCycle is < 4_096 or > 1_048_576
     || pulseOptions.DiskCriticalPercent is < 0 or > 100
     || pulseOptions.DiskWarningPercent is < 0 or > 100
-    || pulseOptions.DiskCriticalPercent >= pulseOptions.DiskWarningPercent)
+    || pulseOptions.DiskCriticalPercent >= pulseOptions.DiskWarningPercent
+    || pulseOptions.ServerSampleIntervalSeconds is < 2 or > 300
+    || pulseOptions.ServerHistorySamples is < 10 or > 2_880
+    || pulseOptions.CpuWarningPercent is <= 0 or > 100
+    || pulseOptions.CpuCriticalPercent is <= 0 or > 100
+    || pulseOptions.CpuWarningPercent >= pulseOptions.CpuCriticalPercent
+    || pulseOptions.MemoryWarningPercent is <= 0 or > 100
+    || pulseOptions.MemoryCriticalPercent is <= 0 or > 100
+    || pulseOptions.MemoryWarningPercent >= pulseOptions.MemoryCriticalPercent
+    || pulseOptions.LogAlertDigestSeconds is < 10 or > 3_600)
 {
     throw new InvalidOperationException("A seção Pulse possui limites de coleta inválidos.");
 }
@@ -94,6 +103,16 @@ builder.Services.AddSingleton(new ProbeCollectorOptions
     MaximumLogBytesPerCycle = pulseOptions.MaximumLogBytesPerCycle,
     DiskWarningPercent = pulseOptions.DiskWarningPercent,
     DiskCriticalPercent = pulseOptions.DiskCriticalPercent
+});
+builder.Services.AddSingleton(new ServerResourceOptions
+{
+    CpuWarningPercent = pulseOptions.CpuWarningPercent,
+    CpuCriticalPercent = pulseOptions.CpuCriticalPercent,
+    MemoryWarningPercent = pulseOptions.MemoryWarningPercent,
+    MemoryCriticalPercent = pulseOptions.MemoryCriticalPercent,
+    DiskWarningPercent = pulseOptions.DiskWarningPercent,
+    DiskCriticalPercent = pulseOptions.DiskCriticalPercent,
+    HistorySamples = pulseOptions.ServerHistorySamples
 });
 
 var securityOptions = builder.Configuration.GetSection(SecurityOptions.SectionName).Get<SecurityOptions>() ?? new SecurityOptions();
@@ -180,6 +199,22 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 AutoReplenishment = true
             }));
+    // Ingestão dos agentes de log: cada agente envia um lote por ciclo, então o
+    // limite acomoda vários agentes na mesma origem sem virar canal de despejo.
+    options.AddPolicy("agentIngest", context =>
+    {
+        var origin = context.Connection.RemoteIpAddress?.ToString() ?? "local";
+        var agentKey = context.Request.RouteValues["agentKey"]?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"{origin}:{agentKey}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+                AutoReplenishment = true
+            });
+    });
     options.AddPolicy("heartbeat", context =>
     {
         var origin = context.Connection.RemoteIpAddress?.ToString() ?? "local";
@@ -206,6 +241,8 @@ builder.Services.AddSingleton<RetentionWorker>();
 builder.Services.AddScoped<AlertEngine>();
 builder.Services.AddSingleton<ServiceActionCoordinator>();
 builder.Services.AddSingleton<NotificationConfigurationProtector>();
+builder.Services.AddSingleton<EmailSender>();
+builder.Services.AddSingleton<LogAlertMailQueue>();
 builder.Services.AddSingleton<NotificationDispatcher>();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -233,6 +270,11 @@ builder.Services.AddHostedService(serviceProvider => new DatabaseInitializer(
     serviceProvider,
     demoMode,
     serviceProvider.GetRequiredService<ILogger<DatabaseInitializer>>()));
+// Processador, memória e disco são do próprio servidor e a leitura é inofensiva,
+// então a aba Servidor também funciona na demonstração.
+builder.Services.AddHostedService<ServerResourceWorker>();
+// Os agentes de log podem enviar erros em qualquer modo; o digest depende só do SMTP.
+builder.Services.AddHostedService<LogAlertMailWorker>();
 if (demoMode)
 {
     builder.Services.AddHostedService<DemoPulseWorker>();

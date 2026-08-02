@@ -1,10 +1,10 @@
 import * as signalR from '@microsoft/signalr'
-import { demoSummary } from './demoData'
+import { demoServerResources, demoSummary } from './demoData'
 import type {
-  AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, InstallationConfiguration,
-  InstallationCreated, LogEventItem, MaintenanceChangeResult, MaintenanceStatus,
-  PathDiscoveryResult, SaveInstallationInput, ServiceAction, ServiceActionResponse,
-  ServiceDiscoveryResult,
+  AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, EmailSettings, EmailTestResult,
+  InstallationConfiguration, InstallationCreated, LogAgentItem, LogAgentToken, LogEventItem,
+  MaintenanceChangeResult, MaintenanceStatus, PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput,
+  ServerResources, ServiceAction, ServiceActionResponse, ServiceDiscoveryResult,
 } from './types'
 
 const staticDemo = import.meta.env.VITE_DEMO_STATIC === 'true'
@@ -132,6 +132,49 @@ export async function exitMaintenance(): Promise<MaintenanceChangeResult> {
 export async function acknowledgeAlert(id: string): Promise<void> {
   if (staticDemo) throw new Error('O reconhecimento não está disponível na demonstração estática.')
   await request<void>(`/api/v1/alerts/${id}/acknowledge`, { method: 'POST', body: '{}' })
+}
+
+export async function getServerResources(): Promise<ServerResources> {
+  if (staticDemo) return demoServerResources
+  return request<ServerResources>('/api/v1/server/resources')
+}
+
+export async function getEmailSettings(): Promise<EmailSettings> {
+  if (staticDemo) throw new Error('Os dados de e-mail não estão disponíveis na demonstração estática.')
+  return request<EmailSettings>('/api/v1/settings/email')
+}
+
+export async function saveEmailSettings(input: SaveEmailSettingsInput): Promise<void> {
+  if (staticDemo) throw new Error('Os dados de e-mail não podem ser salvos na demonstração estática.')
+  await request<void>('/api/v1/settings/email', { method: 'PUT', body: JSON.stringify(input) })
+}
+
+export async function sendTestEmail(): Promise<EmailTestResult> {
+  if (staticDemo) throw new Error('O teste de envio não está disponível na demonstração estática.')
+  return request<EmailTestResult>('/api/v1/settings/email/test', { method: 'POST', body: '{}' })
+}
+
+export async function getLogAgents(): Promise<LogAgentItem[]> {
+  if (staticDemo) return []
+  return request<LogAgentItem[]>('/api/v1/log-agents')
+}
+
+export async function createLogAgent(componentId: string, name: string, logPath?: string): Promise<LogAgentToken> {
+  if (staticDemo) throw new Error('Agentes não podem ser criados na demonstração estática.')
+  return request<LogAgentToken>('/api/v1/log-agents', {
+    method: 'POST',
+    body: JSON.stringify({ componentId, name, logPath: logPath?.trim() || undefined }),
+  })
+}
+
+export async function rotateLogAgentToken(id: string): Promise<LogAgentToken> {
+  if (staticDemo) throw new Error('Tokens não podem ser rotacionados na demonstração estática.')
+  return request<LogAgentToken>(`/api/v1/log-agents/${id}/rotate`, { method: 'POST', body: '{}' })
+}
+
+export async function deleteLogAgent(id: string): Promise<void> {
+  if (staticDemo) throw new Error('Agentes não podem ser removidos na demonstração estática.')
+  await request<void>(`/api/v1/log-agents/${id}`, { method: 'DELETE' })
 }
 
 export function connectLiveUpdates(onUpdate: () => void): () => void {

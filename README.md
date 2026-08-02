@@ -16,6 +16,7 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 
 **Monitoramento**
 
+- Aba **Servidor**: processador, memória e discos da máquina em tempo real, com histórico curto e limites de atenção e crítico.
 - Verifica serviço Windows, processo, porta TCP, HTTP/HTTPS, validade de TLS, arquivos, espaço em disco e logs.
 - Cada ambiente aparece como Saudável, Atenção, Crítico, Desconhecido ou Em manutenção.
 - Atualização em tempo real na tela, sem precisar recarregar a página.
@@ -25,7 +26,13 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 
 - Regras prontas e regras próprias, com tolerância a falhas seguidas e cooldown para não encher de aviso repetido.
 - Reconhecer, resolver e abrir janela de manutenção para silenciar alertas planejados.
-- Envio por webhook HTTPS.
+- Envio por **e-mail** (SMTP com STARTTLS, SSL/TLS implícito ou sem criptografia, porta e credenciais próprias, com teste de envio na tela) e por webhook HTTPS. Veja [docs/EMAIL.md](docs/EMAIL.md).
+
+**Erros do AppServer por e-mail**
+
+- Um **agente em Python** acompanha o `console.log`, reconhece as linhas de erro com a pilha ADVPL, agrupa as repetições e manda para o Pulse.
+- O Pulse grava tudo na página de Logs e envia um resumo por e-mail, agrupando os erros de uma janela em uma mensagem só.
+- Serve para AppServer em outro servidor ou em pasta que o serviço não pode ler. Veja [docs/LOG-AGENT.md](docs/LOG-AGENT.md) e [agents/appserver-log-agent](agents/appserver-log-agent/README.md).
 
 **Operação dos serviços**
 
@@ -56,7 +63,7 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 3. No servidor, confira se o arquivo não veio corrompido:
 
    ```powershell
-   Get-FileHash .\protheus-pulse-1.2.0-win-x64-setup.exe -Algorithm SHA256
+   Get-FileHash .\protheus-pulse-1.3.0-win-x64-setup.exe -Algorithm SHA256
    ```
 
    O resultado tem que ser igual ao que está dentro do arquivo `.sha256`.
@@ -148,6 +155,8 @@ Leia [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar falha de segurança, siga
 | Cadastrar seus ambientes | [docs/ADDING-INSTALLATIONS.md](docs/ADDING-INSTALLATIONS.md) |
 | Como o monitoramento funciona | [docs/MONITORING.md](docs/MONITORING.md) |
 | Alertas e manutenção | [docs/ALERTING.md](docs/ALERTING.md) |
+| Envio de e-mail (SMTP) | [docs/EMAIL.md](docs/EMAIL.md) |
+| Agente de log do AppServer | [docs/LOG-AGENT.md](docs/LOG-AGENT.md) |
 | Heartbeats | [docs/HEARTBEATS.md](docs/HEARTBEATS.md) |
 | Privacidade e retenção de dados | [docs/PRIVACY-RETENTION.md](docs/PRIVACY-RETENTION.md) |
 | Checklist de implantação | [docs/DEPLOYMENT-CHECKLIST.md](docs/DEPLOYMENT-CHECKLIST.md) |
