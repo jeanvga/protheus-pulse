@@ -87,6 +87,17 @@ public sealed class ObservabilityOptionsTests
         Assert.Empty(options.Validate());
     }
 
+    [Theory]
+    [InlineData("http://127.0.0.1:4318", "http://127.0.0.1:4318/v1/metrics")]
+    [InlineData("https://alloy.intra/otlp/", "https://alloy.intra/otlp/v1/metrics")]
+    [InlineData("https://alloy.intra/v1/metrics", "https://alloy.intra/v1/metrics")]
+    public void GetMetricsEndpointAppendsTheOtlpSignalPathOnce(string configured, string expected)
+    {
+        var options = Enabled(configured);
+
+        Assert.Equal(new Uri(expected), options.GetMetricsEndpoint());
+    }
+
     private static ObservabilityOptions Enabled(string endpoint) => new()
     {
         Enabled = true,

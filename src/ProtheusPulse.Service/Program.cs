@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using OpenTelemetry;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -132,12 +131,11 @@ if (observabilityOptions.Enabled)
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
             .AddRuntimeInstrumentation()
-            .AddOtlpExporter(exporter =>
+            .AddOtlpExporter((exporter, metricReader) =>
             {
-                exporter.Endpoint = new Uri(observabilityOptions.OtlpEndpoint, UriKind.Absolute);
+                exporter.Endpoint = observabilityOptions.GetMetricsEndpoint();
                 exporter.Protocol = OtlpExportProtocol.HttpProtobuf;
-                exporter.ExportProcessorType = ExportProcessorType.Batch;
-                exporter.BatchExportProcessorOptions.ScheduledDelayMilliseconds =
+                metricReader.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds =
                     checked(observabilityOptions.ExportIntervalSeconds * 1_000);
             }));
 }

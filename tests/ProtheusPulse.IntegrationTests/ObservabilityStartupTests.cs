@@ -1,5 +1,7 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using ProtheusPulse.Service.Configuration;
@@ -58,6 +60,24 @@ public sealed class ObservabilityStartupTests
         Assert.True(factory.Services.GetRequiredService<ObservabilityOptions>().Enabled);
     }
 
+    [Fact]
+    public async Task EnabledExporterPostsToMetricsSignalPathAtConfiguredInterval()
+    {
+        await using var receiver = await OtlpTestReceiver.StartAsync();
+        await using var factory = new ObservabilityWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Observability:Enabled"] = "true",
+            ["Observability:OtlpEndpoint"] = receiver.Address,
+            ["Observability:ExportIntervalSeconds"] = "1"
+        });
+        using var client = factory.CreateClient();
+
+        _ = await client.GetAsync(new Uri("/health/live", UriKind.Relative));
+        var receivedPath = await receiver.ReceivedPath.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal("/v1/metrics", receivedPath);
+    }
+
     private sealed class ObservabilityWebApplicationFactory(IReadOnlyDictionary<string, string?> settings)
         : WebApplicationFactory<Program>
     {
@@ -77,6 +97,36 @@ public sealed class ObservabilityStartupTests
             {
                 builder.UseSetting(key, value);
             }
+        }
+    }
+
+    private sealed class OtlpTestReceiver(WebApplication application, TaskCompletionSource<string> receivedPath)
+        : IAsyncDisposable
+    {
+        public string Address => Assert.Single(application.Urls);
+        public Task<string> ReceivedPath => receivedPath.Task;
+
+        public static async Task<OtlpTestReceiver> StartAsync()
+        {
+            var builder = WebApplication.CreateSlimBuilder();
+            builder.Configuration.Sources.Clear();
+            builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
+            var application = builder.Build();
+            var receivedPath = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            application.MapPost("/{**path}", context =>
+            {
+                receivedPath.TrySetResult(context.Request.Path.Value ?? string.Empty);
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            });
+            await application.StartAsync();
+            return new OtlpTestReceiver(application, receivedPath);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await application.DisposeAsync();
+            GC.SuppressFinalize(this);
         }
     }
 }

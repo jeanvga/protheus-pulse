@@ -35,6 +35,22 @@ public sealed class ObservabilityOptions
         return errors;
     }
 
+    public Uri GetMetricsEndpoint()
+    {
+        if (!Uri.TryCreate(OtlpEndpoint, UriKind.Absolute, out var endpoint))
+        {
+            throw new InvalidOperationException("Valide Observability:OtlpEndpoint antes de construir o endpoint de métricas.");
+        }
+
+        var path = endpoint.AbsolutePath.TrimEnd('/');
+        if (!path.EndsWith("/v1/metrics", StringComparison.OrdinalIgnoreCase))
+        {
+            path += "/v1/metrics";
+        }
+
+        return new UriBuilder(endpoint) { Path = path }.Uri;
+    }
+
     private static bool TryValidateEndpoint(string value, out string error)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var endpoint)
