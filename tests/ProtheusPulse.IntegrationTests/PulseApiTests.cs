@@ -12,6 +12,7 @@ using ProtheusPulse.Service.Monitoring;
 
 namespace ProtheusPulse.IntegrationTests;
 
+[Collection("Pulse web application")]
 public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
 {
     private static readonly string[] IniFileNames = ["appserver.ini"];

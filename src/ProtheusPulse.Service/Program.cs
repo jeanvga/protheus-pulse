@@ -8,6 +8,10 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure;
@@ -17,6 +21,7 @@ using ProtheusPulse.Service.Endpoints;
 using ProtheusPulse.Service.HostedServices;
 using ProtheusPulse.Service.Hubs;
 using ProtheusPulse.Service.Monitoring;
+using ProtheusPulse.Service.Observability;
 using ProtheusPulse.Service.Security;
 using ProtheusPulse.Service.WindowsSetup;
 using Serilog;
@@ -61,6 +66,15 @@ if (pulseOptions.HistoryRetentionDays is < 1 or > 365
     throw new InvalidOperationException("A seção Pulse possui limites de coleta inválidos.");
 }
 
+var observabilityOptions = builder.Configuration
+    .GetSection(ObservabilityOptions.SectionName)
+    .Get<ObservabilityOptions>() ?? new ObservabilityOptions();
+var observabilityErrors = observabilityOptions.Validate();
+if (observabilityErrors.Count > 0)
+{
+    throw new InvalidOperationException(string.Join(" ", observabilityErrors));
+}
+
 var configuredDataDirectory = pulseOptions.DataDirectory;
 var dataDirectory = !string.IsNullOrWhiteSpace(configuredDataDirectory)
     ? Path.GetFullPath(configuredDataDirectory)
@@ -98,6 +112,35 @@ if (OperatingSystem.IsWindows())
     dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
 }
 builder.Services.AddSingleton(pulseOptions);
+builder.Services.AddSingleton(observabilityOptions);
+builder.Services.AddSingleton<PulseTelemetry>();
+if (observabilityOptions.Enabled)
+{
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource
+            .AddService(
+                serviceName: "protheus-pulse",
+                serviceNamespace: observabilityOptions.ServiceNamespace,
+                serviceVersion: typeof(Program).Assembly.GetName().Version?.ToString(),
+                serviceInstanceId: Environment.MachineName)
+            .AddAttributes(
+            [
+                new KeyValuePair<string, object>("host.name", Environment.MachineName)
+            ]))
+        .WithMetrics(metrics => metrics
+            .AddMeter(PulseTelemetry.MeterName)
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddOtlpExporter(exporter =>
+            {
+                exporter.Endpoint = new Uri(observabilityOptions.OtlpEndpoint, UriKind.Absolute);
+                exporter.Protocol = OtlpExportProtocol.HttpProtobuf;
+                exporter.ExportProcessorType = ExportProcessorType.Batch;
+                exporter.BatchExportProcessorOptions.ScheduledDelayMilliseconds =
+                    checked(observabilityOptions.ExportIntervalSeconds * 1_000);
+            }));
+}
 builder.Services.AddSingleton(new ProbeCollectorOptions
 {
     MaximumLogBytesPerCycle = pulseOptions.MaximumLogBytesPerCycle,

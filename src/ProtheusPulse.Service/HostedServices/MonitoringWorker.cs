@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProtheusPulse.Application.Abstractions;
@@ -6,6 +7,7 @@ using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Configuration;
 using ProtheusPulse.Service.Hubs;
 using ProtheusPulse.Service.Monitoring;
+using ProtheusPulse.Service.Observability;
 
 namespace ProtheusPulse.Service.HostedServices;
 
@@ -15,6 +17,7 @@ public sealed partial class MonitoringWorker(
     IClock clock,
     PulseOptions options,
     LogAlertMailBuffer mailBuffer,
+    PulseTelemetry telemetry,
     ILogger<MonitoringWorker> logger) : BackgroundService
 {
     private readonly SemaphoreSlim cycleGate = new(1, 1);
@@ -33,18 +36,23 @@ public sealed partial class MonitoringWorker(
     public async Task<int> RunNowAsync(CancellationToken cancellationToken)
     {
         await cycleGate.WaitAsync(cancellationToken);
+        var startedAt = Stopwatch.GetTimestamp();
+        var updated = 0;
+        var success = false;
         try
         {
-            var updated = await RunCycleAsync(cancellationToken);
+            updated = await RunCycleAsync(cancellationToken);
             if (updated > 0)
             {
                 await hubContext.Clients.All.SendAsync("dashboardUpdated", new { at = clock.UtcNow }, cancellationToken);
             }
 
+            success = true;
             return updated;
         }
         finally
         {
+            telemetry.RecordCollectionCycle(success, updated, Stopwatch.GetElapsedTime(startedAt));
             cycleGate.Release();
         }
     }
@@ -136,11 +144,26 @@ public sealed partial class MonitoringWorker(
                 Fingerprint = item.Fingerprint,
                 OccurrenceCount = item.OccurrenceCount
             }));
+            foreach (var item in logResult.Events)
+            {
+                telemetry.RecordLogEvent(
+                    component.Installation.Name,
+                    component.Name,
+                    item.Level,
+                    item.OccurrenceCount);
+            }
             QueueLogErrorsForEmail(component, logResult.Events);
         }
 
         foreach (var item in observations)
         {
+            telemetry.RecordProbe(
+                component.Installation.Name,
+                component.Name,
+                item.Type,
+                item.Observation.Status,
+                item.Observation.IsRequired,
+                item.Observation.Duration);
             dbContext.ProbeResults.Add(new ProbeResult
             {
                 ComponentId = component.Id,
@@ -173,6 +196,7 @@ public sealed partial class MonitoringWorker(
         var newStatus = maintenanceActive
             ? HealthStatus.Maintenance
             : HealthAggregator.Aggregate(observations.Select(item => (item.Observation.Status, item.Observation.IsRequired)));
+        telemetry.RecordComponentHealth(component.Installation.Name, component.Name, newStatus);
         if (component.Status != newStatus)
         {
             component.Status = newStatus;
