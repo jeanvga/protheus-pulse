@@ -2,6 +2,22 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.0] - 2026-09-01
+
+### Added
+
+- Exportação opcional de métricas por OpenTelemetry, desligada por padrão (`Observability:Enabled`). Ligada, a coleta passa a publicar métricas semânticas do próprio Pulse — `protheus.pulse.probe.duration` e `protheus.pulse.probe.up` por probe, `protheus.pulse.component.health` por componente, `protheus.pulse.collection.cycles`, `.duration` e `.components` por ciclo e `protheus.pulse.log.events` por severidade — junto das métricas padrão de runtime .NET, ASP.NET Core e cliente HTTP. O envio é em lote por OTLP/HTTP para um Alloy no mesmo host (`Observability:OtlpEndpoint`, padrão `http://127.0.0.1:4318`, a cada `ExportIntervalSeconds`, padrão 10 s). Alloy, Prometheus ou Grafana fora do ar não interrompem coleta, persistência, alerta ou controle de serviços: o painel continua sendo a fonte de verdade e a telemetria é acréscimo.
+- Stack de referência self-hosted em `deploy/observability`, com Grafana, Prometheus, Loki e Alloy em versões fixadas, data sources e dashboard provisionados por arquivo e um painel **Protheus Pulse — Visão geral** com disponibilidade dos probes, saúde dos componentes, latência por percentil e volume de eventos de log. Serve como base reproduzível para desenvolvimento e homologação; produção continua exigindo TLS, autenticação, firewall, backup e capacidade administrados pelo cliente.
+- Configuração de Alloy para o servidor Windows do Protheus (`deploy/observability/agent-windows`): recebe o OTLP do Pulse em loopback e faz `remote_write` autenticado por HTTPS para a rede central de observabilidade.
+- Guia de operação em `docs/OBSERVABILITY.md`: topologia recomendada, tabela de portas e fluxos, subida da stack central, ligação do Pulse e endurecimento para produção.
+
+### Security
+
+- A seção `Observability` é validada na inicialização e o serviço não sobe com configuração inválida: o endpoint precisa ser `http`/`https` absoluto e não pode carregar credenciais, query string ou fragmento; o namespace aceita de 1 a 64 caracteres alfanuméricos, ponto, hífen ou sublinhado; o intervalo de exportação fica entre 1 e 300 segundos.
+- O Pulse exporta apenas contadores agregados por severidade, nunca conteúdo de log. Loki já vem provisionado como data source, mas nada no MVP envia linhas de log por esse caminho — isso evita ler o `console.log` duas vezes e impede que o Alloy contorne a sanitização que já existe no coletor.
+- A credencial do backend central mora no Alloy de cada host, lida de arquivo protegido; o Pulse nunca conhece usuário, senha ou certificado do destino. No Compose, Prometheus e Loki não publicam porta no host, e Grafana e o receiver OTLP de laboratório ficam vinculados a `127.0.0.1`.
+- `nanoid` 3.3.16 → 3.3.18 e `postcss` 8.5.19 → 8.5.26 no lockfile, fechando os dois avisos transitivos do `npm audit` (alto e moderado) vindos da cadeia do Vite. São dependências de desenvolvimento e a mudança fica contida no `package-lock.json`.
+
 ## [1.4.0] - 2026-08-02
 
 ### Added
