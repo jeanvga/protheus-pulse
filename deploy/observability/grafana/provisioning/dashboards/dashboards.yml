@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: Protheus Pulse
+    orgId: 1
+    folder: Protheus Pulse
+    folderUid: protheus-pulse
+    type: file
+    disableDeletion: true
+    editable: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

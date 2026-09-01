@@ -1,0 +1,56 @@
+// Gateway local do ambiente de homologação. As portas são publicadas em
+// loopback pelo Compose; exposição remota deve ocorrer somente por um proxy TLS
+// autenticado.
+otelcol.receiver.otlp "pulse" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    metrics = [otelcol.processor.memory_limiter.pulse.input]
+  }
+}
+
+otelcol.processor.memory_limiter "pulse" {
+  check_interval = "1s"
+  limit          = "256MiB"
+  spike_limit    = "64MiB"
+
+  output {
+    metrics = [otelcol.processor.batch.pulse.input]
+  }
+}
+
+otelcol.processor.batch "pulse" {
+  timeout             = "5s"
+  send_batch_size     = 1000
+  send_batch_max_size = 2000
+
+  output {
+    metrics = [otelcol.exporter.prometheus.pulse.input]
+  }
+}
+
+otelcol.exporter.prometheus "pulse" {
+  // Mantém os nomes definidos pelo Pulse previsíveis para os dashboards.
+  add_metric_suffixes  = false
+  include_scope_labels = false
+  forward_to           = [prometheus.remote_write.prometheus.receiver]
+}
+
+// Entrada dos agentes Alloy instalados nos hosts Windows. O proxy TLS central
+// deve encaminhar /api/v1/metrics/write para esta porta local.
+prometheus.receive_http "agents" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 12347
+  }
+
+  forward_to = [prometheus.remote_write.prometheus.receiver]
+}
+
+prometheus.remote_write "prometheus" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
