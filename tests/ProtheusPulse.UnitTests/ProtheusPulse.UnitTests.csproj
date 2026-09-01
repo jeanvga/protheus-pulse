@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ProtheusPulse.Domain\ProtheusPulse.Domain.csproj" />
     <ProjectReference Include="..\..\src\ProtheusPulse.Infrastructure\ProtheusPulse.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\ProtheusPulse.Service\ProtheusPulse.Service.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector">
