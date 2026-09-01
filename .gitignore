@@ -42,3 +42,6 @@ artifacts/
 *.tsbuildinfo
 src/protheus-pulse-ui/vite.config.js
 src/protheus-pulse-ui/vite.config.d.ts
+
+# Amostras de log de cliente usadas para mapeamento; nunca versionar
+*.rar

@@ -44,6 +44,14 @@ Cada componente recebe um escopo isolado do SQLite. Mudanças de estado são per
 - **Arquivo:** verifica existência e sinaliza reparse points; não altera nem interpreta o conteúdo.
 - **Disco:** calcula o menor percentual livre entre os volumes dos alvos cadastrados.
 - **Log:** lê somente bytes novos, mantém cursor local, limita volume/linha, mascara segredos e agrupa mensagens equivalentes.
+  No `console.log` do AppServer, o coletor entende o formato de registro do Protheus: a linha de cabeçalho
+  `2026-01-15T09:12:33.400000-03:00 4321|` abre o registro e as linhas seguintes fazem parte dele. O horário guardado
+  é o que o AppServer gravou, não o da leitura, e um bloco `THREAD ERROR` vira um evento só, com usuário, máquina e o
+  fonte ADVPL onde o erro estourou — em vez de um evento por linha da pilha. Arquivo sem esse cabeçalho continua sendo
+  lido linha a linha.
+- **Encoding do log:** `auto` tenta UTF-8 estrito e cai para CP1252 quando ele falha, que é como o AppServer grava em
+  Windows pt-BR; ler CP1252 como UTF-8 substituiria todo acento e degradaria o agrupamento por assinatura. Também são
+  aceitos `utf-8`, `cp1252`, `latin1`, `unicode`, `utf-16be` e `ascii`.
 - **Heartbeat:** compara o último evento autenticado com intervalo e tolerância; respeita janela diária no horário local e nunca aceita horário fornecido pelo cliente.
 
 ## Estados

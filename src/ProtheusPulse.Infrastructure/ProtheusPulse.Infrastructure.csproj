@@ -12,5 +12,6 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
     <PackageReference Include="System.ServiceProcess.ServiceController" />
+    <PackageReference Include="System.Text.Encoding.CodePages" />
   </ItemGroup>
 </Project>

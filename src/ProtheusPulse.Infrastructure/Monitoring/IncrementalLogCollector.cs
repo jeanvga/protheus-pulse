@@ -8,6 +8,12 @@ namespace ProtheusPulse.Infrastructure.Monitoring;
 public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions options) : IIncrementalLogCollector
 {
     private const int MaximumEventsPerCycle = 200;
+    private const int MaximumUtf8CharacterBytes = 4;
+
+    private static readonly Encoding LenientUtf8 =
+        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false);
+
+    private static readonly Encoding Windows1252 = CreateWindows1252();
 
     public bool CanCollect(Component component) => component.LogSources.Count > 0;
 
@@ -101,7 +107,7 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
             totalRead += read;
         }
 
-        var encoding = ResolveEncoding(source.EncodingName);
+        var encoding = ResolveEncoding(buffer, totalRead, source.EncodingName);
         var text = encoding.GetString(buffer, 0, totalRead);
         var reachedEnd = cursor + totalRead >= stream.Length;
         var lastNewLine = text.LastIndexOf('\n');
@@ -113,29 +119,43 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
         var lines = completeText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
         var startIndex = skipPartialFirstLine && lines.Length > 0 ? 1 : 0;
         var grouped = new Dictionary<string, MutableLogEvent>(StringComparer.Ordinal);
-        for (var index = startIndex; index < lines.Length && grouped.Count < MaximumEventsPerCycle; index++)
+        if (ProtheusConsoleLog.TryReadRecords(lines, startIndex, out var records))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var line = LogTextSanitizer.Sanitize(lines[index]);
-            if (line.Length == 0)
+            foreach (var record in records)
             {
-                continue;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (grouped.Count >= MaximumEventsPerCycle)
+                {
+                    break;
+                }
 
-            var level = LogTextSanitizer.DetectLevel(line);
-            if (level == "Debug")
-            {
-                continue;
-            }
+                if (Describe(record) is not { } described)
+                {
+                    continue;
+                }
 
-            var fingerprint = LogTextSanitizer.CreateFingerprint(line);
-            if (grouped.TryGetValue(fingerprint, out var existing))
-            {
-                existing.Count++;
+                Accumulate(grouped, source.Id, ResolveObservedAt(record.Timestamp), described.Level, described.Message);
             }
-            else
+        }
+        else
+        {
+            // O arquivo não tem o cabeçalho do AppServer: trata linha a linha, como antes.
+            for (var index = startIndex; index < lines.Length && grouped.Count < MaximumEventsPerCycle; index++)
             {
-                grouped[fingerprint] = new MutableLogEvent(source.Id, clock.UtcNow, level, line, fingerprint);
+                cancellationToken.ThrowIfCancellationRequested();
+                var line = LogTextSanitizer.Sanitize(lines[index]);
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+
+                var level = LogTextSanitizer.DetectLevel(line);
+                if (level == "Debug")
+                {
+                    continue;
+                }
+
+                Accumulate(grouped, source.Id, clock.UtcNow, level, line);
             }
         }
 
@@ -150,13 +170,124 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
             .ToArray();
     }
 
-    private static Encoding ResolveEncoding(string name) => name.Trim().ToLowerInvariant() switch
+    /// <summary>
+    /// O <c>console.log</c> do AppServer em Windows pt-BR é gravado em CP1252: lido como
+    /// UTF-8, todo acento vira caractere de substituição — e a assinatura da mensagem,
+    /// calculada em cima do texto, degrada junto. Com <c>auto</c> o UTF-8 estrito é
+    /// tentado primeiro e o CP1252 entra quando ele falha.
+    /// </summary>
+    private static Encoding ResolveEncoding(byte[] buffer, int count, string name) =>
+        name.Trim().ToLowerInvariant() switch
+        {
+            "unicode" or "utf-16" => Encoding.Unicode,
+            "bigendianunicode" or "utf-16be" => Encoding.BigEndianUnicode,
+            "ascii" => Encoding.ASCII,
+            "utf-8" or "utf8" => LenientUtf8,
+            "cp1252" or "windows-1252" or "1252" or "ansi" or "latin1" or "iso-8859-1" => Windows1252,
+            _ => LooksLikeUtf8(buffer, count) ? LenientUtf8 : Windows1252
+        };
+
+    /// <summary>
+    /// Decodifica em UTF-8 estrito para decidir o encoding. Uma falha nos últimos bytes é
+    /// ignorada: o bloco lido corta no meio de um caractere multibyte, não é sinal de
+    /// outro encoding.
+    /// </summary>
+    /// <summary>CP1252 não vem no runtime do .NET; o provedor precisa ser registrado.</summary>
+    private static Encoding CreateWindows1252()
     {
-        "unicode" or "utf-16" => Encoding.Unicode,
-        "bigendianunicode" or "utf-16be" => Encoding.BigEndianUnicode,
-        "ascii" => Encoding.ASCII,
-        _ => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false)
-    };
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(1252);
+    }
+
+    private static bool LooksLikeUtf8(byte[] buffer, int count)
+    {
+        var strict = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+        try
+        {
+            strict.GetString(buffer, 0, count);
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            // Sem margem para um caractere partido no fim do bloco.
+        }
+
+        if (count <= MaximumUtf8CharacterBytes)
+        {
+            return false;
+        }
+
+        try
+        {
+            strict.GetString(buffer, 0, count - MaximumUtf8CharacterBytes);
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            return false;
+        }
+    }
+
+    private static void Accumulate(
+        Dictionary<string, MutableLogEvent> grouped,
+        Guid logSourceId,
+        DateTimeOffset observedAt,
+        string level,
+        string message)
+    {
+        var fingerprint = LogTextSanitizer.CreateFingerprint(message);
+        if (grouped.TryGetValue(fingerprint, out var existing))
+        {
+            existing.Count++;
+            return;
+        }
+
+        grouped[fingerprint] = new MutableLogEvent(logSourceId, observedAt, level, message, fingerprint);
+    }
+
+    /// <summary>
+    /// Reduz um registro a uma linha de evento. Um bloco <c>THREAD ERROR</c> vira a
+    /// mensagem do erro com o fonte ADVPL onde ele estourou, e não as milhares de linhas
+    /// da pilha; devolve <c>null</c> quando não há nada que valha guardar.
+    /// </summary>
+    private static (string Level, string Message)? Describe(ConsoleLogRecord record)
+    {
+        if (ProtheusConsoleLog.TryDescribeThreadError(record.Body) is { } threadError)
+        {
+            var described = LogTextSanitizer.Sanitize(ProtheusConsoleLog.Describe(threadError));
+            var severity = record.Body.Any(line => line.Contains("[FATAL]", StringComparison.OrdinalIgnoreCase))
+                ? "Critical"
+                : "Error";
+            return described.Length == 0 ? null : (severity, described);
+        }
+
+        foreach (var candidate in record.Body)
+        {
+            var message = LogTextSanitizer.Sanitize(candidate);
+            if (message.Length == 0)
+            {
+                continue;
+            }
+
+            var level = LogTextSanitizer.DetectLevel(message);
+            return level == "Debug" ? null : (level, message);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// O horário vem do próprio AppServer, não da hora em que o Pulse leu o arquivo. Um
+    /// valor fora de faixa — relógio errado no servidor ou linha corrompida — cai de volta
+    /// no relógio do Pulse.
+    /// </summary>
+    private DateTimeOffset ResolveObservedAt(DateTimeOffset candidate)
+    {
+        var now = clock.UtcNow;
+        return candidate > now.AddHours(1) || candidate < now.AddDays(-7)
+            ? now
+            : candidate.ToUniversalTime();
+    }
 
     private sealed class MutableLogEvent(
         Guid logSourceId,
