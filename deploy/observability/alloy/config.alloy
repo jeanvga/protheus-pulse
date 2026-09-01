@@ -51,6 +51,6 @@ prometheus.receive_http "agents" {
 
 prometheus.remote_write "prometheus" {
   endpoint {
-    url = "http://prometheus:9090/api/v1/write"
+    url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
   }
 }

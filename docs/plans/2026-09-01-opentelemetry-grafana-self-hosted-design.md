@@ -58,7 +58,7 @@ A seção `Observability` terá pelo menos `Enabled`, `OtlpEndpoint`, `ServiceNa
 
 O exportador usa batch e limites internos do SDK. Exceções do pipeline são registradas sem revelar endpoint completo, credenciais ou payloads. Logs do `console.log` não serão relidos diretamente pelo Alloy no MVP, evitando duplicidade de cursores e bypass da sanitização existente.
 
-A divergência atual entre `LocalSystem` no instalador e `LocalService` na documentação deve ser corrigida no mesmo programa de trabalho, documentando a realidade e o risco residual. O Alloy deve preferencialmente usar conta dedicada com apenas os grupos e ACLs necessários à coleta Windows.
+A divergência identificada no início entre `LocalSystem` no instalador e `LocalService` na documentação é corrigida neste programa de trabalho, documentando a realidade e o risco residual. O Alloy deve preferencialmente usar conta dedicada com apenas os grupos e ACLs necessários à coleta Windows.
 
 ## Tratamento de falhas
 

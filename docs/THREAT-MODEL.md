@@ -12,6 +12,7 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 - contas, papéis, hashes de senha e tokens de sessão;
 - hashes de tokens de heartbeat e configuração protegida de notificações;
 - histórico, alertas e auditoria local.
+- métricas e credenciais da stack self-hosted quando a integração opcional está habilitada.
 
 ## Atores
 
@@ -21,6 +22,7 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 - atacante na rede interna;
 - endpoint, log ou arquivo monitorado malicioso/comprometido;
 - remetente de webhook/HTTP que tenta provocar SSRF ou exfiltração.
+- agente Alloy, proxy ou backend de observabilidade comprometido.
 
 ## Limites de confiança
 
@@ -29,6 +31,7 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 3. Coletores ↔ recursos monitorados: conteúdo lido é hostil e deve ser limitado/sanitizado.
 4. Host ↔ rede/UNC: DNS, TLS, compartilhamentos e respostas remotas não são confiáveis.
 5. Canal de notificação: a saída deixa o limite local e nunca deve conter segredo.
+6. Pulse ↔ Alloy local ↔ proxy/backend central: OTLP fica em loopback; qualquer salto de rede exige TLS, autenticação e métricas sem conteúdo sensível.
 
 ## Ameaças e mitigação
 
@@ -48,7 +51,9 @@ O modelo cobre o processo Protheus Pulse, dashboard, API local, SQLite, logs int
 | Token de administrador roubado usado para rajada de start/stop | Instabilidade do ambiente Protheus e ruído no SCM | Perfil `Administrator`, rate limit de 20 req/min por origem nas rotas que alteram estado e auditoria de cada ação |
 | Serviço que nunca sobe | Laço infinito de tentativas, ruído em log e auditoria | Backoff exponencial por serviço (1 min a 30 min) e desistência após cinco falhas consecutivas, exigindo start pelo painel |
 | Coletor bloqueado | Exaustão de threads/recursos | Async, `CancellationToken`, timeout e concorrência limitada |
-| Conta de serviço privilegiada | Movimento lateral | Nunca exigir LocalSystem; conceder somente leitura nos alvos |
+| Processo sob `LocalSystem` | Controle do host ou movimento lateral após comprometimento de token Administrator/processo | Bind loopback, RBAC, rate limit de ações, auditoria, ACLs restritas, mínimo de administradores e sem credenciais de rede no processo |
+| Exportação de telemetria | Exfiltração, interceptação ou cardinalidade sem limite | Desabilitada por padrão, OTLP HTTP apenas em loopback, HTTPS remoto obrigatório, dimensões limitadas, sem logs/SQL/segredos e gateway Alloy autenticado |
+| Backend Grafana indisponível | Perda de histórico externo ou bloqueio operacional | Pipeline assíncrono, batch limitado; SQLite, coleta, alertas e automação independentes da stack externa |
 | Supply chain | Execução de código malicioso | Lockfiles, auditoria npm, versões fixadas do .NET e CI limpa |
 
 ## Segredos
@@ -59,9 +64,11 @@ A chave JWT de produção vem de `PULSE_JWT_SIGNING_KEY_FILE`, criado pelo insta
 
 - Um administrador local ou comprometimento da conta do serviço permanece dentro do limite de confiança do host.
 - SQLite não oferece criptografia nativa; backup e volume dependem da proteção do Windows/BitLocker e dos controles corporativos.
-- `LocalService` acessa UNC como a conta da máquina, o que exige concessão externa cuidadosamente limitada.
+- O instalador padrão usa `LocalSystem`; comprometimento do processo ou de um token Administrator pode afetar serviços locais. O risco exige segmentação, poucos administradores, patching e revisão contínua da auditoria.
+- `LocalSystem` acessa UNC como a conta da máquina, o que exige concessão externa cuidadosamente limitada a `DOMINIO\SERVIDOR$`.
+- O Prometheus de referência não oferece multi-tenancy e o Compose não termina TLS; exposição em rede depende de reverse proxy, autenticação e firewall corporativos.
 - Windows Authentication e assinatura automática de artefatos ficam a cargo da infraestrutura corporativa.
 
 ## Regras de segurança invariantes
 
-O Pulse não escreve em pastas monitoradas, não altera serviços Protheus, não executa rotinas ERP, não compila fontes e não modifica INI, RPO, banco ou dicionário.
+Coletores do Pulse não escrevem em pastas monitoradas, não executam rotinas ERP, não compilam fontes e não modificam INI, RPO, banco ou dicionário. Alterações de estado ficam limitadas a start/stop/restart de serviços cadastrados, por ação autorizada, manutenção ou auto-start, sempre com controles e auditoria.

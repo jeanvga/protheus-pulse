@@ -13,6 +13,8 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    environment:
+      PROMETHEUS_REMOTE_WRITE_URL: http://prometheus:9090/api/v1/write
     ports:
       - "${OTLP_BIND_ADDRESS:-127.0.0.1}:${OTLP_HTTP_PORT:-4318}:4318"
       - "${REMOTE_WRITE_BIND_ADDRESS:-127.0.0.1}:${REMOTE_WRITE_PORT:-12347}:12347"

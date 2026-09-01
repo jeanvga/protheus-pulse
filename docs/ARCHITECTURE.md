@@ -65,6 +65,17 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 - HTTP aceita somente `GET`/`HEAD`, não segue redirects e lê no máximo 64 KiB quando precisa validar conteúdo.
 - Logs são lidos a partir de cursor persistido, no máximo 256 KiB por ciclo por padrão. Linhas são limitadas, redigidas e agrupadas por fingerprint antes da persistência.
 
+## Observabilidade externa opcional
+
+- `PulseTelemetry` registra métricas semânticas com `System.Diagnostics.Metrics` sem acoplar o domínio ao backend.
+- O SDK OpenTelemetry é registrado somente quando `Observability:Enabled=true` e exporta métricas em batch por OTLP/HTTP.
+- O caminho recomendado é Pulse → Alloy no loopback → remote write HTTPS → Prometheus central → Grafana.
+- SQLite continua como fonte de verdade operacional. Indisponibilidade do Alloy, Prometheus ou Grafana não altera saúde, alertas, SignalR, manutenção ou ações de serviço.
+- Mensagem/evidência de probe, linha de log, caminho, usuário, SQL, token e URL completa não são atributos de métrica.
+- Loki é provisionado para uma fase posterior de logs sanitizados; o MVP não relê `console.log` diretamente pelo Alloy.
+
+Detalhes operacionais e catálogo de métricas: [OBSERVABILITY.md](OBSERVABILITY.md).
+
 ## Alertas, notificações e retenção
 
 - O primeiro ciclo cria uma regra padrão por tipo de probe; por padrão, duas falhas consecutivas abrem o incidente e cinco minutos de cooldown evitam reabertura imediata.
@@ -77,5 +88,6 @@ O dashboard não recebe conteúdo integral de INI, tokens, senhas nem caminhos s
 
 - Heartbeats recebem um token de 256 bits uma única vez e persistem somente SHA-256. A comparação é constante, a rotação revoga imediatamente o valor anterior e o endpoint limita chamadas por job/origem.
 - O relógio do servidor define o evento; payload livre do cliente não é persistido. Janelas diárias podem atravessar meia-noite e atrasos fora da janela não geram incidente.
-- O serviço usa `LocalService`, binários somente leitura e dados com modificação limitada. Chave JWT, banco, logs e Data Protection ficam fora de `Program Files`.
+- O instalador registra o serviço como `LocalSystem`, necessário hoje para controlar outros serviços Windows e observar processos de usuários distintos. A conta amplia o impacto de um token Administrator comprometido, por isso bind loopback, RBAC, rate limit e auditoria são controles obrigatórios.
+- Binários permanecem somente leitura e os dados modificáveis ficam fora de `Program Files`. Chave JWT, banco, logs e Data Protection são protegidos por ACL e DPAPI da máquina.
 - Data Protection usa DPAPI da máquina mais ACL do diretório. O `setup.exe` chama um modo administrativo restrito do próprio binário publicado; o PowerShell permanece apenas como alternativa técnica no ZIP.

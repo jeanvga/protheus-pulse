@@ -72,8 +72,8 @@ prometheus.remote_write "central" {
     url = sys.env("PULSE_REMOTE_WRITE_URL")
 
     basic_auth {
-      username = sys.env("PULSE_REMOTE_WRITE_USERNAME")
-      password = sys.env("PULSE_REMOTE_WRITE_PASSWORD")
+      username      = sys.env("PULSE_REMOTE_WRITE_USERNAME")
+      password_file = sys.env("PULSE_REMOTE_WRITE_PASSWORD_FILE")
     }
   }
 }

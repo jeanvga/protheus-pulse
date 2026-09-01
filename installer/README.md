@@ -1,6 +1,6 @@
 # Instalador
 
-`ProtheusPulse.iss` gera um único instalador EXE x64. O fluxo normal não chama PowerShell: o executável publicado registra `ProtheusPulse` como `LocalService`, grava o `ImagePath` com aspas, cria o segredo JWT com ACL restrita, configura recuperação automática e valida `/health/ready`.
+`ProtheusPulse.iss` gera um único instalador EXE x64. O fluxo normal não chama PowerShell: o executável publicado registra `ProtheusPulse` como `LocalSystem`, grava o `ImagePath` com aspas, cria o segredo JWT com ACL restrita, configura recuperação automática e valida `/health/ready`. O privilégio é necessário para as funções atuais de controle de serviços e inspeção de processos; a documentação de instalação descreve os controles compensatórios.
 
 Gere os artefatos em um Windows com .NET 8, Node.js 24 e Inno Setup 6.6 ou mais recente:
 

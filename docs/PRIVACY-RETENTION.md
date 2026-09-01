@@ -1,6 +1,6 @@
 # Privacidade e retenção
 
-O Pulse funciona localmente e não envia telemetria a nuvem. O administrador da instalação controla banco, logs e backups.
+O Pulse funciona localmente e, por padrão, não envia telemetria para fora do host. O administrador pode habilitar explicitamente a exportação de métricas por OpenTelemetry para uma stack self-hosted na rede interna; Grafana Cloud não é configurado. O administrador da instalação controla banco, métricas externas, logs e backups.
 
 ## Dados armazenados
 
@@ -27,6 +27,8 @@ Cada execução:
 - preserva usuários, configuração atual e auditoria administrativa.
 
 Backups herdam a mesma classificação de segurança do banco ativo e devem ter retenção, criptografia e descarte definidos pela organização.
+
+Quando a observabilidade externa está habilitada, Prometheus e Grafana mantêm uma cópia independente das métricas exportadas e seguem a retenção da stack central, não a do SQLite. Mensagens/evidências, conteúdo de log, caminhos, usuários, SQL e tokens não são atributos; nomes de instalação e componente ainda constituem topologia interna. Veja [OBSERVABILITY.md](OBSERVABILITY.md).
 
 ## Direitos operacionais
 

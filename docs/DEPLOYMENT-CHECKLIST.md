@@ -14,7 +14,7 @@ Este checklist orienta a implantação segura do Protheus Pulse. Use dados sint�
 ## 2. Instalar
 
 - [ ] Executar `protheus-pulse-1.2.0-win-x64-setup.exe` e aprovar a elevação solicitada.
-- [ ] Confirmar serviço `ProtheusPulse` em execução como `LocalService`.
+- [ ] Confirmar serviço `ProtheusPulse` em execução como `LocalSystem` e registrar a aceitação desse privilégio no host.
 - [ ] Confirmar `http://127.0.0.1:5058/health/live` com HTTP 200.
 - [ ] Confirmar `http://127.0.0.1:5058/health/ready` com HTTP 200.
 - [ ] Confirmar que nenhuma regra de firewall foi criada.
@@ -25,7 +25,7 @@ Este checklist orienta a implantação segura do Protheus Pulse. Use dados sint�
 - [ ] Começar por uma instalação de desenvolvimento/homologação.
 - [ ] Fazer todo o cadastro em `http://127.0.0.1:5058`, sem scripts ou edição manual de configuração.
 - [ ] Cadastrar um componente por vez.
-- [ ] Conceder à conta do serviço apenas leitura nos caminhos necessários.
+- [ ] Confirmar somente leitura nos caminhos monitorados; para UNC, limitar a identidade `DOMINIO\SERVIDOR$` no compartilhamento e no NTFS.
 - [ ] Usar UNC, nunca unidade mapeada; revisar permissões do compartilhamento e NTFS.
 - [ ] Executar descoberta limitada e revisar a prévia antes de importar.
 - [ ] Não cadastrar endpoint que execute ação ou altere estado ao receber GET/HEAD.
@@ -49,7 +49,19 @@ Este checklist orienta a implantação segura do Protheus Pulse. Use dados sint�
 - [ ] Confirmar rejeição com token inválido e rotação do token.
 - [ ] Confirmar atraso somente dentro da janela configurada.
 
-## 6. Aceite e operação
+## 6. Observabilidade externa (opcional)
+
+- [ ] Manter `Observability:Enabled=false` se não houver stack self-hosted aprovada.
+- [ ] Instalar Alloy no mesmo host e confirmar receiver OTLP somente em `127.0.0.1:4318`.
+- [ ] Usar remote write HTTPS autenticado e senha em arquivo com ACL, nunca no repositório.
+- [ ] Manter Prometheus/Loki sem portas públicas e publicar Grafana somente por proxy HTTPS.
+- [ ] Confirmar no Grafana as métricas `protheus_pulse_component_health` e `windows_cpu_time_total`.
+- [ ] Derrubar temporariamente a stack externa e confirmar que coleta, alertas e ações locais continuam funcionando.
+- [ ] Definir retenção, capacidade, backup e restauração dos volumes centrais.
+
+Veja [OBSERVABILITY.md](OBSERVABILITY.md).
+
+## 7. Aceite e operação
 
 - [ ] Reiniciar o servidor ou serviço em janela aprovada e confirmar início automático atrasado.
 - [ ] Criar backup protegido de `C:\ProgramData\ProtheusPulse` com o serviço parado.

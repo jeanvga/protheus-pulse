@@ -8,20 +8,20 @@ O padrão seguro instala:
 
 - binários em `C:\Program Files\Protheus Pulse`;
 - banco, logs e chaves em `C:\ProgramData\ProtheusPulse`;
-- serviço `ProtheusPulse`, automático atrasado, sob `NT AUTHORITY\LocalService`;
+- serviço `ProtheusPulse`, automático atrasado, sob `NT AUTHORITY\SYSTEM` (`LocalSystem`);
 - endpoint somente em `http://127.0.0.1:5058`.
 
-O aplicativo é independente do Protheus e não altera serviços, INI, RPO, banco ou arquivos monitorados.
+O aplicativo é independente do Protheus. Coletores não alteram INI, RPO, banco ou arquivos monitorados. Somente ações explícitas de Administrator, modo manutenção e auto-start alteram o estado dos serviços Windows cadastrados.
 
 ## Pré-requisitos
 
 - Windows Server 2016 ou mais recente, x64;
 - sessão administrativa apenas durante instalação/atualização;
 - porta local 5058 livre;
-- acesso de leitura da conta do serviço aos recursos monitorados;
+- revisão dos acessos do `LocalSystem` aos recursos monitorados e do acesso administrativo ao Pulse;
 - espaço e política de backup para `C:\ProgramData\ProtheusPulse`.
 
-A publicação é self-contained e não exige instalação separada do .NET. Para UNC, conceda leitura no compartilhamento e no NTFS à identidade do computador (`DOMINIO\SERVIDOR$`) ou use uma conta de serviço corporativa aprovada em uma instalação customizada. Não use unidade mapeada e não grave credenciais no Pulse.
+A publicação é self-contained e não exige instalação separada do .NET. O instalador padrão usa `LocalSystem` porque iniciar/parar serviços e observar processos de outros usuários exige privilégio local elevado. Para UNC, essa conta acessa a rede como a identidade do computador: conceda somente leitura no compartilhamento e no NTFS a `DOMINIO\SERVIDOR$`, ou use uma conta de serviço corporativa aprovada em uma instalação customizada. Não use unidade mapeada e não grave credenciais no Pulse.
 
 ## Instalar pelo `.exe` (recomendado)
 
@@ -69,6 +69,8 @@ Para acesso remoto, coloque um reverse proxy HTTPS autenticado/restrito diante d
 O instalador cria `C:\ProgramData\ProtheusPulse\secrets\jwt.key` com aleatoriedade criptográfica. O serviço lê o arquivo por `PULSE_JWT_SIGNING_KEY_FILE`; o valor não entra em `appsettings.json`, logs ou registro. Não exiba nem copie esse arquivo.
 
 As chaves do ASP.NET Core Data Protection são protegidas por DPAPI da máquina e por ACL. Banco, chaves, logs e backup devem continuar restritos a administradores, `SYSTEM` e à conta do serviço.
+
+Como o processo roda como `LocalSystem`, uma conta Administrator do Pulse controla serviços no host. Preserve o bind em loopback, publique acesso remoto somente por reverse proxy HTTPS restrito, mantenha poucos administradores e monitore a auditoria. Se a organização substituir a conta em uma instalação customizada, valide antes as permissões de SCM, processos, arquivos, DPAPI e UNC; a troca não faz parte do instalador padrão.
 
 ## Desinstalação
 

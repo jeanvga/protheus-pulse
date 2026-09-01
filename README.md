@@ -4,7 +4,7 @@ Painel local para monitorar e operar instalações TOTVS Protheus em Windows Ser
 
 Você instala em um servidor, cadastra seus ambientes e acompanha em uma tela só se cada serviço está no ar, se as portas respondem, se o certificado vence, se o disco está acabando e o que os logs mostraram. Também dá para iniciar, reiniciar e parar os serviços pelo painel.
 
-Roda sozinho no seu servidor. Não usa nuvem, não manda dado para fora e não altera INI, RPO nem banco do Protheus.
+Roda sozinho no seu servidor. Por padrão não usa nuvem nem envia telemetria para fora do host. Opcionalmente, pode exportar métricas por OpenTelemetry para uma stack Grafana self-hosted dentro da rede do cliente. Não altera INI, RPO nem banco do Protheus.
 
 Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desenvolvimento ADVPL para Protheus](https://pullsia.com.br/desenvolvimento-advpl-protheus).
 
@@ -21,6 +21,7 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 - Cada ambiente aparece como Saudável, Atenção, Crítico, Desconhecido ou Em manutenção.
 - Atualização em tempo real na tela, sem precisar recarregar a página.
 - Página de logs com busca por mensagem, componente e ambiente, e filtro por severidade.
+- Exportação opt-in de métricas semânticas e do runtime .NET por OTLP para Grafana Alloy, com stack self-hosted de referência para Prometheus, Loki e Grafana.
 
 **Alertas**
 
@@ -48,6 +49,7 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 - Escuta só em `127.0.0.1:5058` por padrão, com limite de requisições e cabeçalhos de segurança.
 - Coleta é somente leitura: o Pulse não executa binário do Protheus nem edita arquivo monitorado.
 - Segredos são mascarados nos logs e nas evidências.
+- O serviço Windows instalado usa `LocalSystem` porque as funções administrativas controlam outros serviços; mantenha o dashboard em loopback, limite administradores e revise a auditoria.
 
 **Instalação**
 
@@ -156,6 +158,7 @@ Leia [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar falha de segurança, siga
 | Alertas e manutenção | [docs/ALERTING.md](docs/ALERTING.md) |
 | Envio de e-mail (SMTP) | [docs/EMAIL.md](docs/EMAIL.md) |
 | Heartbeats | [docs/HEARTBEATS.md](docs/HEARTBEATS.md) |
+| OpenTelemetry e Grafana self-hosted | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 | Privacidade e retenção de dados | [docs/PRIVACY-RETENTION.md](docs/PRIVACY-RETENTION.md) |
 | Checklist de implantação | [docs/DEPLOYMENT-CHECKLIST.md](docs/DEPLOYMENT-CHECKLIST.md) |
 | Arquitetura | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
