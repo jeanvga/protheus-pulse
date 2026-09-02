@@ -24,16 +24,6 @@ public sealed class DatabaseReadyState
     public void MarkFailed(string failure) => Failure = failure;
 
     /// <summary>Espera o esquema ficar pronto; sai antes se o serviço estiver parando.</summary>
-    public async Task WaitAsync(CancellationToken cancellationToken)
-    {
-        if (IsReady)
-        {
-            return;
-        }
-
-        var cancellation = new TaskCompletionSource();
-        await using var registration = cancellationToken.Register(() => cancellation.TrySetResult());
-        await Task.WhenAny(ready.Task, cancellation.Task);
-        cancellationToken.ThrowIfCancellationRequested();
-    }
+    public Task WaitAsync(CancellationToken cancellationToken) =>
+        IsReady ? Task.CompletedTask : ready.Task.WaitAsync(cancellationToken);
 }

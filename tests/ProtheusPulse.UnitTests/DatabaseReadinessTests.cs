@@ -68,6 +68,7 @@ public sealed class DatabaseReadinessTests
 
         await stopping.CancelAsync();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() => waiting);
+        // TaskCanceledException herda de OperationCanceledException; o que importa é desistir.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
     }
 }

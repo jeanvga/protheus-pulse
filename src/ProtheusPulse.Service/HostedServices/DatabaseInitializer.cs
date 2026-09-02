@@ -27,16 +27,24 @@ public sealed partial class DatabaseInitializer(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (shutdown is not null)
+        try
         {
-            await shutdown.CancelAsync();
+            if (shutdown is not null)
+            {
+                await shutdown.CancelAsync();
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // Host já descartado: não há o que cancelar.
         }
 
         if (migration is not null)
         {
-            await Task.WhenAny(migration, Task.Delay(Timeout.Infinite, cancellationToken));
+            // Espera curta e desatrelada do token de parada: a migração já foi cancelada,
+            // e o encerramento não pode depender de um token que pode estar descartado.
+            await Task.WhenAny(migration, Task.Delay(TimeSpan.FromSeconds(5), CancellationToken.None));
         }
-
     }
 
     public void Dispose() => shutdown?.Dispose();

@@ -2,12 +2,15 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
-## [1.9.1] - 2026-09-02
+## [1.9.2] - 2026-09-02
+
+A 1.9.1 foi marcada mas não chegou a gerar instalador: a suíte de integração terminava com `ObjectDisposedException` na limpeza e o processo saía com erro mesmo com os 131 testes passando. A causa era o próprio encerramento do inicializador de banco, que esperava a migração usando o token de parada do host — já descartado nesse ponto. O conteúdo abaixo é o dela, com essa correção.
 
 ### Fixed
 
 - A instalação falhava com o erro 1053 — "o serviço não respondeu à requisição de início em tempo hábil" — em servidor com banco já grande. A migração rodava dentro do `StartAsync`, ou seja **antes** de o processo se registrar no Gerenciador de Serviços, e criar índice num histórico de meses passa da janela de 30 segundos do SCM. Agora a migração roda em segundo plano: o serviço se registra de imediato, o `/health/ready` recusa enquanto o esquema não está aplicado e o instalador espera até dez minutos mostrando o progresso. Migração que falha passa a ser informada pelo health check em vez de derrubar o processo em silêncio.
 - O painel demorava cerca de oito segundos por atualização. A consulta que lê a última disponibilidade de cada componente filtra por nome da métrica, mas o único índice começava por `ComponentId`, o que obrigava a varrer a tabela inteira de amostras a cada trinta segundos. Índice por `(Name, ObservedAt)` acrescentado.
+- O encerramento do serviço podia lançar `ObjectDisposedException`: a espera pela migração usava o token de parada do host, que pode já estar descartado quando o `StopAsync` roda. A espera passou a ser curta e desatrelada desse token.
 - A validação de saúde do instalador apontava sempre para a porta 5058. Numa instalação que mudou a porta em Configurações, a instalação falhava mesmo com o serviço no ar; agora a porta vem do `network.json`.
 
 ## [1.9.0] - 2026-09-02
