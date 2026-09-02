@@ -16,7 +16,7 @@ import {
 } from './api'
 import type {
   AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
-  EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, MaintenanceStatus, PathCandidate,
+  EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventPage, MaintenanceStatus, PathCandidate,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
 } from './types'
@@ -237,7 +237,7 @@ function PageContent({ page, summary, refresh, goTo, addInstallation, editInstal
     case 'server': return <ServerPage />
     case 'overview': return <Overview summary={summary} refresh={refresh} goTo={goTo} addInstallation={addInstallation} />
     case 'installations': return <Installations summary={summary} refresh={refresh} addInstallation={addInstallation} editInstallation={editInstallation} />
-    case 'logs': return <LogsPage />
+    case 'logs': return <LogsPage components={summary.components} />
     case 'jobs': return <JobsPage components={summary.components} />
     case 'alerts': return <AlertsPage alerts={summary.alerts} refresh={refresh} />
     case 'settings': return <SettingsPage />
@@ -880,41 +880,87 @@ function logLevelLabel(level: string) {
   return ({ Critical: 'Crítico', Error: 'Erro', Warning: 'Aviso', Information: 'Info' } as Record<string, string>)[level] ?? level
 }
 
-function LogsPage() {
-  const [events, setEvents] = useState<LogEventItem[]>([])
+const logPeriodFilters = [
+  { id: '24h', label: '24 horas', hours: 24 },
+  { id: '7d', label: '7 dias', hours: 24 * 7 },
+  { id: '30d', label: '30 dias', hours: 24 * 30 },
+  { id: 'all', label: 'Todo o histórico', hours: 0 }
+]
+
+const logPageSize = 100
+
+function LogsPage({ components }: { components: ComponentSnapshot[] }) {
+  const [page, setPage] = useState<LogEventPage>({ total: 0, byLevel: {}, items: [] })
   const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
   const [level, setLevel] = useState('all')
+  const [componentId, setComponentId] = useState('all')
+  const [period, setPeriod] = useState('7d')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
+  // A busca vai ao servidor; sem a espera, cada tecla viraria uma consulta.
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const from = useMemo(() => {
+    const hours = logPeriodFilters.find(item => item.id === period)?.hours ?? 0
+    return hours === 0 ? undefined : new Date(Date.now() - hours * 3_600_000).toISOString()
+  }, [period])
+
+  const query = useMemo(() => ({
+    search: appliedSearch,
+    level,
+    componentId: componentId === 'all' ? undefined : componentId,
+    from
+  }), [appliedSearch, level, componentId, from])
+
+  const load = useCallback(async (skip: number) => {
     setLoading(true)
     try {
-      setEvents(await getLogEvents())
+      const result = await getLogEvents({ ...query, take: logPageSize, skip })
+      setPage(previous => skip === 0 ? result : { ...result, items: [...previous.items, ...result.items] })
       setError(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os logs.')
     } finally { setLoading(false) }
-  }, [])
-  useEffect(() => { void load() }, [load])
+  }, [query])
 
-  const normalizedSearch = search.trim().toLowerCase()
-  const filtered = events.filter(item => (level === 'all' || item.level === level)
-    && (normalizedSearch === ''
-      || item.message.toLowerCase().includes(normalizedSearch)
-      || item.componentName.toLowerCase().includes(normalizedSearch)
-      || item.installationName.toLowerCase().includes(normalizedSearch)))
+  useEffect(() => { void load(0) }, [load])
+
+  const shown = page.items.length
+  const hasMore = shown < page.total
+  const filtersActive = appliedSearch !== '' || level !== 'all' || componentId !== 'all' || period !== 'all'
 
   return <div className="page-body">
-    <section className="toolbar"><div className="search-box"><Search size={17} /><input aria-label="Pesquisar logs" placeholder="Pesquisar mensagem, componente ou instalação…" value={search} onChange={event => setSearch(event.target.value)} /></div><button className="secondary-button" disabled={loading} onClick={() => void load()}><RefreshCw size={16} /> Atualizar</button></section>
-    <section className="summary-chips">{logLevelFilters.map(item => <button key={item.id} className={level === item.id ? 'active' : ''} onClick={() => setLevel(item.id)}>{item.label} <strong>{item.id === 'all' ? events.length : events.filter(event => event.level === item.id).length}</strong></button>)}</section>
+    <section className="toolbar">
+      <div className="search-box"><Search size={17} /><input aria-label="Pesquisar logs" placeholder="Pesquisar mensagem, componente ou instalação…" value={search} onChange={event => setSearch(event.target.value)} /></div>
+      <label className="toolbar-field">Componente
+        <select aria-label="Filtrar por componente" value={componentId} onChange={event => setComponentId(event.target.value)}>
+          <option value="all">Todos</option>
+          {components.map(item => <option key={item.id} value={item.id}>{item.name} · {item.installationName}</option>)}
+        </select>
+      </label>
+      <label className="toolbar-field">Período
+        <select aria-label="Filtrar por período" value={period} onChange={event => setPeriod(event.target.value)}>
+          {logPeriodFilters.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+        </select>
+      </label>
+      <button className="secondary-button" disabled={loading} onClick={() => void load(0)}><RefreshCw size={16} /> Atualizar</button>
+    </section>
+    <section className="summary-chips">{logLevelFilters.map(item => <button key={item.id} className={level === item.id ? 'active' : ''} onClick={() => setLevel(item.id)}>{item.label} <strong>{item.id === 'all' ? page.total : page.byLevel[item.id] ?? 0}</strong></button>)}</section>
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
-    <article className="panel"><PanelHeader title="Eventos coletados dos logs" subtitle="Mensagens sanitizadas e agrupadas por assinatura · mais recentes primeiro" />
-      {loading
+    <article className="panel"><PanelHeader title="Eventos coletados dos logs" subtitle={`Mensagens sanitizadas e agrupadas por assinatura · ${shown} de ${page.total} no período`} />
+      {loading && shown === 0
         ? <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando eventos…</div>
-        : filtered.length === 0
-          ? <div className="empty-state"><Check size={22} /> Nenhum evento de log para os filtros atuais.</div>
-          : filtered.map(item => <div className="log-group" key={item.id}><span className={`log-count ${item.level === 'Information' ? 'muted' : ''}`}>{item.occurrenceCount}×</span><div><strong>{item.message}</strong><p>{item.componentName} · {item.installationName}</p><small>{new Date(item.observedAt).toLocaleString('pt-BR')} · {formatRelative(item.observedAt)}</small></div><StatusBadge status={logLevelStatus(item.level)} label={logLevelLabel(item.level)} /></div>)}
+        : shown === 0
+          ? <div className="empty-state"><Check size={22} /> {filtersActive ? 'Nenhum evento de log para os filtros atuais.' : 'Nenhum evento de log coletado ainda.'}</div>
+          : <>
+            {page.items.map(item => <div className="log-group" key={item.id}><span className={`log-count ${item.level === 'Information' ? 'muted' : ''}`}>{item.occurrenceCount}×</span><div><strong>{item.message}</strong><p>{item.componentName} · {item.installationName}</p><small>{new Date(item.observedAt).toLocaleString('pt-BR')} · {formatRelative(item.observedAt)}</small></div><StatusBadge status={logLevelStatus(item.level)} label={logLevelLabel(item.level)} /></div>)}
+            {hasMore && <button className="secondary-button load-more" disabled={loading} onClick={() => void load(shown)}>{loading ? 'Carregando…' : `Carregar mais ${Math.min(logPageSize, page.total - shown)}`}</button>}
+          </>}
     </article>
   </div>
 }

@@ -2,7 +2,7 @@ import * as signalR from '@microsoft/signalr'
 import { demoServerResources, demoSummary } from './demoData'
 import type {
   AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, EmailSettings, EmailTestResult,
-  InstallationConfiguration, InstallationCreated, LogEventItem, MaintenanceChangeResult, MaintenanceStatus,
+  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus,
   PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
   ServiceActionResponse, ServiceDiscoveryResult,
 } from './types'
@@ -94,9 +94,17 @@ export async function collectNow(): Promise<CollectionResult> {
   return request<CollectionResult>('/api/v1/diagnostics/collect-now', { method: 'POST', body: '{}' })
 }
 
-export async function getLogEvents(): Promise<LogEventItem[]> {
-  if (staticDemo) return []
-  return request<LogEventItem[]>('/api/v1/log-events')
+export async function getLogEvents(query: LogEventQuery = {}): Promise<LogEventPage> {
+  if (staticDemo) return { total: 0, byLevel: {}, items: [] }
+  const parameters = new URLSearchParams()
+  if (query.search?.trim()) parameters.set('search', query.search.trim())
+  if (query.level && query.level !== 'all') parameters.set('level', query.level)
+  if (query.componentId) parameters.set('componentId', query.componentId)
+  if (query.from) parameters.set('from', query.from)
+  if (query.take !== undefined) parameters.set('take', String(query.take))
+  if (query.skip) parameters.set('skip', String(query.skip))
+  const suffix = parameters.toString()
+  return request<LogEventPage>(`/api/v1/log-events${suffix ? `?${suffix}` : ''}`)
 }
 
 export async function executeServiceAction(componentId: string, action: ServiceAction): Promise<ServiceActionResponse> {

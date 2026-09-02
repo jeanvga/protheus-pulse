@@ -48,6 +48,21 @@ export interface LogEventItem {
   occurrenceCount: number
 }
 
+export interface LogEventQuery {
+  search?: string
+  level?: string
+  componentId?: string
+  from?: string
+  take?: number
+  skip?: number
+}
+
+export interface LogEventPage {
+  total: number
+  byLevel: Record<string, number>
+  items: LogEventItem[]
+}
+
 export type ServiceAction = 'start' | 'stop' | 'restart'
 
 export interface ServiceActionOutcome {

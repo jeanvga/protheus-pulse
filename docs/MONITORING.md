@@ -52,6 +52,18 @@ Cada componente recebe um escopo isolado do SQLite. Mudanças de estado são per
 - **Encoding do log:** `auto` tenta UTF-8 estrito e cai para CP1252 quando ele falha, que é como o AppServer grava em
   Windows pt-BR; ler CP1252 como UTF-8 substituiria todo acento e degradaria o agrupamento por assinatura. Também são
   aceitos `utf-8`, `cp1252`, `latin1`, `unicode`, `utf-16be` e `ascii`.
+
+### O que ler do AppServer
+
+O `console.log` é ligado por `ConsoleLog=1` na seção `[General]` do `appserver.ini`; `ConsoleFile` muda o caminho e
+`ConsoleMaxSize` o tamanho máximo — 5 MB até a build 24.3.0.3 e 50 MB a partir da 24.3.0.4. Ao estourar o limite o
+AppServer renomeia o arquivo para `.BAK` e começa outro: o Pulse detecta a troca pelo identificador do arquivo e
+recomeça do fim, mas o que ainda não tinha sido lido foi junto com o `.BAK`. Mantenha o intervalo de coleta menor que o
+tempo de rotação e o `MaximumLogBytesPerCycle` compatível com o volume que o ambiente escreve.
+
+O `error.log` (`ErroMaxSize`, padrão 3 MB) é outra origem: ele guarda o mesmo bloco de erro em forma completa, e pode
+ser cadastrado como uma segunda origem de log do mesmo componente.
+
 - **Heartbeat:** compara o último evento autenticado com intervalo e tolerância; respeita janela diária no horário local e nunca aceita horário fornecido pelo cliente.
 
 ## Estados

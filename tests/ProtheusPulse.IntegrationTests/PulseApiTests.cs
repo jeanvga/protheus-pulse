@@ -456,6 +456,103 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task LogEventsEndpointFiltersOnTheServerBySearchLevelComponentAndPage()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        var marker = $"MARCADOR{Guid.NewGuid():N}";
+        var componentId = Guid.NewGuid();
+        var logSourceId = Guid.NewGuid();
+        var observedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            dbContext.Installations.Add(new Installation
+            {
+                Name = $"Busca de logs {Guid.NewGuid():N}",
+                Environment = EnvironmentKind.Development,
+                CreatedAt = DateTimeOffset.UtcNow,
+                Components =
+                [
+                    new Component
+                    {
+                        Id = componentId,
+                        Name = "AppServer sintético de busca",
+                        Type = ComponentType.AppServer,
+                        LogSources = [new LogSource { Id = logSourceId, Path = "C:\\sintetico\\console.log" }]
+                    }
+                ]
+            });
+            await dbContext.SaveChangesAsync();
+            dbContext.LogEvents.AddRange(
+                CreateLogEvent(componentId, logSourceId, observedAt, "Error", $"{marker} falha de conexao"),
+                CreateLogEvent(componentId, logSourceId, observedAt.AddMinutes(-1), "Warning", $"{marker} aviso de fila"),
+                CreateLogEvent(componentId, logSourceId, observedAt.AddMinutes(-2), "Error", $"{marker} falha de indice"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var all = await QueryLogEventsAsync(token, $"?search={marker}");
+        Assert.Equal(3, all.Total);
+        Assert.Equal(3, all.Items.Length);
+        Assert.Equal(2, all.ByLevel["Error"]);
+        Assert.Equal(1, all.ByLevel["Warning"]);
+
+        var errors = await QueryLogEventsAsync(token, $"?search={marker}&level=Error");
+        Assert.Equal(2, errors.Total);
+        Assert.All(errors.Items, item => Assert.Equal("Error", item.Level));
+
+        // A busca alcança o histórico inteiro, não só a página carregada.
+        var term = Uri.EscapeDataString($"{marker} falha de indice");
+        var single = await QueryLogEventsAsync(token, $"?search={term}");
+        Assert.Equal(1, single.Total);
+
+        var firstPage = await QueryLogEventsAsync(token, $"?search={marker}&take=2");
+        Assert.Equal(3, firstPage.Total);
+        Assert.Equal(2, firstPage.Items.Length);
+        var secondPage = await QueryLogEventsAsync(token, $"?search={marker}&take=2&skip=2");
+        Assert.Single(secondPage.Items);
+        Assert.DoesNotContain(secondPage.Items[0].Id, firstPage.Items.Select(item => item.Id));
+
+        var byComponent = await QueryLogEventsAsync(token, $"?componentId={componentId}");
+        Assert.Equal(3, byComponent.Total);
+
+        var future = Uri.EscapeDataString(DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"));
+        var outOfRange = await QueryLogEventsAsync(token, $"?search={marker}&from={future}");
+        Assert.Equal(0, outOfRange.Total);
+        Assert.Empty(outOfRange.Items);
+    }
+
+    private static LogEvent CreateLogEvent(
+        Guid componentId,
+        Guid logSourceId,
+        DateTimeOffset observedAt,
+        string level,
+        string message) => new()
+        {
+            ComponentId = componentId,
+            LogSourceId = logSourceId,
+            ObservedAt = observedAt,
+            Level = level,
+            Message = message,
+            Fingerprint = Guid.NewGuid().ToString("N"),
+            OccurrenceCount = 1
+        };
+
+    private async Task<LogEventPageResponse> QueryLogEventsAsync(string token, string queryString)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"/api/v1/log-events{queryString}", UriKind.Relative));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var page = await response.Content.ReadFromJsonAsync<LogEventPageResponse>();
+        Assert.NotNull(page);
+        return page;
+    }
+
+    private sealed record LogEventPageResponse(int Total, Dictionary<string, int> ByLevel, LogEventResponse[] Items);
+
+    private sealed record LogEventResponse(Guid Id, string Level, string Message, int OccurrenceCount);
+
+    [Fact]
     public async Task MonitoringCyclePersistsRealProbeAndUpdatesComponentStatus()
     {
         var root = Path.Combine(Path.GetTempPath(), "protheus-pulse-cycle-tests", Guid.NewGuid().ToString("N"));

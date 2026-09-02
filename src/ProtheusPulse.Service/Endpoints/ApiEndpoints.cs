@@ -67,22 +67,81 @@ public static class ApiEndpoints
             return Results.Ok(dashboard.Alerts);
         }).RequireAuthorization("Viewer");
 
-        api.MapGet("/log-events", async (PulseDbContext db, CancellationToken cancellationToken) => Results.Ok(await db.LogEvents
-            .AsNoTracking()
-            .OrderByDescending(item => item.ObservedAt)
-            .Take(200)
-            .Select(item => new
+        // O filtro roda no banco: procurar dentro das duzentas linhas já carregadas
+        // encontrava apenas o que estava na tela, e o histórico guarda trinta dias.
+        api.MapGet("/log-events", async (
+            PulseDbContext db,
+            string? search,
+            string? level,
+            Guid? componentId,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            int? take,
+            int? skip,
+            CancellationToken cancellationToken) =>
+        {
+            var query = db.LogEvents.AsNoTracking();
+            if (!string.IsNullOrWhiteSpace(level) && !string.Equals(level, "all", StringComparison.OrdinalIgnoreCase))
             {
-                item.Id,
-                item.ComponentId,
-                InstallationName = item.Component.Installation.Name,
-                ComponentName = item.Component.Name,
-                item.ObservedAt,
-                item.Level,
-                item.Message,
-                item.OccurrenceCount
-            })
-            .ToListAsync(cancellationToken))).RequireAuthorization("Viewer");
+                query = query.Where(item => item.Level == level);
+            }
+
+            if (componentId is { } component)
+            {
+                query = query.Where(item => item.ComponentId == component);
+            }
+
+            if (from is { } start)
+            {
+                query = query.Where(item => item.ObservedAt >= start);
+            }
+
+            if (to is { } end)
+            {
+                query = query.Where(item => item.ObservedAt <= end);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                // LIKE no SQLite ignora maiúsculas em ASCII; os curingas do usuário são
+                // escapados para que "100%" procure o texto e não qualquer coisa.
+                var term = search.Trim()
+                    .Replace("\\", "\\\\", StringComparison.Ordinal)
+                    .Replace("%", "\\%", StringComparison.Ordinal)
+                    .Replace("_", "\\_", StringComparison.Ordinal);
+                var pattern = $"%{term}%";
+                query = query.Where(item => EF.Functions.Like(item.Message, pattern, "\\")
+                    || EF.Functions.Like(item.Component.Name, pattern, "\\")
+                    || EF.Functions.Like(item.Component.Installation.Name, pattern, "\\"));
+            }
+
+            var byLevel = await query
+                .GroupBy(item => item.Level)
+                .Select(group => new { Level = group.Key, Count = group.Count() })
+                .ToListAsync(cancellationToken);
+            var items = await query
+                .OrderByDescending(item => item.ObservedAt)
+                .Skip(Math.Max(0, skip ?? 0))
+                .Take(Math.Clamp(take ?? 100, 1, 500))
+                .Select(item => new
+                {
+                    item.Id,
+                    item.ComponentId,
+                    InstallationName = item.Component.Installation.Name,
+                    ComponentName = item.Component.Name,
+                    item.ObservedAt,
+                    item.Level,
+                    item.Message,
+                    item.OccurrenceCount
+                })
+                .ToListAsync(cancellationToken);
+            return Results.Ok(new
+            {
+                Total = byLevel.Sum(entry => entry.Count),
+                ByLevel = byLevel.ToDictionary(entry => entry.Level, entry => entry.Count),
+                Items = items
+            });
+        }).RequireAuthorization("Viewer");
 
         api.MapGet("/maintenance-windows", async (PulseDbContext db, CancellationToken cancellationToken) => Results.Ok(await db.MaintenanceWindows
             .AsNoTracking()
