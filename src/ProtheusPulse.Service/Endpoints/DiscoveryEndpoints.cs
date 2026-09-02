@@ -23,7 +23,96 @@ public static class DiscoveryEndpoints
         api.MapPost("/discovery/paths", DiscoverPathsAsync).RequireAuthorization("Administrator");
         api.MapPost("/discovery/ini", InspectIniAsync).RequireAuthorization("Administrator");
         api.MapPost("/discovery/component", ProposeComponentAsync).RequireAuthorization("Administrator");
+        api.MapGet("/discovery/browse", Browse).RequireAuthorization("Administrator");
         return api;
+    }
+
+    /// <summary>
+    /// Navegação de pastas do servidor. O navegador não entrega caminho absoluto — nem
+    /// <c>webkitdirectory</c> nem a File System Access API expõem isso —, e um seletor
+    /// nativo abriria o disco de quem está olhando a tela, que desde o acesso remoto pode
+    /// ser outra máquina. Quem lista é o serviço, que roda no servidor certo.
+    /// Somente leitura: devolve nome de pasta, nunca conteúdo de arquivo.
+    /// </summary>
+    private static IResult Browse(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return Results.Ok(new BrowseResult(null, null, ReadDrives(), false));
+        }
+
+        if (path.Length > 2_048 || path.Any(char.IsControl))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["path"] = ["Caminho inválido."] });
+        }
+
+        string current;
+        try
+        {
+            current = Path.GetFullPath(path.Trim());
+            if (!Directory.Exists(current))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["path"] = ["A pasta não existe ou não está acessível."] });
+            }
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["path"] = ["A pasta não existe ou não está acessível."] });
+        }
+
+        var entries = new List<BrowseEntry>();
+        var looksLikeProtheus = false;
+        try
+        {
+            foreach (var directory in Directory.EnumerateDirectories(current).Order(StringComparer.OrdinalIgnoreCase))
+            {
+                if (entries.Count >= MaximumBrowseEntries)
+                {
+                    break;
+                }
+
+                // Reparse point não é seguido: evita laço e saída inesperada do volume.
+                if (new DirectoryInfo(directory).Attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    continue;
+                }
+
+                entries.Add(new BrowseEntry(Path.GetFileName(directory), directory));
+            }
+
+            looksLikeProtheus = Directory.EnumerateFiles(current, "*.ini").Any()
+                || Directory.EnumerateFiles(current, "*.exe").Any(item =>
+                    Path.GetFileName(item).Contains("appserver", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+        {
+            return Results.Ok(new BrowseResult(current, ParentOf(current), [], false));
+        }
+
+        return Results.Ok(new BrowseResult(current, ParentOf(current), entries, looksLikeProtheus));
+    }
+
+    private static string? ParentOf(string path)
+    {
+        var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(path));
+        return string.IsNullOrEmpty(parent) ? null : parent;
+    }
+
+    private static BrowseEntry[] ReadDrives()
+    {
+        try
+        {
+            return DriveInfo.GetDrives()
+                .Where(drive => drive.IsReady && drive.DriveType is DriveType.Fixed or DriveType.Network)
+                .Select(drive => new BrowseEntry(
+                    string.IsNullOrWhiteSpace(drive.VolumeLabel) ? drive.Name : $"{drive.Name} ({drive.VolumeLabel})",
+                    drive.RootDirectory.FullName))
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     /// <summary>
@@ -439,6 +528,7 @@ public static class DiscoveryEndpoints
     private const int MaximumProposalFiles = 6_000;
     private const int MaximumProposalLogs = 5;
     private const int MaximumProposals = 20;
+    private const int MaximumBrowseEntries = 500;
     private const int MaximumIniBytes = 512 * 1024;
 
     private static Guid? GetUserId(ClaimsPrincipal principal)
@@ -458,6 +548,14 @@ public static class DiscoveryEndpoints
     public sealed record IniInspectionRequest(string? Root, string? Path);
 
     public sealed record ComponentProposalRequest(string? Root);
+
+    public sealed record BrowseEntry(string Name, string Path);
+
+    public sealed record BrowseResult(
+        string? Current,
+        string? Parent,
+        IReadOnlyList<BrowseEntry> Entries,
+        bool LooksLikeProtheus);
 
     public sealed record ProposedCheck(string Label, string Host, int Port, bool IsRequired);
 

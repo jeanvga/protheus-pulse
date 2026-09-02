@@ -45,3 +45,6 @@ src/protheus-pulse-ui/vite.config.d.ts
 
 # Amostras de log de cliente usadas para mapeamento; nunca versionar
 *.rar
+
+# Dados de execução local em modo desenvolvimento
+src/ProtheusPulse.Service/.data/

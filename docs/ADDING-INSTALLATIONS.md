@@ -115,7 +115,9 @@ Não substitua os exemplos versionados por caminhos, IPs ou nomes reais de clien
 
 ## Detecção automática pela pasta
 
-No editor de componente, o campo **Pasta do Protheus** varre o diretório informado até três níveis e propõe **um componente
+No editor de componente, o botão **Procurar…** abre as unidades e pastas **do servidor** — quem lista é o serviço, porque
+o navegador não entrega caminho absoluto e um seletor nativo abriria o disco de quem está olhando a tela, que com o acesso
+remoto ligado é outra máquina. Escolhida a pasta, o campo **Pasta do Protheus** varre o diretório informado até três níveis e propõe **um componente
 por `appserver.ini` encontrado**. O nome do arquivo não serve de filtro — na prática ele se chama `BIN1.ini`, `WORKFLOW.ini`,
 `SMARTVIEW.ini`, `BROKER.ini` —, o que identifica é o conteúdo.
 

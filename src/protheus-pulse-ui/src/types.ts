@@ -397,3 +397,15 @@ export interface ComponentProposalResult {
   proposals: ComponentProposal[]
   filesInspected: number
 }
+
+export interface BrowseEntry {
+  name: string
+  path: string
+}
+
+export interface BrowseResult {
+  current: string | null
+  parent: string | null
+  entries: BrowseEntry[]
+  looksLikeProtheus: boolean
+}

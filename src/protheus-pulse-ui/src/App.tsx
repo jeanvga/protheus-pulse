@@ -10,13 +10,13 @@ import type { LucideIcon } from 'lucide-react'
 import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, deleteInstallation, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAuthStatus, getDashboard,
-  getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
+  getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAutoStart, setExclusiveInstallation, setup,
   updateInstallation,
 } from './api'
 import type {
   AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
-  ComponentProposal, ComponentProposalResult, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, NetworkSettings, PathCandidate, PulseUser, RetentionSettings,
+  BrowseResult, ComponentProposal, ComponentProposalResult, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, NetworkSettings, PathCandidate, PulseUser, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
 } from './types'
@@ -688,6 +688,51 @@ export function serviceStatusLabel(status: string | undefined) {
   return labels[status ?? ''] ?? 'Estado desconhecido'
 }
 
+/// Quem lista as pastas é o serviço, não o navegador: o browser não entrega caminho
+/// absoluto por segurança, e um seletor nativo abriria o disco de quem está olhando a
+/// tela — que, com o acesso remoto ligado, é outra máquina.
+function FolderPicker({ initial, onPick, onClose }: { initial: string; onPick: (path: string) => void; onClose: () => void }) {
+  const [result, setResult] = useState<BrowseResult | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const go = useCallback(async (path?: string) => {
+    setLoading(true)
+    try {
+      setResult(await browseFolders(path))
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível listar a pasta.')
+    } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { void go(initial.trim() === '' ? undefined : initial.trim()) }, [go, initial])
+
+  return <div className="modal-backdrop" onClick={onClose}>
+    <section className="modal-card folder-picker" role="dialog" aria-modal="true" aria-labelledby="folder-picker-title" onClick={event => event.stopPropagation()}>
+      <header className="modal-header">
+        <div><span>Pastas do servidor</span><h2 id="folder-picker-title">Escolher pasta</h2><p>{result?.current ?? 'Unidades disponíveis no servidor onde o Pulse está instalado.'}</p></div>
+        <button className="icon-button" onClick={onClose} aria-label="Fechar seleção de pasta"><X size={18} /></button>
+      </header>
+      {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+      {loading
+        ? <div className="modal-loading"><RefreshCw className="spin" size={20} /> Lendo…</div>
+        : <>
+          {result?.looksLikeProtheus && <div className="success-banner"><Check size={16} /> Esta pasta tem arquivos de AppServer. Pode selecionar aqui.</div>}
+          <ul className="folder-list">
+            {result?.parent && <li><button type="button" onClick={() => void go(result.parent!)}><FolderSearch size={15} /> .. voltar</button></li>}
+            {result?.current === null && result.entries.length === 0 && <li className="folder-empty">Nenhuma unidade disponível.</li>}
+            {result?.current !== null && result?.entries.length === 0 && <li className="folder-empty">Nenhuma subpasta acessível aqui.</li>}
+            {result?.entries.map(entry => <li key={entry.path}><button type="button" onClick={() => void go(entry.path)}><FolderSearch size={15} /> {entry.name}</button></li>)}
+          </ul>
+        </>}
+      <footer className="modal-footer">
+        <button type="button" className="secondary-button" onClick={onClose}>Cancelar</button>
+        <button type="button" className="primary-button" disabled={!result?.current} onClick={() => { if (result?.current) { onPick(result.current); onClose() } }}>Usar esta pasta</button>
+      </footer>
+    </section>
+  </div>
+}
+
 /// Aponte a pasta do Protheus e o Pulse propõe um componente por appserver.ini que achar,
 /// com ambiente, executável, console.log, serviço do Windows e os alvos de rede que o
 /// próprio INI declara. Preencher campo por campo era o passo mais lento do cadastro.
@@ -695,6 +740,7 @@ function FolderAutoDetect({ onDetected }: { onDetected: (proposal: ComponentProp
   const [folder, setFolder] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<ComponentProposalResult | null>(null)
+  const [picking, setPicking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function detect() {
@@ -719,8 +765,10 @@ function FolderAutoDetect({ onDetected }: { onDetected: (proposal: ComponentProp
           onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void detect() } }}
           placeholder={'D:\\Protheus\\Protheus'} />
       </label>
-      <button type="button" className="primary-button" disabled={busy || folder.trim() === ''} onClick={() => void detect()}><FolderSearch size={15} /> {busy ? 'Procurando…' : 'Detectar'}</button>
+      <button type="button" className="secondary-button" onClick={() => setPicking(true)}><FolderSearch size={15} /> Procurar…</button>
+      <button type="button" className="primary-button" disabled={busy || folder.trim() === ''} onClick={() => void detect()}>{busy ? 'Procurando…' : 'Detectar'}</button>
     </div>
+    {picking && <FolderPicker initial={folder} onPick={setFolder} onClose={() => setPicking(false)} />}
     {result && result.proposals.length === 0 && <p className="field-hint">Nenhum appserver.ini reconhecido em {result.filesInspected} arquivos. Confira a pasta ou preencha manualmente.</p>}
     {result && result.proposals.length > 0 && <>
       <p className="field-hint">{result.proposals.length} encontrado(s) em {result.filesInspected} arquivos. Clique para preencher o formulário — nada é gravado antes de você revisar e salvar.</p>

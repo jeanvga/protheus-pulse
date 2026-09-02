@@ -61,7 +61,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-service.ps1 -W
 O padrão escuta em `127.0.0.1:5058` e só abre no próprio servidor. Em **Configurações → Acesso pela rede** um administrador
 libera o painel para a rede: o serviço passa a escutar em todas as interfaces e a tela mostra os endereços `http://ip:porta`
 que podem ser digitados de outra máquina. A opção é gravada em `C:\ProgramData\ProtheusPulse\network.json` e **vale a partir
-do próximo start do serviço** — reinicie `ProtheusPulse` depois de salvar.
+do próximo start do serviço** — reinicie `ProtheusPulse` depois de salvar. Ao ligar, o serviço passa a escutar em
+`0.0.0.0` e o filtro de host deixa de exigir `localhost`; com a opção desligada, ambos voltam ao padrão restrito.
 
 O tráfego é HTTP puro: senha e token trafegam legíveis e por essa tela se controla serviço do Windows. Libere apenas em rede
 interna confiável. Para acesso amplo, mantenha o bind em loopback e publique por um proxy HTTPS, como descrito acima.

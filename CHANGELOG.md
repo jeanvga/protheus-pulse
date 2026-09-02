@@ -2,6 +2,16 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.8.1] - 2026-09-02
+
+### Fixed
+
+- O acesso pela rede não funcionava. Eram duas causas em série: um endpoint declarado em `Kestrel:Endpoints` tem precedência sobre `UseUrls`, então o serviço continuava preso ao `127.0.0.1` do `appsettings.json` mesmo com a opção ligada; e o filtro `AllowedHosts`, restrito a `localhost;127.0.0.1`, recusava com HTTP 400 a requisição cujo `Host` é o IP do servidor — que é exatamente o que se digita ao abrir de outra máquina. Agora as duas chaves são sobrescritas quando o acesso remoto está ligado, e voltam ao padrão restrito quando ele está desligado.
+
+### Added
+
+- Botão **Procurar…** no cadastro de componente: abre as unidades e pastas do servidor para escolher o diretório em vez de colar o caminho. Quem lista é o serviço, porque o navegador não entrega caminho absoluto e um seletor nativo abriria o disco de quem está olhando a tela, que com o acesso remoto ligado é outra máquina. A navegação é somente leitura, devolve nome de pasta e nunca conteúdo de arquivo, não segue reparse point e avisa quando a pasta atual já tem arquivos de AppServer.
+
 ## [1.8.0] - 2026-09-02
 
 ### Added

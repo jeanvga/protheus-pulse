@@ -23,6 +23,27 @@ public sealed class NetworkOptions
             : [];
 
     public string BuildUrl() => $"http://{(AllowRemoteAccess ? "0.0.0.0" : "127.0.0.1")}:{Port}";
+
+    /// <summary>
+    /// Sobrescritas de configuração que o host precisa aplicar. São duas, e faltar
+    /// qualquer uma deixa o acesso remoto sem efeito: um endpoint declarado em
+    /// <c>Kestrel:Endpoints</c> tem precedência sobre <c>UseUrls</c>, e o filtro de host
+    /// recusa a requisição cujo <c>Host</c> é o IP do servidor — que é exatamente o que o
+    /// operador digita ao abrir de outra máquina.
+    /// </summary>
+    public Dictionary<string, string?> BuildOverrides()
+    {
+        var overrides = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Kestrel:Endpoints:Http:Url"] = BuildUrl()
+        };
+        if (AllowRemoteAccess)
+        {
+            overrides["AllowedHosts"] = "*";
+        }
+
+        return overrides;
+    }
 }
 
 /// <summary>Caminho de <c>C:\ProgramData\ProtheusPulse</c> resolvido na inicialização.</summary>

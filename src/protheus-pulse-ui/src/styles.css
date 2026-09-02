@@ -342,3 +342,12 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .proposal-checks li { padding: 2px 7px; border-radius: 999px; background: var(--surface-soft); color: var(--text-muted); font-size: 8px; }
 .proposal-checks li.required { color: var(--accent); background: rgba(38, 217, 242, .1); }
 .proposal-checks strong { color: var(--text-soft); }
+
+/* Seleção de pasta no disco do servidor. */
+.folder-picker { width: min(560px, 100%); }
+.folder-list { margin: 0; padding: 6px 20px 14px; list-style: none; max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.folder-list button { width: 100%; padding: 9px 11px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-soft); font-size: 10px; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 9px; }
+.folder-list button:hover { border-color: var(--border-soft); background: var(--surface-soft); color: var(--text); }
+.folder-list svg { flex: none; color: var(--text-muted); }
+.folder-empty { padding: 14px 11px; color: var(--text-muted); font-size: 9px; }
+.modal-footer { padding: 14px 20px; border-top: 1px solid var(--border-soft); display: flex; justify-content: flex-end; gap: 8px; }

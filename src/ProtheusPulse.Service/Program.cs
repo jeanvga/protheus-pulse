@@ -96,7 +96,10 @@ if (networkOptions.Validate() is { Count: > 0 } networkErrors)
     throw new InvalidOperationException(string.Join(" ", networkErrors));
 }
 
-builder.WebHost.UseUrls(networkOptions.BuildUrl());
+// Sobrescreve a chave do Kestrel, não UseUrls: endpoint declarado em
+// Kestrel:Endpoints tem precedência sobre UseUrls, e o serviço continuaria preso
+// ao 127.0.0.1 do appsettings mesmo com o acesso remoto ligado na tela.
+builder.Configuration.AddInMemoryCollection(networkOptions.BuildOverrides());
 builder.Services.AddSingleton(new PulseDataDirectory(dataDirectory));
 
 builder.Host.UseWindowsService(options => options.ServiceName = "ProtheusPulse");
