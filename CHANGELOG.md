@@ -7,6 +7,7 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 ### Added
 
 - Aba **Auditoria** de verdade, com busca, filtro por ação e por período e carregamento por página. O serviço já gravava 22 tipos de ação administrativa — login, ação em serviço, mudança de regra, manutenção, conta, configuração — com usuário e endereço de origem, e não havia como ler nada disso: a tela mostrava dois parágrafos escritos à mão, iguais em qualquer instalação. Restrita a Administrator, porque expõe quem fez o quê.
+- Histórico de ocorrências completo na aba Alertas, com filtro por estado e por período e carregamento por página. A tela lia as oito ocorrências que o resumo do painel devolve, então a partir da nona o histórico ficava inalcançável — e os contadores de "Resolvidos" e "Todos" encolhiam conforme incidentes novos empurravam os velhos para fora. Agora a contagem por estado vem do banco inteiro.
 - Aba **Diagnóstico** consultando o serviço em vez de afirmar. Os quatro cartões traziam o estado escrito no código e diziam "saudável" mesmo com o banco fora; agora vêm de `GET /diagnostics`, e sem resposta do serviço a tela informa que está sem contato em vez de inventar saúde.
 
 ### Fixed

@@ -47,13 +47,14 @@ vi.mock('./api', () => ({
   deleteMaintenanceWindow: vi.fn(),
   getAuditEvents: vi.fn(),
   getDiagnostics: vi.fn(),
+  getAlerts: vi.fn(),
 }))
 
 import {
   acknowledgeAlert, collectNow, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteInstallation, discoverPaths,
   discoverServices, executeServiceAction, getAlertRules, getDashboard, getEmailSettings, getInstallationConfiguration,
-  getAuditEvents, getDiagnostics, getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
+  getAlerts, getAuditEvents, getDiagnostics, getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
   setAutoStart, setExclusiveInstallation, updateInstallation,
 } from './api'
 import App, { serviceActionAllowed } from './App'
@@ -145,6 +146,10 @@ describe('App', () => {
           details: null, userDisplayName: 'Jean Mendes', username: 'jean',
         },
       ],
+    })
+    vi.mocked(getAlerts).mockReset().mockImplementation(async ({ state } = {}) => {
+      const items = state && state !== 'all' ? demoSummary.alerts.filter(item => item.state === state) : demoSummary.alerts
+      return { total: items.length, byState: { Active: 2, Acknowledged: 1, Resolved: 1 }, items }
     })
     vi.mocked(getDiagnostics).mockReset().mockResolvedValue({
       service: 'Protheus Pulse', status: 'Healthy', database: 'SQLite', demoMode: true,
@@ -273,6 +278,23 @@ describe('App', () => {
     fireEvent.click(acknowledgeButtons[0])
 
     await waitFor(() => expect(acknowledgeAlert).toHaveBeenCalled())
+  })
+
+  it('busca as ocorrências no servidor em vez das oito do resumo', async () => {
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Alertas/ }))
+
+    // O contador vem do byState do servidor, que conta o histórico inteiro.
+    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(expect.objectContaining({ state: 'Active', take: 50, skip: 0 })))
+    expect(await screen.findByRole('button', { name: /Resolvidos 1/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Resolvidos 1/ }))
+    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(expect.objectContaining({ state: 'Resolved' })))
+
+    fireEvent.change(screen.getByLabelText('Filtrar período das ocorrências'), { target: { value: 'all' } })
+    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(expect.objectContaining({ from: undefined })))
   })
 
   it('lista as regras agrupadas por instalação e liga o interruptor de uma delas', async () => {

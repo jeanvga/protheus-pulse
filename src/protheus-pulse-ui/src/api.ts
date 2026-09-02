@@ -1,7 +1,7 @@
 import * as signalR from '@microsoft/signalr'
 import { demoAlertRules, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
 import type {
-  AlertRule, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
+  AlertOccurrencePage, AlertQuery, AlertRule, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
   DiagnosticsInfo,
   CreateNotificationChannelInput, DashboardSummary, EmailSettings, EmailTestResult,
   InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, MaintenanceWindow, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, NotificationChannel, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
@@ -250,6 +250,24 @@ export async function createMaintenanceWindow(input: CreateMaintenanceWindowInpu
 export async function deleteMaintenanceWindow(id: string): Promise<void> {
   if (staticDemo) throw new Error('Os silenciamentos não podem ser removidos na demonstração estática.')
   await request<void>(`/api/v1/maintenance-windows/${id}`, { method: 'DELETE' })
+}
+
+export async function getAlerts(query: AlertQuery = {}): Promise<AlertOccurrencePage> {
+  if (staticDemo) {
+    const items = demoSummary.alerts
+    const byState = items.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.state]: (counts[item.state] ?? 0) + 1 }), {})
+    const filtered = !query.state || query.state === 'all' ? items : items.filter(item => item.state === query.state)
+    return { total: filtered.length, byState, items: filtered }
+  }
+
+  const parameters = new URLSearchParams()
+  if (query.state && query.state !== 'all') parameters.set('state', query.state)
+  if (query.componentId) parameters.set('componentId', query.componentId)
+  if (query.from) parameters.set('from', query.from)
+  if (query.take !== undefined) parameters.set('take', String(query.take))
+  if (query.skip) parameters.set('skip', String(query.skip))
+  const suffix = parameters.toString()
+  return request<AlertOccurrencePage>(`/api/v1/alerts${suffix ? `?${suffix}` : ''}`)
 }
 
 export async function getAuditEvents(query: AuditQuery = {}): Promise<AuditEventPage> {

@@ -11,12 +11,12 @@ import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteAlertRule, deleteInstallation, deleteMaintenanceWindow, deleteNotificationChannel, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAlertRules, getAuthStatus, getDashboard,
-  getAuditEvents, getDiagnostics, getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
+  getAlerts, getAuditEvents, getDiagnostics, getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAlertRuleEnabled, setAutoStart, setExclusiveInstallation, setNotificationChannelEnabled, setup,
   updateAlertRule, updateInstallation,
 } from './api'
 import type {
-  AlertRule, AlertSeverity, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
+  AlertOccurrencePage, AlertRule, AlertSeverity, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
   BrowseResult, ComponentProposal, ComponentProposalResult, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, MaintenanceWindow, NetworkSettings, NotificationChannel, NotificationChannelType, PathCandidate, ProbeType, PulseUser, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
@@ -1288,24 +1288,54 @@ function AlertsPage({ summary, refresh, goTo }: { summary: DashboardSummary; ref
       ><Icon size={15} /><span>{label}</span>{id === 'occurrences' && openCount > 0 && <i>{openCount}</i>}</button>)}
     </nav>
     <p className="subtab-hint">{current.hint}</p>
-    {tab === 'occurrences' && <AlertOccurrencesTab alerts={summary.alerts} refresh={refresh} />}
+    {tab === 'occurrences' && <AlertOccurrencesTab refresh={refresh} />}
     {tab === 'rules' && <AlertRulesTab components={summary.components} isAdministrator={isAdministrator} />}
     {tab === 'contacts' && <ContactPointsTab isAdministrator={isAdministrator} goTo={goTo} />}
     {tab === 'silences' && <SilencesTab components={summary.components} isAdministrator={isAdministrator} />}
   </div>
 }
 
-function AlertOccurrencesTab({ alerts, refresh }: { alerts: AlertSnapshot[]; refresh: () => Promise<void> }) {
+const occurrencePageSize = 50
+
+const occurrencePeriodFilters = [
+  { id: '24h', label: 'Últimas 24 horas', hours: 24 },
+  { id: '7d', label: 'Últimos 7 dias', hours: 168 },
+  { id: '30d', label: 'Últimos 30 dias', hours: 720 },
+  { id: 'all', label: 'Todo o histórico', hours: 0 },
+]
+
+function AlertOccurrencesTab({ refresh }: { refresh: () => Promise<void> }) {
+  const [page, setPage] = useState<AlertOccurrencePage>({ total: 0, byState: {}, items: [] })
+  const [state, setState] = useState<AlertState | 'all'>('Active')
+  const [period, setPeriod] = useState('7d')
+  const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [state, setState] = useState<AlertState | 'all'>('Active')
+
+  const from = useMemo(() => {
+    const hours = occurrencePeriodFilters.find(item => item.id === period)?.hours ?? 0
+    return hours === 0 ? undefined : new Date(Date.now() - hours * 3_600_000).toISOString()
+  }, [period])
+
+  const load = useCallback(async (skip: number) => {
+    setLoading(true)
+    try {
+      const result = await getAlerts({ state, from, take: occurrencePageSize, skip })
+      setPage(previous => skip === 0 ? result : { ...result, items: [...previous.items, ...result.items] })
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as ocorrências.')
+    } finally { setLoading(false) }
+  }, [state, from])
+
+  useEffect(() => { void load(0) }, [load])
 
   const acknowledge = async (id: string) => {
     setBusyId(id)
     setError(null)
     try {
       await acknowledgeAlert(id)
-      await refresh()
+      await Promise.all([refresh(), load(0)])
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível reconhecer o alerta.')
     } finally {
@@ -1313,7 +1343,10 @@ function AlertOccurrencesTab({ alerts, refresh }: { alerts: AlertSnapshot[]; ref
     }
   }
 
-  const visible = state === 'all' ? alerts : alerts.filter(item => item.state === state)
+  const shown = page.items.length
+  const hasMore = shown < page.total
+  const total = Object.values(page.byState).reduce((sum, count) => sum + (count ?? 0), 0)
+
   return <>
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
     <section className="summary-chips">
@@ -1322,12 +1355,20 @@ function AlertOccurrencesTab({ alerts, refresh }: { alerts: AlertSnapshot[]; ref
         type="button"
         className={state === filter.value ? 'active' : ''}
         onClick={() => setState(filter.value)}
-      >{filter.label} <strong>{filter.value === 'all' ? alerts.length : alerts.filter(item => item.state === filter.value).length}</strong></button>)}
+      >{filter.label} <strong>{filter.value === 'all' ? total : page.byState[filter.value] ?? 0}</strong></button>)}
+      <label className="toolbar-field chip-period">Período
+        <select aria-label="Filtrar período das ocorrências" value={period} onChange={event => setPeriod(event.target.value)}>
+          {occurrencePeriodFilters.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+        </select>
+      </label>
     </section>
     <article className="panel">
-      {visible.length === 0
-        ? <div className="empty-state"><Check size={22} /> Nenhum alerta nesse estado.</div>
-        : <AlertList alerts={visible} acknowledge={id => void acknowledge(id)} busyId={busyId} />}
+      {loading && shown === 0 && <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando ocorrências…</div>}
+      {!loading && shown === 0 && <div className="empty-state"><Check size={22} /> Nenhum alerta nesse estado.</div>}
+      {shown > 0 && <AlertList alerts={page.items} acknowledge={id => void acknowledge(id)} busyId={busyId} />}
+      {hasMore && <button className="secondary-button load-more" disabled={loading} onClick={() => void load(shown)}>
+        {loading ? 'Carregando…' : `Carregar mais (${(page.total - shown).toLocaleString('pt-BR')} restantes)`}
+      </button>}
     </article>
   </>
 }

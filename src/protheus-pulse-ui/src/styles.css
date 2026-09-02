@@ -451,3 +451,5 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .diagnostic-notes li { display: flex; align-items: flex-start; gap: 8px; color: var(--text-soft); font-size: 9px; line-height: 1.5; }
 .diagnostic-notes svg { flex: none; margin-top: 2px; color: var(--healthy); }
 .toolbar .refresh-hint { margin-right: auto; align-self: center; }
+.summary-chips .chip-period { margin-left: auto; }
+.summary-chips .chip-period select { height: 34px; }

@@ -67,10 +67,78 @@ public static class ApiEndpoints
             .Select(item => new { item.Id, item.ComponentId, item.ProbeType, item.Status, item.ObservedAt, item.DurationMs, item.Message })
             .ToListAsync(cancellationToken))).RequireAuthorization("Viewer");
 
-        api.MapGet("/alerts", async (IDashboardQuery query, CancellationToken cancellationToken) =>
+        // O resumo do painel corta em oito ocorrências para caber na tela inicial. Aqui a
+        // consulta é a tabela inteira: sem isso o histórico ficava inalcançável depois da
+        // nona ocorrência, embora estivesse todo gravado.
+        api.MapGet("/alerts", async (
+            PulseDbContext db,
+            string? state,
+            Guid? componentId,
+            DateTimeOffset? from,
+            int? take,
+            int? skip,
+            CancellationToken cancellationToken) =>
         {
-            var dashboard = await query.GetSummaryAsync(demoMode, cancellationToken);
-            return Results.Ok(dashboard.Alerts);
+            var scoped = db.AlertOccurrences.AsNoTracking();
+            if (componentId is { } component)
+            {
+                scoped = scoped.Where(item => item.AlertRule.ComponentId == component);
+            }
+
+            if (from is { } start)
+            {
+                scoped = scoped.Where(item => item.StartedAt >= start);
+            }
+
+            // A contagem por estado ignora o estado selecionado: ela alimenta os próprios
+            // botões de filtro, que precisam mostrar quanto há em cada um.
+            var byState = await scoped
+                .GroupBy(item => item.State)
+                .Select(group => new { State = group.Key, Count = group.Count() })
+                .ToListAsync(cancellationToken);
+
+            var filtered = scoped;
+            if (!string.IsNullOrWhiteSpace(state)
+                && !string.Equals(state, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Enum.TryParse<AlertState>(state, ignoreCase: true, out var parsed))
+                {
+                    return Results.ValidationProblem(new Dictionary<string, string[]>(StringComparer.Ordinal)
+                    {
+                        ["state"] = ["Informe Active, Acknowledged, Resolved, Silenced ou all."]
+                    });
+                }
+
+                filtered = filtered.Where(item => item.State == parsed);
+            }
+
+            var total = await filtered.CountAsync(cancellationToken);
+            var items = await filtered
+                .OrderBy(item => item.State == AlertState.Resolved)
+                .ThenByDescending(item => item.StartedAt)
+                .Skip(Math.Max(0, skip ?? 0))
+                .Take(Math.Clamp(take ?? 50, 1, 200))
+                .Select(item => new
+                {
+                    item.Id,
+                    item.CorrelationId,
+                    InstallationName = item.AlertRule.Component.Installation.Name,
+                    ComponentName = item.AlertRule.Component.Name,
+                    RuleName = item.AlertRule.Name,
+                    item.AlertRule.Severity,
+                    item.State,
+                    item.StartedAt,
+                    item.ResolvedAt,
+                    item.Evidence
+                })
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(new
+            {
+                Total = total,
+                ByState = byState.ToDictionary(entry => entry.State.ToString(), entry => entry.Count),
+                Items = items
+            });
         }).RequireAuthorization("Viewer");
 
         // O filtro roda no banco: procurar dentro das duzentas linhas já carregadas

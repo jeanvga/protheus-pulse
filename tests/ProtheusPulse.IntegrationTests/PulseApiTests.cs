@@ -964,6 +964,68 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AlertHistoryIsPagedInsteadOfCutAtTheDashboardSummary()
+    {
+        var componentId = Guid.NewGuid();
+        var ruleId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            dbContext.Installations.Add(new Installation
+            {
+                Name = $"Histórico {Guid.NewGuid():N}",
+                Environment = EnvironmentKind.Development,
+                CreatedAt = now,
+                Components = [new Component { Id = componentId, Name = "Componente com histórico", Type = ComponentType.Generic }]
+            });
+            dbContext.AlertRules.Add(new AlertRule
+            {
+                Id = ruleId,
+                ComponentId = componentId,
+                Name = "Regra com histórico",
+                RuleKey = $"CUSTOM-{Guid.NewGuid():N}",
+                ProbeType = ProbeType.Tcp,
+                Severity = AlertSeverity.Warning
+            });
+            // Doze ocorrências: mais que as oito que o resumo do painel devolve.
+            for (var index = 0; index < 12; index++)
+            {
+                dbContext.AlertOccurrences.Add(new AlertOccurrence
+                {
+                    AlertRuleId = ruleId,
+                    State = index == 0 ? AlertState.Active : AlertState.Resolved,
+                    StartedAt = now.AddMinutes(-index),
+                    ResolvedAt = index == 0 ? null : now.AddMinutes(-index).AddSeconds(30),
+                    Evidence = $"Ocorrência sintética {index}"
+                });
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        var token = await AuthenticateDemoAdministratorAsync();
+        var firstPage = await ReadAlertPageAsync(token, $"componentId={componentId}&take=5");
+        Assert.Equal(12, firstPage.Total);
+        Assert.Equal(5, firstPage.Items.Count);
+        Assert.Equal(1, firstPage.ByState["Active"]);
+        Assert.Equal(11, firstPage.ByState["Resolved"]);
+
+        var secondPage = await ReadAlertPageAsync(token, $"componentId={componentId}&take=5&skip=5");
+        Assert.Equal(5, secondPage.Items.Count);
+        Assert.Empty(secondPage.Items.Select(item => item.Id).Intersect(firstPage.Items.Select(item => item.Id)));
+
+        var resolved = await ReadAlertPageAsync(token, $"componentId={componentId}&state=Resolved&take=200");
+        Assert.Equal(11, resolved.Total);
+        Assert.All(resolved.Items, item => Assert.Equal("Resolved", item.State));
+        // A contagem por estado ignora o filtro, porque alimenta os próprios botões.
+        Assert.Equal(1, resolved.ByState["Active"]);
+
+        using var invalid = AuthorizedRequest(HttpMethod.Get, "/api/v1/alerts?state=NaoExiste", token);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(invalid)).StatusCode);
+    }
+
+    [Fact]
     public async Task AuditTrailIsReadableAndCarriesWhoDidWhat()
     {
         var token = await AuthenticateDemoAdministratorAsync();
@@ -1366,6 +1428,16 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         return cachedAdministratorToken;
     }
 
+    private async Task<AlertPageResponse> ReadAlertPageAsync(string token, string query)
+    {
+        using var request = AuthorizedRequest(HttpMethod.Get, $"/api/v1/alerts?{query}", token);
+        var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var page = await response.Content.ReadFromJsonAsync<AlertPageResponse>();
+        Assert.NotNull(page);
+        return page;
+    }
+
     private async Task<AlertRuleResponse> ReadAlertRuleAsync(string token, Guid id)
     {
         var rules = await ReadAlertRulesAsync(token);
@@ -1398,6 +1470,8 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record TcpCheckConfigurationResponse(string Host, int Port);
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
+    private sealed record AlertPageResponse(int Total, Dictionary<string, int> ByState, List<AlertEntryResponse> Items);
+    private sealed record AlertEntryResponse(Guid Id, string RuleName, string Severity, string State, DateTimeOffset StartedAt);
     private sealed record AuditPageResponse(int Total, Dictionary<string, int> ByAction, List<AuditEntryResponse> Items);
     private sealed record AuditEntryResponse(
         Guid Id,

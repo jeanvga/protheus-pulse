@@ -222,6 +222,20 @@ export interface CreateMaintenanceWindowInput {
   reason?: string
 }
 
+export interface AlertOccurrencePage {
+  total: number
+  byState: Partial<Record<AlertState, number>>
+  items: AlertSnapshot[]
+}
+
+export interface AlertQuery {
+  state?: AlertState | 'all'
+  componentId?: string
+  from?: string
+  take?: number
+  skip?: number
+}
+
 export interface DashboardSummary {
   generatedAt: string
   demoMode: boolean
