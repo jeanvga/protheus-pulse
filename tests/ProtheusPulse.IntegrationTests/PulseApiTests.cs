@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -1027,6 +1028,40 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task BackupCarriesTheDatabaseAndTheKeyThatDecryptsIt()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        using var createRequest = AuthorizedPost("/api/v1/settings/backups", token, new { });
+        var createResponse = await client.SendAsync(createRequest);
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<BackupResponse>();
+        Assert.NotNull(created);
+        Assert.True(created.SizeBytes > 0);
+
+        using var downloadRequest = AuthorizedRequest(HttpMethod.Get, $"/api/v1/settings/backups/{created.Name}", token);
+        var download = await client.SendAsync(downloadRequest);
+        download.EnsureSuccessStatusCode();
+        using var archive = new ZipArchive(await download.Content.ReadAsStreamAsync(), ZipArchiveMode.Read);
+        var entries = archive.Entries.Select(entry => entry.FullName).ToList();
+        Assert.Contains("pulse.db", entries);
+        Assert.Contains("LEIAME.txt", entries);
+        // Sem a chave de Data Protection o banco restaurado perde os segredos que ela cifra.
+        Assert.Contains(entries, name => name.StartsWith("keys/", StringComparison.Ordinal));
+
+        using var listRequest = AuthorizedRequest(HttpMethod.Get, "/api/v1/settings/backups", token);
+        var list = await client.SendAsync(listRequest);
+        list.EnsureSuccessStatusCode();
+        var backups = await list.Content.ReadFromJsonAsync<List<BackupResponse>>();
+        Assert.NotNull(backups);
+        Assert.Contains(backups, item => item.Name == created.Name);
+
+        // Nome fora da pasta de backups não pode virar leitura de arquivo arbitrário.
+        using var traversal = AuthorizedRequest(HttpMethod.Get, "/api/v1/settings/backups/..%2Fpulse.db", token);
+        var traversalResponse = await client.SendAsync(traversal);
+        Assert.True(traversalResponse.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task HttpsRefusesToSaveACertificateThatWouldNotServe()
     {
         var token = await AuthenticateDemoAdministratorAsync();
@@ -1578,6 +1613,7 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record TcpCheckConfigurationResponse(string Host, int Port);
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
+    private sealed record BackupResponse(string Name, long SizeBytes, DateTimeOffset CreatedAt);
     private sealed record SelfSignedResponse(string Path, string Subject, DateTime NotAfter);
     private sealed record NetworkResponse(
         bool AllowRemoteAccess,

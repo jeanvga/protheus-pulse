@@ -1,7 +1,7 @@
 import * as signalR from '@microsoft/signalr'
 import { demoAlertRules, demoHeartbeats, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
 import type {
-  AlertOccurrencePage, AlertQuery, AlertRule, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
+  AlertOccurrencePage, AlertQuery, AlertRule, BackupFile, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
   CreateHeartbeatInput, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings,
   CreateNotificationChannelInput, DashboardSummary, EmailSettings, EmailTestResult,
   InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, MaintenanceWindow, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, NotificationChannel, SaveNetworkInput, SelfSignedCertificate, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
@@ -124,6 +124,30 @@ export async function getNetworkSettings(): Promise<NetworkSettings> {
 
 export async function saveNetworkSettings(payload: SaveNetworkInput): Promise<NetworkSettings> {
   return request<NetworkSettings>('/api/v1/settings/network', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function getBackups(): Promise<BackupFile[]> {
+  if (staticDemo) return []
+  return request<BackupFile[]>('/api/v1/settings/backups')
+}
+
+export async function createBackup(): Promise<BackupFile> {
+  if (staticDemo) throw new Error('O backup não pode ser gerado na demonstração estática.')
+  return request<BackupFile>('/api/v1/settings/backups', { method: 'POST', body: '{}' })
+}
+
+/// O download passa pelo mesmo token da sessão, então não dá para usar um link direto.
+export async function downloadBackup(name: string): Promise<void> {
+  const response = await fetch(`/api/v1/settings/backups/${encodeURIComponent(name)}`, {
+    headers: session.token ? { Authorization: `Bearer ${session.token}` } : undefined,
+  })
+  if (!response.ok) throw new Error('Não foi possível baixar o backup.')
+  const url = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = name
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 export async function createSelfSignedCertificate(): Promise<SelfSignedCertificate> {

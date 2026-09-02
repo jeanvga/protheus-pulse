@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -37,6 +38,9 @@ public static class SettingsEndpoints
         api.MapGet("/settings/network", GetNetworkAsync).RequireAuthorization("Administrator");
         api.MapPut("/settings/network", SaveNetworkAsync).RequireAuthorization("Administrator");
         api.MapPost("/settings/network/self-signed", CreateSelfSignedAsync).RequireAuthorization("Administrator");
+        api.MapGet("/settings/backups", (BackupService backups) => Results.Ok(backups.List())).RequireAuthorization("Administrator");
+        api.MapPost("/settings/backups", CreateBackupAsync).RequireAuthorization("Administrator").RequireRateLimiting("serviceControl");
+        api.MapGet("/settings/backups/{fileName}", DownloadBackup).RequireAuthorization("Administrator");
         return api;
     }
 
@@ -128,6 +132,35 @@ public static class SettingsEndpoints
         {
             return Results.BadRequest(new { message = $"Não foi possível gerar o certificado: {exception.Message}" });
         }
+    }
+
+    private static async Task<IResult> CreateBackupAsync(
+        BackupService backups,
+        PulseDbContext dbContext,
+        IClock clock,
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var created = await backups.CreateAsync(cancellationToken);
+            AddAudit(dbContext, clock, principal, httpContext, "BackupCreated", Guid.Empty, new { created.Name, created.SizeBytes });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.Ok(created);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DbException)
+        {
+            return Results.BadRequest(new { message = $"Não foi possível gerar o backup: {exception.Message}" });
+        }
+    }
+
+    private static IResult DownloadBackup(string fileName, BackupService backups)
+    {
+        var path = backups.ResolvePath(fileName);
+        return path is null
+            ? Results.NotFound(new { message = "Backup não encontrado." })
+            : Results.File(path, "application/zip", fileName);
     }
 
     private static NetworkSettingsResponse Describe(

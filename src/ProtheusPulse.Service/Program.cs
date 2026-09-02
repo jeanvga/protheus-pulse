@@ -126,6 +126,7 @@ if (networkOptions.UseHttps)
 
 builder.Configuration.AddInMemoryCollection(networkOptions.BuildOverrides(certificatePassword));
 builder.Services.AddSingleton(new PulseDataDirectory(dataDirectory));
+builder.Services.AddScoped<BackupService>();
 
 builder.Host.UseWindowsService(options => options.ServiceName = "ProtheusPulse");
 builder.Host.UseSerilog((_, _, configuration) => configuration

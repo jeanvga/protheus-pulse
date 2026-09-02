@@ -560,6 +560,12 @@ export interface SaveNetworkInput {
   certificatePassword?: string
 }
 
+export interface BackupFile {
+  name: string
+  sizeBytes: number
+  createdAt: string
+}
+
 export interface SelfSignedCertificate {
   path: string
   subject: string

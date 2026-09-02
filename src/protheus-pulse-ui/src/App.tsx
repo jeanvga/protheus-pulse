@@ -11,12 +11,12 @@ import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteAlertRule, deleteInstallation, deleteMaintenanceWindow, deleteNotificationChannel, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAlertRules, getAuthStatus, getDashboard,
-  createHeartbeatDefinition, createSelfSignedCertificate, deleteHeartbeatDefinition, getAlerts, getServerThresholds, saveServerThresholds, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
+  createBackup, createHeartbeatDefinition, createSelfSignedCertificate, downloadBackup, getBackups, deleteHeartbeatDefinition, getAlerts, getServerThresholds, saveServerThresholds, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAlertRuleEnabled, setAutoStart, setExclusiveInstallation, setNotificationChannelEnabled, setup,
   updateAlertRule, updateInstallation,
 } from './api'
 import type {
-  AlertOccurrencePage, AlertRule, AlertSeverity, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
+  AlertOccurrencePage, AlertRule, AlertSeverity, BackupFile, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
   BrowseResult, ComponentProposal, ComponentProposalResult, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, MaintenanceWindow, NetworkSettings, NotificationChannel, NotificationChannelType, PathCandidate, ProbeType, PulseUser, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
@@ -2106,6 +2106,88 @@ function SettingsSection({ icon: Icon, title, summary, children }: { icon: Lucid
   </article>
 }
 
+const backupRetention = 10
+
+function formatBackupAge(createdAt: string) {
+  const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000)
+  if (days <= 0) return 'hoje'
+  if (days === 1) return 'ontem'
+  return `há ${days} dias`
+}
+
+function BackupSettingsCard() {
+  const [backups, setBackups] = useState<BackupFile[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [downloading, setDownloading] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      setBackups(await getBackups())
+      setError(null)
+    } catch (reason) {
+      setBackups([])
+      setError(reason instanceof Error ? reason.message : 'Não foi possível listar os backups.')
+    }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  async function create() {
+    setBusy(true)
+    setMessage(null)
+    try {
+      const created = await createBackup()
+      setMessage(`Backup ${created.name} gerado com ${formatBytes(created.sizeBytes)}.`)
+      setError(null)
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o backup.')
+    } finally { setBusy(false) }
+  }
+
+  async function download(name: string) {
+    setDownloading(name)
+    try {
+      await downloadBackup(name)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível baixar o backup.')
+    } finally { setDownloading(null) }
+  }
+
+  const latest = backups?.[0]
+  const stale = latest ? (Date.now() - new Date(latest.createdAt).getTime()) / 86_400_000 > 7 : false
+
+  return <div className="settings-form">
+    <p className="field-hint">O pacote leva o banco, a <strong>chave de Data Protection</strong> e a configuração de rede. A chave é o item que costuma faltar num backup feito à mão: sem ela, o banco restaurado perde as URLs dos pontos de contato e a senha do SMTP, que ficam cifradas por ela. O banco é copiado com <code>VACUUM INTO</code>, então sai consistente mesmo com a coleta rodando.</p>
+
+    {backups?.length === 0 && <div className="inline-warning"><AlertTriangle size={15} /> Nenhum backup gerado até agora. Se o disco falhar, o cadastro dos ambientes, o histórico e as contas se perdem.</div>}
+    {stale && latest && <div className="inline-warning"><AlertTriangle size={15} /> O backup mais recente é de {formatBackupAge(latest.createdAt)}.</div>}
+
+    {backups && backups.length > 0 && <ul className="entity-list backup-list">
+      {backups.map(item => <li className="entity-row" key={item.name}>
+        <div className="entity-main">
+          <strong>{item.name}</strong>
+          <small>{new Date(item.createdAt).toLocaleString('pt-BR')} · {formatBytes(item.sizeBytes)} · {formatBackupAge(item.createdAt)}</small>
+        </div>
+        <div className="entity-actions">
+          <button type="button" className="secondary-button" disabled={downloading === item.name} onClick={() => void download(item.name)}>
+            {downloading === item.name ? 'Baixando…' : 'Baixar'}
+          </button>
+        </div>
+      </li>)}
+    </ul>}
+
+    <p className="field-hint">Os {backupRetention} pacotes mais recentes ficam guardados no servidor; os antigos são apagados quando um novo é gerado. Baixe uma cópia para fora da máquina — um backup que mora no disco que falhou não serve.</p>
+    <p className="field-hint">A restauração não é feita pelo painel de propósito: trocar o banco embaixo de um serviço em execução corrompe o que estiver sendo escrito. O passo a passo vai dentro do pacote, no arquivo <code>LEIAME.txt</code>.</p>
+
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+    {message && <div className="success-banner"><Check size={16} /> {message}</div>}
+    <div className="form-actions"><button type="button" className="primary-button" disabled={busy} onClick={() => void create()}>{busy ? 'Gerando…' : 'Gerar backup agora'}</button></div>
+  </div>
+}
+
 function ServerThresholdsCard() {
   const [draft, setDraft] = useState({ cpuWarning: '80', cpuCritical: '92', memoryWarning: '85', memoryCritical: '94', diskWarning: '15', diskCritical: '5' })
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
@@ -2415,7 +2497,7 @@ function SettingsPage() {
   const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · E-mail · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
   return <div className="page-body">
     {isAdministrator
-      ? <><SettingsSection icon={Mail} title="Envio de e-mail" summary="Servidor SMTP, remetente, destinatários e teste de envio"><EmailSettingsCard /></SettingsSection><SettingsSection icon={Cpu} title="Limites do servidor" summary="A partir de quanto uso o processador, a memória e o disco entram em atenção e crítico"><ServerThresholdsCard /></SettingsSection><SettingsSection icon={Archive} title="Retenção de dados" summary="Por quanto tempo o histórico fica no banco antes de ser apagado"><RetentionSettingsCard /></SettingsSection><SettingsSection icon={UserRound} title="Usuários e perfis" summary="Contas de acesso ao painel e o que cada perfil pode fazer"><UsersSettingsCard /></SettingsSection><SettingsSection icon={Boxes} title="Acesso pela rede" summary="Abrir o painel de outro computador por http://ip:porta"><NetworkSettingsCard /></SettingsSection></>
+      ? <><SettingsSection icon={Mail} title="Envio de e-mail" summary="Servidor SMTP, remetente, destinatários e teste de envio"><EmailSettingsCard /></SettingsSection><SettingsSection icon={Cpu} title="Limites do servidor" summary="A partir de quanto uso o processador, a memória e o disco entram em atenção e crítico"><ServerThresholdsCard /></SettingsSection><SettingsSection icon={Archive} title="Retenção de dados" summary="Por quanto tempo o histórico fica no banco antes de ser apagado"><RetentionSettingsCard /></SettingsSection><SettingsSection icon={HardDrive} title="Backup" summary="Banco, chave de cifra e configuração num pacote para levar para fora da máquina"><BackupSettingsCard /></SettingsSection><SettingsSection icon={UserRound} title="Usuários e perfis" summary="Contas de acesso ao painel e o que cada perfil pode fazer"><UsersSettingsCard /></SettingsSection><SettingsSection icon={Boxes} title="Acesso pela rede" summary="Abrir o painel de outro computador por http://ip:porta"><NetworkSettingsCard /></SettingsSection></>
       : <div className="read-only-notice"><LockKeyhole size={22} /><div><strong>Somente administradores</strong><p>Os dados de envio de e-mail e os tokens dos agentes de log só aparecem para o perfil Administrator.</p></div></div>}
     <div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div>
     <div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Coleta segura e ações auditadas</strong><p>A coleta é somente leitura e não escreve nas pastas monitoradas. Iniciar, reiniciar ou parar serviços exige perfil Administrator e fica registrado na auditoria.</p></div></div>
