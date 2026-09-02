@@ -155,6 +155,9 @@ public sealed class PulseDbContext(DbContextOptions<PulseDbContext> options) : D
             entity.Property(item => item.Name).HasMaxLength(120);
             entity.Property(item => item.Unit).HasMaxLength(32);
             entity.HasIndex(item => new { item.ComponentId, item.Name, item.ObservedAt });
+            // O painel busca a última "availability" de todos os componentes: filtrar por
+            // nome com o índice começando em ComponentId obrigava a varrer a tabela toda.
+            entity.HasIndex(item => new { item.Name, item.ObservedAt });
             entity.HasOne(item => item.Component).WithMany(item => item.MetricSamples).HasForeignKey(item => item.ComponentId).OnDelete(DeleteBehavior.Cascade);
         });
 

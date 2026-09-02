@@ -49,6 +49,7 @@ public sealed class LogAlertMailBuffer
 public sealed partial class LogAlertMailWorker(
     IServiceScopeFactory scopeFactory,
     LogAlertMailBuffer buffer,
+    DatabaseReadyState readyState,
     EmailSender emailSender,
     NotificationConfigurationProtector protector,
     PulseOptions options,
@@ -68,6 +69,8 @@ public sealed partial class LogAlertMailWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // O esquema pode ainda estar migrando: consultar antes disso só produziria erro.
+        await readyState.WaitAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
             try

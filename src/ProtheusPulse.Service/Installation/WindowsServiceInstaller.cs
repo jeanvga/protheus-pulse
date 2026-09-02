@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
@@ -20,7 +21,10 @@ internal static class WindowsServiceInstaller
     // monitorados) e para ler processos e pastas do Protheus de outros usuários.
     private const string ServiceAccount = "LocalSystem";
     private const string ServiceRegistryPath = @"SYSTEM\CurrentControlSet\Services\ProtheusPulse";
-    private const string HealthUrl = "http://127.0.0.1:5058/health/ready";
+    private const int DefaultPort = 5058;
+    // A migração agora roda em segundo plano e o serviço sobe antes de terminá-la; num
+    // banco com meses de histórico ela leva minutos, e trinta tentativas não bastavam.
+    private static readonly TimeSpan HealthTimeout = TimeSpan.FromMinutes(10);
 
     public static async Task<int?> TryRunAsync(string[] args)
     {
@@ -170,7 +174,7 @@ internal static class WindowsServiceInstaller
         var startResult = await RunScAsync("start", ServiceName);
         startResult.EnsureSuccess("iniciar o serviço", 0, 1056);
         await WaitForServiceStatusAsync(ServiceControllerStatus.Running, TimeSpan.FromSeconds(60));
-        await WaitForHealthCheckAsync();
+        await WaitForHealthCheckAsync(dataDirectory);
 
         TryDeleteLegacyReleases(installDirectory);
         Console.WriteLine($"{ServiceDisplayName} instalado e saudável em http://127.0.0.1:5058/.");
@@ -490,15 +494,48 @@ internal static class WindowsServiceInstaller
         throw new System.TimeoutException($"O serviço permaneceu no estado {lastStatus} por mais de {timeout.TotalSeconds:0} segundos.");
     }
 
-    private static async Task WaitForHealthCheckAsync()
+    /// <summary>
+    /// A porta vem de network.json quando o operador mudou o padrão; apontar sempre para
+    /// a 5058 faria a validação falhar em uma instalação que está no ar.
+    /// </summary>
+    private static string ResolveHealthUrl(string dataDirectory)
     {
+        var port = DefaultPort;
+        try
+        {
+            var path = Path.Combine(dataDirectory, "network.json");
+            if (File.Exists(path))
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(path));
+                if (document.RootElement.TryGetProperty("Network", out var network)
+                    && network.TryGetProperty("Port", out var configured)
+                    && configured.TryGetInt32(out var value)
+                    && value is > 0 and <= 65_535)
+                {
+                    port = value;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // Configuração ilegível: valida na porta padrão.
+        }
+
+        return $"http://127.0.0.1:{port}/health/ready";
+    }
+
+    private static async Task WaitForHealthCheckAsync(string dataDirectory)
+    {
+        var healthUrl = ResolveHealthUrl(dataDirectory);
         using var handler = new HttpClientHandler { UseProxy = false };
-        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(3) };
-        for (var attempt = 1; attempt <= 30; attempt++)
+        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+        var stopwatch = Stopwatch.StartNew();
+        var announced = TimeSpan.Zero;
+        while (stopwatch.Elapsed < HealthTimeout)
         {
             try
             {
-                using var response = await client.GetAsync(HealthUrl);
+                using var response = await client.GetAsync(healthUrl);
                 if (response.IsSuccessStatusCode)
                 {
                     return;
@@ -513,10 +550,18 @@ internal static class WindowsServiceInstaller
                 // Continua tentando até o limite global abaixo.
             }
 
+            if (stopwatch.Elapsed - announced > TimeSpan.FromSeconds(15))
+            {
+                announced = stopwatch.Elapsed;
+                Console.WriteLine($"Aguardando o banco terminar de migrar… ({announced.TotalSeconds:0}s)");
+            }
+
             await Task.Delay(TimeSpan.FromSeconds(1));
         }
 
-        throw new InvalidOperationException($"O serviço iniciou, mas {HealthUrl} não ficou saudável em 30 tentativas.");
+        throw new InvalidOperationException(
+            $"O serviço iniciou, mas {healthUrl} não ficou saudável em {HealthTimeout.TotalMinutes:0} minutos. "
+            + "Consulte o log da aplicação para ver se a migração do banco falhou.");
     }
 
     private static void TryDeleteLegacyReleases(string installDirectory)

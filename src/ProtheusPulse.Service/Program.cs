@@ -287,7 +287,12 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 string[] readinessTags = ["ready"];
-builder.Services.AddHealthChecks().AddDbContextCheck<PulseDbContext>("sqlite", tags: readinessTags);
+builder.Services.AddSingleton<DatabaseReadyState>();
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<PulseDbContext>("sqlite", tags: readinessTags)
+    // Enquanto a migração roda, o serviço já responde ao SCM mas não está pronto:
+    // é este check que o instalador espera antes de dar a instalação por concluída.
+    .AddCheck<DatabaseMigrationHealthCheck>("migration", tags: readinessTags);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSingleton<MonitoringWorker>();
 builder.Services.AddSingleton<RetentionService>();
@@ -323,6 +328,7 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddHostedService(serviceProvider => new DatabaseInitializer(
     serviceProvider,
     demoMode,
+    serviceProvider.GetRequiredService<DatabaseReadyState>(),
     serviceProvider.GetRequiredService<ILogger<DatabaseInitializer>>()));
 // Processador, memória e disco são do próprio servidor e a leitura é inofensiva,
 // então a aba Servidor também funciona na demonstração.

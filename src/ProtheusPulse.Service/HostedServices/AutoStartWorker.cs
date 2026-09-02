@@ -22,12 +22,15 @@ public sealed partial class AutoStartWorker(
     IClock clock,
     PulseOptions options,
     ServiceActionCoordinator coordinator,
+    DatabaseReadyState readyState,
     ILogger<AutoStartWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(40);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // O esquema pode ainda estar migrando: consultar antes disso só produziria erro.
+        await readyState.WaitAsync(stoppingToken);
         var interval = TimeSpan.FromSeconds(Math.Clamp(options.AutoStartIntervalSeconds, 15, 3_600));
         using var timer = new PeriodicTimer(interval);
         while (await timer.WaitForNextTickAsync(stoppingToken))

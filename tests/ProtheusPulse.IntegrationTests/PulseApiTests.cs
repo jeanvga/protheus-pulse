@@ -29,6 +29,7 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     {
         this.factory = factory;
         client = factory.CreateClient();
+        factory.WaitUntilReadyAsync().GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -1140,5 +1141,17 @@ public sealed class PulseWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseSetting("Pulse:DataDirectory", dataDirectory);
         builder.UseSetting("Pulse:DiskWarningPercent", "1");
         builder.UseSetting("Pulse:DiskCriticalPercent", "0");
+    }
+
+    /// <summary>
+    /// A migração roda em segundo plano para não estourar a janela do SCM, então o host
+    /// sobe antes do esquema existir. Os testes esperam a mesma prontidão que o instalador
+    /// espera pelo /health/ready.
+    /// </summary>
+    public async Task WaitUntilReadyAsync()
+    {
+        var state = Services.GetRequiredService<DatabaseReadyState>();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await state.WaitAsync(timeout.Token);
     }
 }

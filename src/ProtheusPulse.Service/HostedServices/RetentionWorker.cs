@@ -4,10 +4,13 @@ namespace ProtheusPulse.Service.HostedServices;
 
 public sealed partial class RetentionWorker(
     RetentionService retentionService,
+    DatabaseReadyState readyState,
     ILogger<RetentionWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // O esquema pode ainda estar migrando: consultar antes disso só produziria erro.
+        await readyState.WaitAsync(stoppingToken);
         await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
         using var timer = new PeriodicTimer(TimeSpan.FromDays(1));
         do

@@ -38,3 +38,15 @@ Se houve migration incompatível:
 5. valide os dois health checks e o login.
 
 Nunca abra um banco migrado com binários antigos sem confirmar compatibilidade. Registre data, versões, operador, resultado e motivo do rollback.
+
+## Migração demorada
+
+Desde a 1.9.1 a migração do banco roda em segundo plano: o serviço se registra no Gerenciador de Serviços de imediato e o
+painel só atende quando o esquema termina. Num banco com meses de histórico isso leva minutos, e o instalador mostra o
+progresso enquanto espera o `/health/ready`. Antes a migração rodava antes do registro no SCM e estourava a janela de 30
+segundos, derrubando a instalação com o erro 1053.
+
+Se o `/health/ready` continuar recusando, o motivo aparece no próprio corpo da resposta e no log da aplicação em
+`C:\ProgramData\ProtheusPulse\logs`. Uma causa comum é outro `ProtheusPulse.Service.exe` ainda em execução — iniciado
+manualmente em uma sessão interativa, por exemplo — segurando `pulse.db`. Confira com `tasklist /fi "imagename eq
+ProtheusPulse.Service.exe"` e encerre o processo que não for o do serviço antes de repetir a instalação.

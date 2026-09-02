@@ -18,12 +18,15 @@ public sealed partial class MonitoringWorker(
     PulseOptions options,
     LogAlertMailBuffer mailBuffer,
     PulseTelemetry telemetry,
+    DatabaseReadyState readyState,
     ILogger<MonitoringWorker> logger) : BackgroundService
 {
     private readonly SemaphoreSlim cycleGate = new(1, 1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // O esquema pode ainda estar migrando: consultar antes disso só produziria erro.
+        await readyState.WaitAsync(stoppingToken);
         await RunCycleSafelyAsync(stoppingToken);
         var interval = TimeSpan.FromSeconds(Math.Clamp(options.CollectionIntervalSeconds, 10, 3_600));
         using var timer = new PeriodicTimer(interval);
