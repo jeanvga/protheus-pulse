@@ -12,7 +12,7 @@ import {
   createNotificationChannel, deleteAlertRule, deleteInstallation, deleteMaintenanceWindow, deleteNotificationChannel, discoverPaths,
   discoverServices, enterMaintenance, previewInstallationImport, executeServiceAction, exitMaintenance, getAlertRules, getAuthStatus, getDashboard,
   applyInstallationImport, createBackup, createHeartbeatDefinition, createSelfSignedCertificate, downloadBackup, getBackups, deleteHeartbeatDefinition, getAlerts, getServerThresholds, saveServerThresholds, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
-  login, saveEmailSettings, sendTestEmail, session, setAlertRuleEnabled, setAutoStart, setExclusiveInstallation, setNotificationChannelEnabled, setup,
+  login, refreshSession, saveEmailSettings, sendTestEmail, session, setAlertRuleEnabled, setAutoStart, setExclusiveInstallation, setNotificationChannelEnabled, setup,
   updateAlertRule, updateInstallation,
 } from './api'
 import type {
@@ -76,6 +76,7 @@ export default function App() {
   const [mobileMenu, setMobileMenu] = useState(false)
   const [installationEditorId, setInstallationEditorId] = useState<string | null | undefined>(undefined)
   const [theme, setTheme] = useState(() => localStorage.getItem('pulse.theme') ?? 'dark')
+  const [expiresAt, setExpiresAt] = useState<string | null>(null)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -110,8 +111,24 @@ export default function App() {
   const onAuthenticated = (token: AuthToken) => {
     session.token = token.accessToken
     session.role = token.role
+    setExpiresAt(token.expiresAt)
     setAuthenticated(true)
   }
+
+  // A sessão vale oito horas e caía sem aviso, levando junto o formulário aberto.
+  // Renova com folga enquanto a pessoa está usando; se a conta foi desativada no
+  // meio do caminho, o servidor recusa e a tela volta para o login.
+  useEffect(() => {
+    if (!authenticated || !expiresAt) return
+    const remaining = new Date(expiresAt).getTime() - Date.now()
+    const renewIn = Math.max(30_000, remaining - 10 * 60_000)
+    const timer = setTimeout(() => {
+      void refreshSession()
+        .then(token => { session.token = token.accessToken; session.role = token.role; setExpiresAt(token.expiresAt) })
+        .catch(() => { session.token = null; session.role = null; setAuthenticated(false) })
+    }, renewIn)
+    return () => clearTimeout(timer)
+  }, [authenticated, expiresAt])
 
   const logout = () => {
     session.token = null

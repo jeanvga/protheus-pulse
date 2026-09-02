@@ -27,6 +27,7 @@ vi.mock('./api', () => ({
   setExclusiveInstallation: vi.fn(),
   setAutoStart: vi.fn(),
   login: vi.fn(),
+  refreshSession: vi.fn(),
   setup: vi.fn(),
   connectLiveUpdates: vi.fn(() => () => undefined),
   getServerResources: vi.fn(),

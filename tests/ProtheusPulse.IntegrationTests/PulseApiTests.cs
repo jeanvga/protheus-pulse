@@ -1028,6 +1028,26 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task SessionRenewsWithoutAskingForThePasswordAgain()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        using var request = AuthorizedPost("/api/v1/auth/refresh", token, new { });
+        var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var renewed = await response.Content.ReadFromJsonAsync<RefreshedTokenResponse>();
+        Assert.NotNull(renewed);
+        Assert.False(string.IsNullOrWhiteSpace(renewed.AccessToken));
+        Assert.True(renewed.ExpiresAt > DateTimeOffset.UtcNow.AddHours(1));
+        Assert.Equal("Administrator", renewed.Role);
+
+        using var anonymous = new HttpRequestMessage(HttpMethod.Post, new Uri("/api/v1/auth/refresh", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new { })
+        };
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(anonymous)).StatusCode);
+    }
+
+    [Fact]
     public async Task BackupCarriesTheDatabaseAndTheKeyThatDecryptsIt()
     {
         var token = await AuthenticateDemoAdministratorAsync();
@@ -1613,6 +1633,7 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record TcpCheckConfigurationResponse(string Host, int Port);
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
+    private sealed record RefreshedTokenResponse(string AccessToken, DateTimeOffset ExpiresAt, string Role);
     private sealed record BackupResponse(string Name, long SizeBytes, DateTimeOffset CreatedAt);
     private sealed record SelfSignedResponse(string Path, string Subject, DateTime NotAfter);
     private sealed record NetworkResponse(

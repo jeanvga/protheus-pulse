@@ -41,6 +41,26 @@ public static class ApiEndpoints
             role = principal.FindFirstValue(ClaimTypes.Role)
         })).RequireAuthorization("Viewer");
 
+        // A sessão vale oito horas e não se renovava: ela caía sem aviso e levava junto o
+        // formulário aberto. A tela renova sozinha antes do fim, enquanto a pessoa usa.
+        api.MapPost("/auth/refresh", async (
+            ClaimsPrincipal principal,
+            PulseDbContext db,
+            ITokenService tokenService,
+            CancellationToken cancellationToken) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? principal.FindFirstValue("sub");
+            if (!Guid.TryParse(userId, out var id))
+            {
+                return Results.Unauthorized();
+            }
+
+            // Conta desativada ou removida durante a sessão não ganha token novo.
+            var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id && item.IsActive, cancellationToken);
+            return user is null ? Results.Unauthorized() : Results.Ok(tokenService.Create(user));
+        }).RequireAuthorization("Viewer");
+
         api.MapGet("/dashboard/summary", async (IDashboardQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.GetSummaryAsync(demoMode, cancellationToken))).RequireAuthorization("Viewer");
 

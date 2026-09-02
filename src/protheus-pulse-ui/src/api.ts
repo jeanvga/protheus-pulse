@@ -54,6 +54,11 @@ export async function login(username: string, password: string): Promise<AuthTok
   return request<AuthToken>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
 }
 
+export async function refreshSession(): Promise<AuthToken> {
+  if (staticDemo) throw new Error('A sessão não é renovada na demonstração estática.')
+  return request<AuthToken>('/api/v1/auth/refresh', { method: 'POST', body: '{}' })
+}
+
 export async function setup(username: string, displayName: string, password: string): Promise<AuthToken> {
   return request<AuthToken>('/api/v1/auth/setup', { method: 'POST', body: JSON.stringify({ username, displayName, password }) })
 }

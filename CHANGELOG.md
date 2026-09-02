@@ -16,6 +16,8 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 
 - Importação em massa na aba Instalações: as duas rotas existiam e eram testadas, mas quem tinha dez ambientes para cadastrar continuava clicando um a um. O arquivo é conferido antes de gravar — erro aparecendo depois de metade importada seria pior que não ter a importação.
 
+- Renovação silenciosa da sessão. O token valia oito horas e não se renovava: expirava sem aviso e mandava para o login no meio de um cadastro, levando junto o formulário preenchido. A tela agora renova com dez minutos de folga enquanto a pessoa está usando; conta desativada no meio do caminho não ganha token novo e volta ao login.
+
 ### Fixed
 
 - O detalhe da auditoria gravava enum como número: quem lesse o registro via `"Type": 2` em vez de `"Type": "Webhook"`. O registro só serve se for legível meses depois sem consultar o código para traduzir o índice. A serialização foi centralizada em um único lugar, que os nove pontos de gravação agora usam.
