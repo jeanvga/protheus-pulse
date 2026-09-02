@@ -171,8 +171,7 @@ internal static class WindowsServiceInstaller
         await ApplyJwtKeyAccessControlAsync(jwtKeyPath);
         await CreateOrUpdateServiceAsync(executablePath, dataDirectory, jwtKeyPath);
 
-        var startResult = await RunScAsync("start", ServiceName);
-        startResult.EnsureSuccess("iniciar o serviço", 0, 1056);
+        await StartServiceWithRetryAsync();
         await WaitForServiceStatusAsync(ServiceControllerStatus.Running, TimeSpan.FromSeconds(60));
         await WaitForHealthCheckAsync(dataDirectory);
 
@@ -522,6 +521,38 @@ internal static class WindowsServiceInstaller
         }
 
         return $"http://127.0.0.1:{port}/health/ready";
+    }
+
+    /// <summary>
+    /// O 1053 é um tempo limite, não uma recusa: o Gerenciador de Serviços desiste em 30
+    /// segundos se o processo ainda não se registrou. Uma segunda tentativa parte com o
+    /// binário e o disco já aquecidos pela primeira, então vale insistir antes de declarar
+    /// a instalação perdida. O rastro em logs\startup-trace.log diz em que fase o tempo
+    /// foi gasto quando nem a repetição resolve.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static async Task StartServiceWithRetryAsync()
+    {
+        const int startTimeout = 1053;
+        const int alreadyRunning = 1056;
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var result = await RunScAsync("start", ServiceName);
+            if (result.ExitCode is 0 or alreadyRunning)
+            {
+                return;
+            }
+
+            if (result.ExitCode != startTimeout || attempt == 3)
+            {
+                result.EnsureSuccess("iniciar o serviço", 0, alreadyRunning);
+                return;
+            }
+
+            Console.WriteLine($"O serviço não se registrou a tempo (tentativa {attempt} de 3). Repetindo…");
+            await WaitForServiceStatusAsync(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
+            await Task.Delay(TimeSpan.FromSeconds(5));
+        }
     }
 
     private static async Task WaitForHealthCheckAsync(string dataDirectory)

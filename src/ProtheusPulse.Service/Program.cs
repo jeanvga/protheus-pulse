@@ -28,6 +28,8 @@ using ProtheusPulse.Service.WindowsSetup;
 using Serilog;
 using Serilog.Events;
 
+StartupTrace.MarkProcessStart();
+StartupTrace.Mark($"código gerenciado em execução (argumentos: {args.Length})");
 var installerExitCode = await WindowsServiceInstaller.TryRunAsync(args);
 if (installerExitCode.HasValue)
 {
@@ -38,6 +40,7 @@ if (installerExitCode.HasValue)
 AppDomain.CurrentDomain.UnhandledException += static (_, eventArgs) =>
     TryLogStartupCrash(eventArgs.ExceptionObject as Exception);
 
+StartupTrace.Mark("construindo a configuração");
 var builder = WebApplication.CreateBuilder(args);
 var demoMode = args.Any(item => string.Equals(item, "--demo", StringComparison.OrdinalIgnoreCase))
     || builder.Configuration.GetValue<bool>("Pulse:DemoMode");
@@ -86,6 +89,8 @@ Directory.CreateDirectory(dataDirectory);
 Directory.CreateDirectory(Path.Combine(dataDirectory, "logs"));
 var keysDirectory = Path.Combine(dataDirectory, "keys");
 Directory.CreateDirectory(keysDirectory);
+StartupTrace.UseDataDirectory(dataDirectory);
+StartupTrace.Mark("diretório de dados pronto");
 
 // Acesso pela rede: fica em arquivo próprio no diretório de dados para a tela poder
 // gravar sem tocar no appsettings instalado em Program Files, que é somente leitura
@@ -346,7 +351,9 @@ else
     builder.Services.AddHostedService<AutoStartWorker>();
 }
 
+StartupTrace.Mark("montando o host");
 var app = builder.Build();
+StartupTrace.Mark("host montado");
 
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
@@ -398,8 +405,11 @@ var staticFileOptions = new StaticFileOptions
 app.UseDefaultFiles();
 app.UseStaticFiles(staticFileOptions);
 app.MapFallbackToFile("index.html", staticFileOptions).AllowAnonymous();
+app.Lifetime.ApplicationStarted.Register(() => StartupTrace.Mark("serviço registrado e ouvindo"));
 
+StartupTrace.Mark("entregando ao Gerenciador de Serviços");
 await app.RunAsync();
+StartupTrace.Mark("host encerrado");
 
 static void TryLogStartupCrash(Exception? exception)
 {

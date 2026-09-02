@@ -2,6 +2,20 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.9.3] - 2026-09-02
+
+### Added
+
+- Rastro de inicialização em `logs\startup-trace.log`, com o tempo decorrido em cada fase: processo iniciado, configuração construída, diretório de dados pronto, host montado e serviço registrado. Uma falha dentro da janela de 30 segundos do Gerenciador de Serviços não deixava rastro nenhum — o log da aplicação só começa quando o host roda e o log de falha só recebe exceção —, então não havia como saber se o tempo foi gasto carregando o binário, lendo configuração ou montando o host.
+
+### Changed
+
+- O instalador repete o start até três vezes quando o Gerenciador de Serviços responde 1053. O código é tempo limite, não recusa, e a segunda tentativa parte com binário e disco já aquecidos pela primeira.
+
+### Note
+
+A 1.9.2 atribuiu o erro 1053 à migração do banco e a moveu para segundo plano. O endurecimento vale por si — migração que falha agora é reportada em vez de derrubar o processo em silêncio —, mas não era a causa: no .NET o serviço informa `RUNNING` ao Gerenciador de Serviços **antes** de os hosted services rodarem, então a migração nunca esteve dentro da janela de 30 segundos. O rastro desta versão mede as fases que realmente estão nessa janela.
+
 ## [1.9.2] - 2026-09-02
 
 A 1.9.1 foi marcada mas não chegou a gerar instalador: a suíte de integração terminava com `ObjectDisposedException` na limpeza e o processo saía com erro mesmo com os 131 testes passando. A causa era o próprio encerramento do inicializador de banco, que esperava a migração usando o token de parada do host — já descartado nesse ponto. O conteúdo abaixo é o dela, com essa correção.

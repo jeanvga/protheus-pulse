@@ -50,3 +50,30 @@ Se o `/health/ready` continuar recusando, o motivo aparece no próprio corpo da 
 `C:\ProgramData\ProtheusPulse\logs`. Uma causa comum é outro `ProtheusPulse.Service.exe` ainda em execução — iniciado
 manualmente em uma sessão interativa, por exemplo — segurando `pulse.db`. Confira com `tasklist /fi "imagename eq
 ProtheusPulse.Service.exe"` e encerre o processo que não for o do serviço antes de repetir a instalação.
+
+## Quando o start falha com 1053
+
+O 1053 é tempo limite: o Gerenciador de Serviços desiste após 30 segundos se o processo ainda não se registrou. A partir da
+1.9.3 o instalador repete o start até três vezes antes de desistir, porque a segunda tentativa parte com binário e disco já
+aquecidos.
+
+Se as três falharem, `C:\ProgramData\ProtheusPulse\logs\startup-trace.log` mostra em que fase o tempo foi gasto, com o
+decorrido desde o início do processo:
+
+```
+2026-01-15T09:12:33.400Z +     8ms  processo iniciado (argumentos: 0)
+2026-01-15T09:12:33.500Z +   110ms  construindo a configuração
+2026-01-15T09:12:33.560Z +   170ms  diretório de dados pronto
+2026-01-15T09:12:33.620Z +   230ms  montando o host
+2026-01-15T09:12:33.700Z +   310ms  host montado
+2026-01-15T09:12:33.710Z +   320ms  entregando ao Gerenciador de Serviços
+2026-01-15T09:12:33.900Z +   510ms  serviço registrado e ouvindo
+```
+
+A última linha gravada é a fase que travou. Sem nenhuma linha, o processo não chegou a executar código — verifique antivírus,
+bloqueio de execução e permissão de `C:\Program Files\Protheus Pulse`. Para ver o mesmo caminho ao vivo, execute o binário
+em console numa sessão administrativa:
+
+```powershell
+& 'C:\Program Files\Protheus Pulse\ProtheusPulse.Service.exe'
+```
