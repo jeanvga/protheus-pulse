@@ -283,3 +283,50 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .panel { transition: border-color .16s ease; }
 .log-group { transition: background-color .14s ease; }
 .log-group:hover { background: var(--surface-soft); }
+
+/* Instalações em linha: cada ambiente e cada componente ocupam uma linha só. */
+.installation-table { padding: 4px 0; }
+.install-line { min-height: 46px; padding: 9px 18px; display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--border-soft); }
+.installation-table > *:first-child .install-line, .installation-table > :first-child > .install-line { border-top: 0; }
+.install-line-identity { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; }
+.install-line-identity strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.install-line-stat { flex: none; color: var(--text-muted); font-size: 9px; white-space: nowrap; }
+.install-line-stat strong { color: var(--text-soft); }
+.install-line-actions { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.install-line-actions .chip-button { height: 26px; padding: 0 9px; font-size: 8px; }
+.install-line-actions .row-action { width: 28px; height: 28px; border: 1px solid var(--border-soft); border-radius: 7px; }
+.install-line-actions .row-action:hover:not(:disabled) { color: var(--text); border-color: var(--text-muted); }
+.install-line-actions .row-action.danger:hover:not(:disabled) { color: var(--critical, #ff6b6b); border-color: var(--critical, #ff6b6b); }
+.component-line { min-height: 34px; padding: 6px 18px 6px 34px; display: flex; align-items: center; gap: 10px; background: var(--surface-soft); border-top: 1px solid var(--border-soft); }
+.component-line:hover { background: var(--surface-raised); }
+.component-line-name { flex: none; font-size: 10px; font-weight: 600; }
+.component-line-summary { flex: 1; min-width: 0; color: var(--text-muted); font-size: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.component-line .mini-component-actions { margin-left: 0; }
+@media (max-width: 900px) { .install-line-stat, .component-line-summary { display: none; } }
+
+/* Contas de acesso. */
+.user-list { margin: 0 0 14px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.user-list li { padding: 9px 12px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--surface-soft); display: flex; align-items: center; gap: 9px; }
+.user-line-identity { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.user-line-identity strong { font-size: 10px; }
+.user-line-identity span { color: var(--text-muted); font-size: 8px; }
+.user-list select { height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 9px; }
+.user-list .row-action { width: 28px; height: 28px; border: 1px solid var(--border-soft); border-radius: 7px; }
+.user-list .row-action:hover:not(:disabled) { color: var(--text); border-color: var(--text-muted); }
+.user-list .row-action.danger:hover:not(:disabled) { color: #ff6b6b; border-color: #ff6b6b; }
+.user-inactive { flex: none; padding: 2px 7px; border-radius: 999px; background: rgba(255, 107, 107, .12); color: #ff8f8f; font-size: 8px; }
+
+/* Acesso pela rede. */
+.network-warning { margin: 10px 0; padding: 12px 14px; border: 1px solid rgba(246, 185, 75, .3); border-radius: 9px; background: rgba(246, 185, 75, .07); display: flex; gap: 11px; color: var(--text-soft); font-size: 9px; line-height: 1.55; }
+.network-warning svg { flex: none; color: var(--warning); }
+.switch-field { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 10px; }
+.switch-field input { width: 15px; height: 15px; }
+.network-addresses { margin: 10px 0; color: var(--text-soft); font-size: 9px; }
+.network-addresses ul { margin: 7px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.network-addresses li { padding: 3px 8px; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface-soft); }
+
+/* Detecção automática pela pasta. */
+.auto-detect { margin: 12px 0 4px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 9px; background: var(--surface-soft); }
+.auto-detect-row { display: flex; align-items: flex-end; gap: 10px; }
+.auto-detect-row .wide-field { flex: 1; }
+.auto-detect-row button { flex: none; height: 38px; }

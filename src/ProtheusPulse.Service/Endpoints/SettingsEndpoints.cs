@@ -1,4 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -27,8 +29,82 @@ public static class SettingsEndpoints
         api.MapPost("/settings/email/test", SendTestAsync).RequireAuthorization("Administrator").RequireRateLimiting("serviceControl");
         api.MapGet("/settings/retention", GetRetentionAsync).RequireAuthorization("Administrator");
         api.MapPut("/settings/retention", SaveRetentionAsync).RequireAuthorization("Administrator");
+        api.MapGet("/settings/network", GetNetworkAsync).RequireAuthorization("Administrator");
+        api.MapPut("/settings/network", SaveNetworkAsync).RequireAuthorization("Administrator");
         return api;
     }
+
+    /// <summary>
+    /// Onde o painel escuta. O padrão é loopback; abrir para a rede é opt-in explícito
+    /// porque o tráfego é HTTP puro e a tela administra serviços do Windows.
+    /// </summary>
+    private static IResult GetNetworkAsync(IConfiguration configuration)
+    {
+        var options = configuration.GetSection(NetworkOptions.SectionName).Get<NetworkOptions>() ?? new NetworkOptions();
+        return Results.Ok(new NetworkSettingsResponse(
+            options.AllowRemoteAccess,
+            options.Port,
+            options.BuildUrl(),
+            LocalAddresses(options.Port)));
+    }
+
+    private static async Task<IResult> SaveNetworkAsync(
+        SaveNetworkRequest request,
+        PulseDataDirectory dataDirectory,
+        CancellationToken cancellationToken)
+    {
+        var options = new NetworkOptions { AllowRemoteAccess = request.AllowRemoteAccess, Port = request.Port };
+        if (options.Validate() is { Count: > 0 } errors)
+        {
+            return Results.BadRequest(new { message = string.Join(" ", errors) });
+        }
+
+        var path = Path.Combine(dataDirectory.Path, "network.json");
+        var document = new Dictionary<string, NetworkOptions>(StringComparer.Ordinal)
+        {
+            [NetworkOptions.SectionName] = options
+        };
+        await File.WriteAllTextAsync(
+            path,
+            JsonSerializer.Serialize(document, NetworkSerializerOptions),
+            cancellationToken);
+        return Results.Ok(new NetworkSettingsResponse(
+            options.AllowRemoteAccess,
+            options.Port,
+            options.BuildUrl(),
+            LocalAddresses(options.Port)));
+    }
+
+    /// <summary>Endereços que o operador pode digitar em outra máquina.</summary>
+    private static string[] LocalAddresses(int port)
+    {
+        try
+        {
+            return NetworkInterface.GetAllNetworkInterfaces()
+                .Where(item => item.OperationalStatus == OperationalStatus.Up
+                    && item.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                .SelectMany(item => item.GetIPProperties().UnicastAddresses)
+                .Where(item => item.Address.AddressFamily == AddressFamily.InterNetwork)
+                .Select(item => $"http://{item.Address}:{port}")
+                .Distinct(StringComparer.Ordinal)
+                .Take(8)
+                .ToArray();
+        }
+        catch (NetworkInformationException)
+        {
+            return [];
+        }
+    }
+
+    private static readonly JsonSerializerOptions NetworkSerializerOptions = new() { WriteIndented = true };
+
+    public sealed record SaveNetworkRequest(bool AllowRemoteAccess, int Port);
+
+    public sealed record NetworkSettingsResponse(
+        bool AllowRemoteAccess,
+        int Port,
+        string BoundUrl,
+        IReadOnlyList<string> LocalAddresses);
 
     /// <summary>
     /// Quanto tempo o histórico fica no SQLite. Sem isso o banco cresce sem teto no

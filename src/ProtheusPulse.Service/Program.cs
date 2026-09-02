@@ -85,6 +85,20 @@ Directory.CreateDirectory(Path.Combine(dataDirectory, "logs"));
 var keysDirectory = Path.Combine(dataDirectory, "keys");
 Directory.CreateDirectory(keysDirectory);
 
+// Acesso pela rede: fica em arquivo próprio no diretório de dados para a tela poder
+// gravar sem tocar no appsettings instalado em Program Files, que é somente leitura
+// para o serviço. O bind só muda no próximo start do serviço.
+var networkSettingsPath = Path.Combine(dataDirectory, "network.json");
+builder.Configuration.AddJsonFile(networkSettingsPath, optional: true, reloadOnChange: false);
+var networkOptions = builder.Configuration.GetSection(NetworkOptions.SectionName).Get<NetworkOptions>() ?? new NetworkOptions();
+if (networkOptions.Validate() is { Count: > 0 } networkErrors)
+{
+    throw new InvalidOperationException(string.Join(" ", networkErrors));
+}
+
+builder.WebHost.UseUrls(networkOptions.BuildUrl());
+builder.Services.AddSingleton(new PulseDataDirectory(dataDirectory));
+
 builder.Host.UseWindowsService(options => options.ServiceName = "ProtheusPulse");
 builder.Host.UseSerilog((_, _, configuration) => configuration
     .MinimumLevel.Information()

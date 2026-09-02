@@ -346,3 +346,39 @@ export interface EmailTestResult {
   success: boolean
   message: string
 }
+
+export interface PulseUser {
+  id: string
+  username: string
+  displayName: string
+  email: string | null
+  role: string
+  isActive: boolean
+  createdAt: string
+  lastLoginAt: string | null
+}
+
+export interface SaveUserRequest {
+  username?: string
+  displayName?: string
+  email?: string
+  password?: string
+  role: string
+  isActive?: boolean
+}
+
+export interface NetworkSettings {
+  allowRemoteAccess: boolean
+  port: number
+  boundUrl: string
+  localAddresses: string[]
+}
+
+export interface ComponentProposal {
+  suggestedName: string
+  executablePath: string | null
+  iniPath: string | null
+  logPaths: string[]
+  ports: number[]
+  filesInspected: number
+}

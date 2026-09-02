@@ -112,3 +112,10 @@ Não substitua os exemplos versionados por caminhos, IPs ou nomes reais de clien
 - aceitar caminhos locais e UNC, sem depender de unidade mapeada;
 - exibir `Unknown` quando a evidência não for confiável;
 - sanitizar qualquer dado antes de enviá-lo ao frontend.
+
+## Detecção automática pela pasta
+
+No editor de componente, o campo **Pasta do Protheus** varre o diretório informado até três níveis e classifica o que achou
+pelo nome e pela extensão: `appserver.exe` vira o executável, `appserver.ini` vira o INI, `console.log` entra como origem de
+log e as chaves de porta do INI viram verificações TCP em `127.0.0.1`. O resultado preenche o formulário, que continua
+editável — nada é gravado antes de você revisar e salvar. A varredura é somente leitura e ignora pasta sem permissão.

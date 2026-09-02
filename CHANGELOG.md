@@ -2,6 +2,18 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.0] - 2026-09-02
+
+### Added
+
+- Gestão de contas em **Configurações → Usuários e perfis**: criar, trocar perfil, desativar, trocar senha e remover. Antes só existia o administrador criado na primeira tela, e qualquer conta adicional exigia mexer no banco. A última conta de administrador ativa não pode ser rebaixada, desativada nem removida — sem ela ninguém conseguiria voltar a abrir essa tela.
+- **Configurações → Acesso pela rede**: liberar o painel para outros computadores por `http://ip:porta`, com a porta configurável e os endereços da máquina listados na tela. A opção fica em `network.json` no diretório de dados, porque o `appsettings.json` instalado em Program Files é somente leitura para o serviço, e vale a partir do próximo start do serviço. A tela avisa que o tráfego é HTTP sem TLS e mostra o comando de firewall, que o instalador continua não executando.
+- Detecção automática de componente pela pasta: informe o diretório do Protheus e o Pulse varre até três níveis, classifica `appserver.exe`, `appserver.ini` e `console.log` pelo nome e pela extensão, lê as portas declaradas no INI e preenche o formulário. Antes era preciso localizar arquivo por arquivo e dizer manualmente o que cada um era.
+
+### Changed
+
+- A aba Instalações passou a ser realmente uma lista: cada ambiente ocupa uma linha, com nome, situação, contagem e ações à direita, e cada componente ocupa outra linha logo abaixo com o estado do serviço e os botões de iniciar, reiniciar e parar. A versão anterior ainda desenhava um cartão por ambiente, apenas mais largo.
+
 ## [1.6.0] - 2026-09-02
 
 ### Added

@@ -456,6 +456,61 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task UserManagementCreatesAccountsAndRefusesToRemoveTheLastAdministrator()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        var username = $"operador{Guid.NewGuid():N}"[..24];
+        using var create = AuthorizedPost("/api/v1/users", token, new
+        {
+            username,
+            displayName = "Operador sintético",
+            password = "SenhaSintetica!2026",
+            role = "Operator"
+        });
+        var created = await client.SendAsync(create);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        using var duplicate = AuthorizedPost("/api/v1/users", token, new
+        {
+            username,
+            password = "SenhaSintetica!2026",
+            role = "Viewer"
+        });
+        Assert.Equal(HttpStatusCode.Conflict, (await client.SendAsync(duplicate)).StatusCode);
+
+        using var weak = AuthorizedPost("/api/v1/users", token, new
+        {
+            username = $"fraco{Guid.NewGuid():N}"[..20],
+            password = "123",
+            role = "Viewer"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(weak)).StatusCode);
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, new Uri("/api/v1/users", UriKind.Relative));
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var listResponse = await client.SendAsync(listRequest);
+        listResponse.EnsureSuccessStatusCode();
+        var users = await listResponse.Content.ReadFromJsonAsync<UserRow[]>();
+        Assert.NotNull(users);
+        var administrator = Assert.Single(users, item => item.Role == "Administrator" && item.IsActive);
+        Assert.DoesNotContain("PasswordHash", await listResponse.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+
+        // O painel não pode ficar sem administrador: a tela que devolveria o perfil exige o perfil.
+        using var demote = new HttpRequestMessage(HttpMethod.Put, new Uri($"/api/v1/users/{administrator.Id}", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new { role = "Viewer" })
+        };
+        demote.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(demote)).StatusCode);
+
+        using var remove = new HttpRequestMessage(HttpMethod.Delete, new Uri($"/api/v1/users/{administrator.Id}", UriKind.Relative));
+        remove.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(remove)).StatusCode);
+    }
+
+    private sealed record UserRow(Guid Id, string Username, string Role, bool IsActive);
+
+    [Fact]
     public async Task LogEventsEndpointFiltersOnTheServerBySearchLevelComponentAndPage()
     {
         var token = await AuthenticateDemoAdministratorAsync();

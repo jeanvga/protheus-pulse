@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Activity, AlertTriangle, Archive, Bell, Boxes, BriefcaseBusiness, Check, ChevronDown, CircleHelp,
@@ -10,13 +10,13 @@ import type { LucideIcon } from 'lucide-react'
 import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, deleteInstallation, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAuthStatus, getDashboard,
-  getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getRetentionSettings, getServerResources, saveRetentionSettings,
+  getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAutoStart, setExclusiveInstallation, setup,
   updateInstallation,
 } from './api'
 import type {
   AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
-  EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, PathCandidate, RetentionSettings,
+  ComponentProposal, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, NetworkSettings, PathCandidate, PulseUser, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
 } from './types'
@@ -460,7 +460,6 @@ interface InstallationGroup {
 }
 
 function Installations({ summary, refresh, addInstallation, editInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void; editInstallation: (id: string) => void }) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -585,33 +584,37 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
     {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.{maintenance.exclusiveInstallation ? ` Somente “${maintenance.exclusiveInstallation.name}” segue no ar, reiniciado no início da janela para compilar e salvar configurações sem sessões antigas.` : ''}</div>}
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
     {message && <div className="success-banner"><Check size={16} /> {message}</div>}
-    <div className="installation-list">{groups.map(group => {
+    <article className="panel installation-table">{groups.map(group => {
       const { id: installationId, name, components } = group
       const isDemo = components.every(item => item.isDemo)
       const canAutomate = isAdministrator && !isDemo && !summary.demoMode
-      const isOpen = expanded[installationId] ?? true
       const healthy = components.filter(item => item.status === 'Healthy').length
-      return <article className={`panel installation-row ${isOpen ? 'is-open' : ''}`} key={installationId}>
-        <button type="button" className="installation-row-main" aria-expanded={isOpen} onClick={() => setExpanded(current => ({ ...current, [installationId]: !isOpen }))}>
-          <ChevronDown className="installation-row-caret" size={16} />
-          <div className="installation-row-identity">
+      return <Fragment key={installationId}>
+        <div className="install-line">
+          <div className="install-line-identity">
+            <strong>{name}</strong>
             <span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span>
-            <h3>{name}</h3>
+            {group.isExclusive && <span className="exclusive-tag"><Crown size={12} /> Exclusivo</span>}
+            {group.autoStartEnabled && <span className="auto-start-tag"><Zap size={12} /> Auto-start</span>}
           </div>
-          <div className="installation-row-tags">{group.isExclusive && <span className="exclusive-tag"><Crown size={13} /> Exclusivo</span>}{group.autoStartEnabled && <span className="auto-start-tag"><Zap size={13} /> Auto-start</span>}</div>
-          <div className="installation-row-stat"><strong>{components.length}</strong> componentes · <strong>{healthy}</strong> saudáveis</div>
+          <span className="install-line-stat"><strong>{components.length}</strong> componentes · <strong>{healthy}</strong> saudáveis</span>
           <StatusBadge status={worstStatus(components)} />
-        </button>
-        {isOpen && <div className="installation-row-body">
-        {canAutomate && <div className="automation-row">
-          <button className={group.isExclusive ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.isExclusive} title="Instalação reiniciada no início da manutenção, que permanece como o único ambiente no ar" onClick={() => void toggleExclusive(group)}><Crown size={14} /> {group.isExclusive ? 'Exclusivo na manutenção' : 'Definir como exclusivo'}</button>
-          <button className={group.autoStartEnabled ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.autoStartEnabled} title="Sobe automaticamente os serviços deste ambiente quando eles caem. Um serviço parado pelo painel fica de fora até ser iniciado pelo painel." onClick={() => void toggleAutoStart(group)}><Zap size={14} /> {group.autoStartEnabled ? 'Auto-start ativo' : 'Ativar auto-start'}</button>
-        </div>}
-        {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span>{component.windowsServiceName && <small className={`service-state ${serviceStateTone(component.windowsServiceStatus)}`}><i />{serviceStatusLabel(component.windowsServiceStatus)}{group.autoStartEnabled ? autoStartNote(component) : ''}</small>}{isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><ServiceActionButton component={component} action="start" icon={Play} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="restart" icon={RotateCw} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="stop" icon={Square} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /></span>}</div><small>{component.summary}</small></div>)}
-        {!isDemo && installationId && <footer className="installation-actions"><button className="secondary-button" onClick={() => editInstallation(installationId)}><Pencil size={15} /> Configurar</button><button className="danger-button" disabled={busy} onClick={() => void remove(installationId, name)}><Trash2 size={15} /> Remover</button></footer>}
-        </div>}
-      </article>
-    })}</div>
+          <div className="install-line-actions">
+            {canAutomate && <button className={group.isExclusive ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.isExclusive} title="Instalação reiniciada no início da manutenção, que permanece como o único ambiente no ar" onClick={() => void toggleExclusive(group)}><Crown size={13} /> Exclusivo</button>}
+            {canAutomate && <button className={group.autoStartEnabled ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.autoStartEnabled} title="Sobe automaticamente os serviços deste ambiente quando eles caem. Um serviço parado pelo painel fica de fora até ser iniciado pelo painel." onClick={() => void toggleAutoStart(group)}><Zap size={13} /> Auto-start</button>}
+            {!isDemo && installationId && <button className="row-action" title={`Configurar ${name}`} aria-label={`Configurar ${name}`} onClick={() => editInstallation(installationId)}><Pencil size={15} /></button>}
+            {!isDemo && installationId && <button className="row-action danger" title={`Remover ${name}`} aria-label={`Remover ${name}`} disabled={busy} onClick={() => void remove(installationId, name)}><Trash2 size={15} /></button>}
+          </div>
+        </div>
+        {components.map(component => <div className="component-line" key={component.id}>
+          <i className={`status-dot ${component.status.toLowerCase()}`} />
+          <span className="component-line-name">{component.name}</span>
+          {component.windowsServiceName && <small className={`service-state ${serviceStateTone(component.windowsServiceStatus)}`}><i />{serviceStatusLabel(component.windowsServiceStatus)}{group.autoStartEnabled ? autoStartNote(component) : ''}</small>}
+          <small className="component-line-summary">{component.summary}</small>
+          {isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><ServiceActionButton component={component} action="start" icon={Play} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="restart" icon={RotateCw} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="stop" icon={Square} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /></span>}
+        </div>)}
+      </Fragment>
+    })}</article>
   </div>
 }
 
@@ -683,6 +686,54 @@ export function serviceStatusLabel(status: string | undefined) {
     NotFound: 'Serviço não encontrado',
   }
   return labels[status ?? ''] ?? 'Estado desconhecido'
+}
+
+/// Aponte a pasta do Protheus e o Pulse classifica sozinho pelo nome e pela extensão:
+/// appserver.exe, appserver.ini, console.log e as portas declaradas no INI. Preencher
+/// campo por campo era o passo mais lento do cadastro.
+function FolderAutoDetect({ onDetected }: { onDetected: (proposal: ComponentProposal) => void }) {
+  const [folder, setFolder] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function detect() {
+    if (folder.trim() === '') return
+    setBusy(true)
+    setNote(null)
+    try {
+      const proposal = await proposeComponent(folder.trim())
+      onDetected(proposal)
+      const found = [
+        proposal.executablePath ? 'executável' : null,
+        proposal.iniPath ? 'INI' : null,
+        proposal.logPaths.length > 0 ? `${proposal.logPaths.length} log(s)` : null,
+        proposal.ports.length > 0 ? `${proposal.ports.length} porta(s)` : null
+      ].filter(Boolean)
+      setNote(found.length > 0
+        ? `Encontrado em ${proposal.filesInspected} arquivos: ${found.join(', ')}.`
+        : `Nada reconhecido em ${proposal.filesInspected} arquivos. Confira a pasta ou preencha manualmente.`)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível varrer a pasta.')
+    } finally { setBusy(false) }
+  }
+
+  return <div className="auto-detect">
+    <div className="auto-detect-row">
+      <label className="wide-field">Pasta do Protheus
+        <input
+          aria-label="Pasta para detecção automática"
+          value={folder}
+          onChange={event => setFolder(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void detect() } }}
+          placeholder={'D:\\TOTVS\\Protheus'} />
+      </label>
+      <button type="button" className="primary-button" disabled={busy || folder.trim() === ''} onClick={() => void detect()}><FolderSearch size={15} /> {busy ? 'Procurando…' : 'Detectar'}</button>
+    </div>
+    {note && <p className="field-hint">{note}</p>}
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+  </div>
 }
 
 interface TcpCheckDraft extends TcpCheckConfiguration { key: number }
@@ -852,6 +903,15 @@ function ComponentConfigurationEditor({ component, index, update, remove, canRem
     </section>
 
     <section className="target-section"><div className="target-section-heading"><div><h4>Arquivos e logs</h4><p>Informe caminhos absolutos locais ou UNC. Nenhuma unidade mapeada é usada.</p></div><FolderSearch size={17} /></div>
+      <FolderAutoDetect onDetected={proposal => update({
+        name: component.name || proposal.suggestedName,
+        executablePath: proposal.executablePath ?? component.executablePath,
+        iniPath: proposal.iniPath ?? component.iniPath,
+        logPaths: proposal.logPaths.length > 0 ? proposal.logPaths : component.logPaths,
+        tcpChecks: proposal.ports.length > 0
+          ? proposal.ports.map(port => ({ key: nextDraftKey(), host: '127.0.0.1', port, timeoutMs: 3_000, isRequired: true }))
+          : component.tcpChecks
+      })} />
       <div className="path-discovery-grid"><label>Pasta inicial<input aria-label={`Pasta para descoberta ${index + 1}`} value={pathRoot} onChange={event => setPathRoot(event.target.value)} placeholder="D:\TOTVS\Protheus" /></label><label>Nomes exatos<input aria-label={`Arquivos para descoberta ${index + 1}`} value={fileNames} onChange={event => setFileNames(event.target.value)} /></label><button type="button" className="secondary-button" disabled={discoveryBusy} onClick={() => void findPaths()}><FolderSearch size={14} /> Localizar</button></div>
       {pathCandidates.length > 0 && <div className="path-candidates">{pathCandidates.slice(0, 20).map(candidate => <div key={candidate.path}><span title={candidate.path}>{candidate.path}</span><div>{candidate.fileName.toLowerCase().endsWith('.exe') && <button type="button" onClick={() => update({ executablePath: candidate.path })}>Executável</button>}{candidate.fileName.toLowerCase().endsWith('.ini') && <button type="button" onClick={() => update({ iniPath: candidate.path })}>INI</button>}<button type="button" onClick={() => addLog(candidate.path)}>Log</button></div></div>)}</div>}
       <div className="target-form-grid"><label>Executável<input aria-label={`Caminho do executável ${index + 1}`} value={component.executablePath} onChange={event => update({ executablePath: event.target.value })} placeholder="Opcional" /></label><label>Arquivo INI<input aria-label={`Caminho do INI ${index + 1}`} value={component.iniPath} onChange={event => update({ iniPath: event.target.value })} placeholder="Opcional" /></label><label className="wide-field">Logs, um caminho por linha<textarea aria-label={`Caminhos de log ${index + 1}`} value={component.logPaths.join('\n')} onChange={event => update({ logPaths: event.target.value.split(/\r?\n/) })} placeholder={'D:\\TOTVS\\Protheus\\logs\\console.log'} /></label></div>
@@ -1081,12 +1141,130 @@ function RetentionSettingsCard() {
   </form>
 }
 
+function UsersSettingsCard() {
+  const [users, setUsers] = useState<PulseUser[]>([])
+  const [draft, setDraft] = useState({ username: '', displayName: '', email: '', password: '', role: 'Viewer' })
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      setUsers(await getUsers())
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as contas.')
+    }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  async function run(action: () => Promise<void>, success: string) {
+    setBusy(true)
+    setMessage(null)
+    try {
+      await action()
+      setMessage(success)
+      setError(null)
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'A operação não foi concluída.')
+    } finally { setBusy(false) }
+  }
+
+  return <div className="settings-form">
+    <p className="field-hint">Administrator controla serviços e configuração; Operator reconhece alertas e opera a manutenção; Viewer só enxerga. O painel nunca fica sem um administrador ativo: a última conta com esse perfil não pode ser rebaixada, desativada nem removida.</p>
+    <ul className="user-list">{users.map(user => <li key={user.id}>
+      <div className="user-line-identity"><strong>{user.displayName}</strong><span>{user.username}{user.email ? ` · ${user.email}` : ''}</span></div>
+      {!user.isActive && <span className="user-inactive">Inativa</span>}
+      <select aria-label={`Perfil de ${user.username}`} value={user.role} disabled={busy} onChange={event => void run(() => updateUser(user.id, { role: event.target.value }), 'Perfil atualizado.')}>
+        <option value="Administrator">Administrator</option>
+        <option value="Operator">Operator</option>
+        <option value="Viewer">Viewer</option>
+      </select>
+      <button type="button" className="row-action" title={user.isActive ? `Desativar ${user.username}` : `Reativar ${user.username}`} aria-label={user.isActive ? `Desativar ${user.username}` : `Reativar ${user.username}`} disabled={busy} onClick={() => void run(() => updateUser(user.id, { role: user.role, isActive: !user.isActive }), user.isActive ? 'Conta desativada.' : 'Conta reativada.')}><LockKeyhole size={15} /></button>
+      <button type="button" className="row-action" title={`Trocar a senha de ${user.username}`} aria-label={`Trocar a senha de ${user.username}`} disabled={busy} onClick={() => {
+        const password = window.prompt(`Nova senha para ${user.username}`)
+        if (password) void run(() => resetUserPassword(user.id, password), 'Senha trocada.')
+      }}><RefreshCw size={15} /></button>
+      <button type="button" className="row-action danger" title={`Remover ${user.username}`} aria-label={`Remover ${user.username}`} disabled={busy} onClick={() => {
+        if (window.confirm(`Remover a conta ${user.username}?`)) void run(() => deleteUser(user.id), 'Conta removida.')
+      }}><Trash2 size={15} /></button>
+    </li>)}</ul>
+    <form className="form-grid" onSubmit={event => {
+      event.preventDefault()
+      void run(async () => {
+        await createUser(draft)
+        setDraft({ username: '', displayName: '', email: '', password: '', role: 'Viewer' })
+      }, 'Conta criada.')
+    }}>
+      <label>Usuário<input required value={draft.username} onChange={event => setDraft({ ...draft, username: event.target.value })} placeholder="joao.silva" /></label>
+      <label>Nome<input value={draft.displayName} onChange={event => setDraft({ ...draft, displayName: event.target.value })} placeholder="João Silva" /></label>
+      <label>E-mail<input type="email" value={draft.email} onChange={event => setDraft({ ...draft, email: event.target.value })} placeholder="Opcional" /></label>
+      <label>Senha<input required type="password" value={draft.password} onChange={event => setDraft({ ...draft, password: event.target.value })} /></label>
+      <label>Perfil<select value={draft.role} onChange={event => setDraft({ ...draft, role: event.target.value })}><option value="Administrator">Administrator</option><option value="Operator">Operator</option><option value="Viewer">Viewer</option></select></label>
+      <div className="form-actions"><button className="primary-button" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Criar conta'}</button></div>
+    </form>
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+    {message && <div className="success-banner"><Check size={16} /> {message}</div>}
+  </div>
+}
+
+function NetworkSettingsCard() {
+  const [settings, setSettings] = useState<NetworkSettings | null>(null)
+  const [allowRemote, setAllowRemote] = useState(false)
+  const [port, setPort] = useState('5058')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const loaded = await getNetworkSettings()
+        setSettings(loaded)
+        setAllowRemote(loaded.allowRemoteAccess)
+        setPort(String(loaded.port))
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o acesso pela rede.')
+      }
+    })()
+  }, [])
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setMessage(null)
+    try {
+      setSettings(await saveNetworkSettings({ allowRemoteAccess: allowRemote, port: Number(port) }))
+      setMessage('Salvo. Reinicie o serviço ProtheusPulse para o novo endereço valer.')
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar.')
+    } finally { setBusy(false) }
+  }
+
+  return <form className="settings-form" onSubmit={event => void save(event)}>
+    <p className="field-hint">Por padrão o painel escuta apenas em <code>127.0.0.1</code> e só abre no próprio servidor. Liberar o acesso faz o serviço escutar em todas as interfaces, para abrir de outra máquina por <code>http://ip:porta</code>.</p>
+    <div className="network-warning"><ShieldCheck size={18} /><div><strong>O tráfego é HTTP, sem TLS.</strong> Senha e token trafegam legíveis na rede, e por esta tela se controla serviço do Windows. Use apenas em rede interna confiável; para acesso amplo, publique por um proxy HTTPS e mantenha esta opção desligada.</div></div>
+    <label className="switch-field"><input type="checkbox" checked={allowRemote} onChange={event => setAllowRemote(event.target.checked)} /> Permitir acesso de outros computadores</label>
+    <div className="form-grid"><label>Porta<input type="number" min={1024} max={65535} value={port} onChange={event => setPort(event.target.value)} /></label></div>
+    {settings && <div className="network-addresses">
+      <span>Escutando agora em <code>{settings.boundUrl}</code></span>
+      {allowRemote && settings.localAddresses.length > 0 && <ul>{settings.localAddresses.map(address => <li key={address}><code>{address}</code></li>)}</ul>}
+    </div>}
+    <p className="field-hint">O instalador não cria regra de firewall. Para liberar a porta no Windows, execute como administrador: <code>netsh advfirewall firewall add rule name="Protheus Pulse" dir=in action=allow protocol=TCP localport={port}</code></p>
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+    {message && <div className="success-banner"><Check size={16} /> {message}</div>}
+    <div className="form-actions"><button className="primary-button" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Salvar acesso'}</button></div>
+  </form>
+}
+
 function SettingsPage() {
   const isAdministrator = session.role === 'Administrator'
   const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · E-mail · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
   return <div className="page-body">
     {isAdministrator
-      ? <><SettingsSection icon={Mail} title="Envio de e-mail" summary="Servidor SMTP, remetente, destinatários e teste de envio"><EmailSettingsCard /></SettingsSection><SettingsSection icon={Archive} title="Retenção de dados" summary="Por quanto tempo o histórico fica no banco antes de ser apagado"><RetentionSettingsCard /></SettingsSection></>
+      ? <><SettingsSection icon={Mail} title="Envio de e-mail" summary="Servidor SMTP, remetente, destinatários e teste de envio"><EmailSettingsCard /></SettingsSection><SettingsSection icon={Archive} title="Retenção de dados" summary="Por quanto tempo o histórico fica no banco antes de ser apagado"><RetentionSettingsCard /></SettingsSection><SettingsSection icon={UserRound} title="Usuários e perfis" summary="Contas de acesso ao painel e o que cada perfil pode fazer"><UsersSettingsCard /></SettingsSection><SettingsSection icon={Boxes} title="Acesso pela rede" summary="Abrir o painel de outro computador por http://ip:porta"><NetworkSettingsCard /></SettingsSection></>
       : <div className="read-only-notice"><LockKeyhole size={22} /><div><strong>Somente administradores</strong><p>Os dados de envio de e-mail e os tokens dos agentes de log só aparecem para o perfil Administrator.</p></div></div>}
     <div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div>
     <div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Coleta segura e ações auditadas</strong><p>A coleta é somente leitura e não escreve nas pastas monitoradas. Iniciar, reiniciar ou parar serviços exige perfil Administrator e fica registrado na auditoria.</p></div></div>

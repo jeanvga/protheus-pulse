@@ -56,6 +56,29 @@ Para visualizar as ações sem executá-las:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-service.ps1 -WhatIf
 ```
 
+## Acesso de outro computador
+
+O padrão escuta em `127.0.0.1:5058` e só abre no próprio servidor. Em **Configurações → Acesso pela rede** um administrador
+libera o painel para a rede: o serviço passa a escutar em todas as interfaces e a tela mostra os endereços `http://ip:porta`
+que podem ser digitados de outra máquina. A opção é gravada em `C:\ProgramData\ProtheusPulse\network.json` e **vale a partir
+do próximo start do serviço** — reinicie `ProtheusPulse` depois de salvar.
+
+O tráfego é HTTP puro: senha e token trafegam legíveis e por essa tela se controla serviço do Windows. Libere apenas em rede
+interna confiável. Para acesso amplo, mantenha o bind em loopback e publique por um proxy HTTPS, como descrito acima.
+
+O instalador não cria regra de firewall. Para liberar a porta, em sessão administrativa:
+
+```powershell
+netsh advfirewall firewall add rule name="Protheus Pulse" dir=in action=allow protocol=TCP localport=5058
+```
+
+## Contas de acesso
+
+Depois do administrador inicial, as demais contas são criadas em **Configurações → Usuários e perfis**: criar, trocar perfil,
+desativar, trocar senha e remover. `Administrator` controla serviços e configuração, `Operator` reconhece alertas e opera a
+manutenção, `Viewer` só enxerga. A última conta de administrador ativa não pode ser rebaixada, desativada nem removida — sem
+ela ninguém conseguiria voltar a abrir essa tela.
+
 ## Primeiro acesso
 
 Abra [http://127.0.0.1:5058](http://127.0.0.1:5058) no próprio servidor e crie o primeiro administrador. Use uma senha exclusiva e guarde-a no cofre corporativo.

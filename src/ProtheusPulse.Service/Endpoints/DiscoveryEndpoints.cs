@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using System.ServiceProcess;
 using System.Text.Json;
@@ -20,7 +21,128 @@ public static class DiscoveryEndpoints
         api.MapGet("/discovery/services", DiscoverServicesAsync).RequireAuthorization("Administrator");
         api.MapPost("/discovery/paths", DiscoverPathsAsync).RequireAuthorization("Administrator");
         api.MapPost("/discovery/ini", InspectIniAsync).RequireAuthorization("Administrator");
+        api.MapPost("/discovery/component", ProposeComponentAsync).RequireAuthorization("Administrator");
         return api;
+    }
+
+    /// <summary>
+    /// Aponta uma pasta e o Pulse classifica sozinho o que achou: executável, INI, logs e
+    /// as portas declaradas no INI. Antes era preciso localizar arquivo por arquivo e dizer
+    /// manualmente o que cada um era.
+    /// </summary>
+    private static async Task<IResult> ProposeComponentAsync(
+        ComponentProposalRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!SafeFileAccess.TryResolveRoot(request.Root, out var root, out var rootError))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["root"] = [rootError] });
+        }
+
+        var executables = new List<string>();
+        var inis = new List<string>();
+        var logs = new List<string>();
+        var inspected = 0;
+        foreach (var file in EnumerateBounded(root, MaximumProposalDepth))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (++inspected > MaximumProposalFiles)
+            {
+                break;
+            }
+
+            var name = Path.GetFileName(file);
+            var extension = Path.GetExtension(file);
+            if (extension.Equals(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                if (name.Contains("appserver", StringComparison.OrdinalIgnoreCase))
+                {
+                    executables.Add(file);
+                }
+            }
+            else if (extension.Equals(".ini", StringComparison.OrdinalIgnoreCase))
+            {
+                if (name.Contains("appserver", StringComparison.OrdinalIgnoreCase))
+                {
+                    inis.Add(file);
+                }
+            }
+            else if (extension.Equals(".log", StringComparison.OrdinalIgnoreCase)
+                && name.Contains("console", StringComparison.OrdinalIgnoreCase))
+            {
+                logs.Add(file);
+            }
+        }
+
+        var ports = new List<int>();
+        var iniPath = inis.OrderBy(item => item.Length).FirstOrDefault();
+        if (iniPath is not null)
+        {
+            var ini = await SanitizedIniReader.ReadAsync(iniPath, cancellationToken);
+            if (ini.Valid)
+            {
+                foreach (var entry in ini.Entries)
+                {
+                    if (entry.Key.Contains("port", StringComparison.OrdinalIgnoreCase)
+                        && int.TryParse(entry.Value, CultureInfo.InvariantCulture, out var port)
+                        && port is > 0 and <= 65_535
+                        && !ports.Contains(port))
+                    {
+                        ports.Add(port);
+                    }
+                }
+            }
+        }
+
+        return Results.Ok(new ComponentProposal(
+            Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar)),
+            executables.OrderBy(item => item.Length).FirstOrDefault(),
+            iniPath,
+            logs.OrderBy(item => item.Length).Take(MaximumProposalLogs).ToArray(),
+            ports.Take(MaximumProposalPorts).ToArray(),
+            inspected));
+    }
+
+    /// <summary>Varredura limitada em profundidade, ignorando pasta sem permissão.</summary>
+    private static IEnumerable<string> EnumerateBounded(string root, int depth)
+    {
+        IEnumerable<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(root);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or DirectoryNotFoundException or IOException)
+        {
+            yield break;
+        }
+
+        foreach (var file in files)
+        {
+            yield return file;
+        }
+
+        if (depth <= 0)
+        {
+            yield break;
+        }
+
+        IEnumerable<string> directories;
+        try
+        {
+            directories = Directory.EnumerateDirectories(root);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or DirectoryNotFoundException or IOException)
+        {
+            yield break;
+        }
+
+        foreach (var directory in directories)
+        {
+            foreach (var file in EnumerateBounded(directory, depth - 1))
+            {
+                yield return file;
+            }
+        }
     }
 
     private static async Task<IResult> DiscoverServicesAsync(
@@ -283,6 +405,11 @@ public static class DiscoveryEndpoints
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    private const int MaximumProposalDepth = 3;
+    private const int MaximumProposalFiles = 6_000;
+    private const int MaximumProposalLogs = 5;
+    private const int MaximumProposalPorts = 6;
+
     private static Guid? GetUserId(ClaimsPrincipal principal)
     {
         var value = principal.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -298,6 +425,16 @@ public static class DiscoveryEndpoints
         int TimeoutSeconds = 10);
 
     public sealed record IniInspectionRequest(string? Root, string? Path);
+
+    public sealed record ComponentProposalRequest(string? Root);
+
+    public sealed record ComponentProposal(
+        string SuggestedName,
+        string? ExecutablePath,
+        string? IniPath,
+        IReadOnlyList<string> LogPaths,
+        IReadOnlyList<int> Ports,
+        int FilesInspected);
     public sealed record ServiceCandidate(string ServiceName, string DisplayName, string Status);
     public sealed record PathCandidate(string Path, string FileName);
 }

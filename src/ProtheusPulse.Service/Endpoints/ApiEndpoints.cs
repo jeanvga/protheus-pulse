@@ -50,6 +50,7 @@ public static class ApiEndpoints
         api.MapHeartbeats();
         api.MapServerResources();
         api.MapEmailSettings();
+        api.MapUsers();
 
         api.MapGet("/components", async (IDashboardQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.GetComponentsAsync(cancellationToken))).RequireAuthorization("Viewer");

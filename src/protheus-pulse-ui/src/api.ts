@@ -2,7 +2,7 @@ import * as signalR from '@microsoft/signalr'
 import { demoServerResources, demoSummary } from './demoData'
 import type {
   AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, EmailSettings, EmailTestResult,
-  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, RetentionSettings, SaveRetentionRequest,
+  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, ComponentProposal, NetworkSettings, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
   PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
   ServiceActionResponse, ServiceDiscoveryResult,
 } from './types'
@@ -92,6 +92,40 @@ export async function discoverPaths(root: string, fileNames: string[]): Promise<
 
 export async function collectNow(): Promise<CollectionResult> {
   return request<CollectionResult>('/api/v1/diagnostics/collect-now', { method: 'POST', body: '{}' })
+}
+
+export async function getUsers(): Promise<PulseUser[]> {
+  if (staticDemo) return []
+  return request<PulseUser[]>('/api/v1/users')
+}
+
+export async function createUser(payload: SaveUserRequest): Promise<void> {
+  await request('/api/v1/users', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function updateUser(id: string, payload: SaveUserRequest): Promise<void> {
+  await request(`/api/v1/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function resetUserPassword(id: string, password: string): Promise<void> {
+  await request(`/api/v1/users/${id}/password`, { method: 'POST', body: JSON.stringify({ password }) })
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  await request(`/api/v1/users/${id}`, { method: 'DELETE' })
+}
+
+export async function getNetworkSettings(): Promise<NetworkSettings> {
+  if (staticDemo) return { allowRemoteAccess: false, port: 5058, boundUrl: 'http://127.0.0.1:5058', localAddresses: [] }
+  return request<NetworkSettings>('/api/v1/settings/network')
+}
+
+export async function saveNetworkSettings(payload: { allowRemoteAccess: boolean; port: number }): Promise<NetworkSettings> {
+  return request<NetworkSettings>('/api/v1/settings/network', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function proposeComponent(root: string): Promise<ComponentProposal> {
+  return request<ComponentProposal>('/api/v1/discovery/component', { method: 'POST', body: JSON.stringify({ root }) })
 }
 
 export async function getRetentionSettings(): Promise<RetentionSettings> {

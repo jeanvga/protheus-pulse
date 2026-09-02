@@ -178,7 +178,7 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Configurar' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Configurar / }))
     expect(await screen.findByRole('heading', { name: 'Configurar instalação' })).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Nome do serviço Windows 1'), { target: { value: 'PulseAppServer' } })
@@ -218,7 +218,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Coletar agora' }))
     await waitFor(() => expect(collectNow).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Remover / }))
     await waitFor(() => expect(deleteInstallation).toHaveBeenCalledWith('installation-real'))
   })
 
@@ -406,11 +406,11 @@ describe('App', () => {
     expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
 
-    fireEvent.click(await screen.findByRole('button', { name: /Definir como exclusivo/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Exclusivo$/ }))
     await waitFor(() => expect(setExclusiveInstallation).toHaveBeenCalledWith('installation-real', true))
     expect(await screen.findByText(/agora é a instalação exclusiva/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Ativar auto-start/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Auto-start$/ }))
     await waitFor(() => expect(setAutoStart).toHaveBeenCalledWith('installation-real', true))
     expect(await screen.findByText(/Auto-start ativado/)).toBeInTheDocument()
   })
