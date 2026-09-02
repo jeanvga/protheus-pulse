@@ -49,6 +49,14 @@ vi.mock('./api', () => ({
   getDiagnostics: vi.fn(),
   getAlerts: vi.fn(),
   getHeartbeatDefinitions: vi.fn(),
+  previewInstallationImport: vi.fn(),
+  applyInstallationImport: vi.fn(),
+  getBackups: vi.fn(),
+  createBackup: vi.fn(),
+  downloadBackup: vi.fn(),
+  getServerThresholds: vi.fn(),
+  saveServerThresholds: vi.fn(),
+  createSelfSignedCertificate: vi.fn(),
   createHeartbeatDefinition: vi.fn(),
   rotateHeartbeatToken: vi.fn(),
   deleteHeartbeatDefinition: vi.fn(),
@@ -58,7 +66,7 @@ import {
   acknowledgeAlert, collectNow, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteInstallation, discoverPaths,
   discoverServices, executeServiceAction, getAlertRules, getDashboard, getEmailSettings, getInstallationConfiguration,
-  createHeartbeatDefinition, getAlerts, getAuditEvents, getDiagnostics, getHeartbeatDefinitions, getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
+  applyInstallationImport, createHeartbeatDefinition, getAlerts, previewInstallationImport, getAuditEvents, getDiagnostics, getHeartbeatDefinitions, getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
   setAutoStart, setExclusiveInstallation, updateInstallation,
 } from './api'
 import App, { serviceActionAllowed } from './App'
@@ -152,6 +160,12 @@ describe('App', () => {
       ],
     })
     vi.mocked(getHeartbeatDefinitions).mockReset().mockResolvedValue(demoHeartbeats)
+    vi.mocked(previewInstallationImport).mockReset().mockResolvedValue({
+      valid: true, schemaVersion: 1, installationCount: 2, componentCount: 5, errors: [], warnings: ['Componente sem alvo configurado.'],
+    })
+    vi.mocked(applyInstallationImport).mockReset().mockResolvedValue({
+      valid: true, schemaVersion: 1, installationCount: 2, componentCount: 5, errors: [], warnings: [],
+    })
     vi.mocked(createHeartbeatDefinition).mockReset().mockResolvedValue({
       id: 'hb-novo', jobKey: 'carga-noturna', token: 'hbt_exemplo_para_teste',
       tokenShownOnce: true, warning: 'Armazene o token agora; ele não poderá ser consultado novamente.',
@@ -526,6 +540,29 @@ describe('App', () => {
     }))
     expect(await screen.findByText('hbt_exemplo_para_teste')).toBeInTheDocument()
     expect(screen.getByText(/não poderá ser consultado novamente/)).toBeInTheDocument()
+  })
+
+  it('confere o arquivo antes de deixar importar instalações', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Importar arquivo/ }))
+
+    const importButton = screen.getByRole('button', { name: 'Importar' })
+    // Sem conferir, não dá para aplicar: metade gravada seria pior que não importar.
+    expect(importButton).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Conteúdo do arquivo'), { target: { value: 'schemaVersion: 1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir arquivo' }))
+
+    await waitFor(() => expect(previewInstallationImport).toHaveBeenCalledWith('yaml', 'schemaVersion: 1'))
+    expect(await screen.findByText('2 instalação(ões) e 5 componente(s) prontos para importar.')).toBeInTheDocument()
+    expect(screen.getByText('Componente sem alvo configurado.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Importar' }))
+    await waitFor(() => expect(applyInstallationImport).toHaveBeenCalledWith('yaml', 'schemaVersion: 1'))
   })
 
   it('abre a aba Servidor com processador, memória e discos', async () => {

@@ -10,13 +10,13 @@ import type { LucideIcon } from 'lucide-react'
 import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteAlertRule, deleteInstallation, deleteMaintenanceWindow, deleteNotificationChannel, discoverPaths,
-  discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAlertRules, getAuthStatus, getDashboard,
-  createBackup, createHeartbeatDefinition, createSelfSignedCertificate, downloadBackup, getBackups, deleteHeartbeatDefinition, getAlerts, getServerThresholds, saveServerThresholds, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
+  discoverServices, enterMaintenance, previewInstallationImport, executeServiceAction, exitMaintenance, getAlertRules, getAuthStatus, getDashboard,
+  applyInstallationImport, createBackup, createHeartbeatDefinition, createSelfSignedCertificate, downloadBackup, getBackups, deleteHeartbeatDefinition, getAlerts, getServerThresholds, saveServerThresholds, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAlertRuleEnabled, setAutoStart, setExclusiveInstallation, setNotificationChannelEnabled, setup,
   updateAlertRule, updateInstallation,
 } from './api'
 import type {
-  AlertOccurrencePage, AlertRule, AlertSeverity, BackupFile, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
+  AlertOccurrencePage, AlertRule, AlertSeverity, BackupFile, ImportPreview, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
   BrowseResult, ComponentProposal, ComponentProposalResult, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, MaintenanceWindow, NetworkSettings, NotificationChannel, NotificationChannelType, PathCandidate, ProbeType, PulseUser, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
@@ -474,6 +474,7 @@ function BusyOverlay({ label }: { label: string }) {
 }
 
 function Installations({ summary, refresh, addInstallation, editInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void; editInstallation: (id: string) => void }) {
+  const [importing, setImporting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -599,9 +600,10 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
       ? 'Aplicando automação…'
       : busy ? 'Aplicando alteração…' : null
 
-  return <div className="page-body">
+  return <>
+    <div className="page-body">
     {busyLabel && <BusyOverlay label={busyLabel} />}
-    <section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Configure serviços, arquivos, portas e URLs sem sair do painel.</p></div><div className="intro-actions">{isAdministrator && <button className={maintenance?.active ? 'primary-button' : 'danger-button'} disabled={busy || summary.demoMode} onClick={() => void toggleMaintenance()}><Wrench size={16} /> {maintenance?.active ? 'Encerrar manutenção' : 'Modo manutenção'}</button>}<button className="secondary-button" disabled={busy || summary.demoMode} onClick={() => void runCollection()}><Play size={16} /> {busy ? 'Executando…' : 'Coletar agora'}</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
+    <section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Configure serviços, arquivos, portas e URLs sem sair do painel.</p></div><div className="intro-actions">{isAdministrator && <button className={maintenance?.active ? 'primary-button' : 'danger-button'} disabled={busy || summary.demoMode} onClick={() => void toggleMaintenance()}><Wrench size={16} /> {maintenance?.active ? 'Encerrar manutenção' : 'Modo manutenção'}</button>}<button className="secondary-button" disabled={busy || summary.demoMode} onClick={() => void runCollection()}><Play size={16} /> {busy ? 'Executando…' : 'Coletar agora'}</button>{isAdministrator && <button className="secondary-button" onClick={() => setImporting(true)}><FileText size={16} /> Importar arquivo</button>}<button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
     {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.{maintenance.exclusiveInstallation ? ` Somente “${maintenance.exclusiveInstallation.name}” segue no ar, reiniciado no início da janela para compilar e salvar configurações sem sessões antigas.` : ''}</div>}
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
     {message && <div className="success-banner"><Check size={16} /> {message}</div>}
@@ -637,6 +639,8 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
       </Fragment>
     })}</article>
   </div>
+    {importing && <ImportInstallationsDialog close={() => setImporting(false)} onImported={async () => { setImporting(false); await refresh() }} />}
+  </>
 }
 
 const serviceActionLabels: Record<ServiceAction, string> = { start: 'Iniciar', restart: 'Reiniciar', stop: 'Parar' }
@@ -829,6 +833,93 @@ const emptyComponent = (): ComponentDraft => ({
   key: nextDraftKey(), name: '', type: 'AppServer', isRequired: true, windowsServiceName: '',
   executablePath: '', iniPath: '', logPaths: [], tcpChecks: [], httpChecks: [],
 })
+
+/// Conferir antes de aplicar: o arquivo cadastra vários ambientes de uma vez, e o erro
+/// só aparecendo depois de gravar metade seria pior que não ter a importação.
+function ImportInstallationsDialog({ close, onImported }: { close: () => void; onImported: () => Promise<void> }) {
+  const [format, setFormat] = useState('yaml')
+  const [content, setContent] = useState('')
+  const [preview, setPreview] = useState<ImportPreview | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const check = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setPreview(await previewInstallationImport(format, content))
+    } catch (reason) {
+      setPreview(null)
+      setError(reason instanceof Error ? reason.message : 'Não foi possível conferir o arquivo.')
+    } finally { setBusy(false) }
+  }
+
+  const apply = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await applyInstallationImport(format, content)
+      await onImported()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível importar.')
+    } finally { setBusy(false) }
+  }
+
+  const readFile = (file: File | undefined) => {
+    if (!file) return
+    setFormat(file.name.toLowerCase().endsWith('.json') ? 'json' : 'yaml')
+    void file.text().then(text => { setContent(text); setPreview(null) })
+  }
+
+  return <div className="modal-backdrop">
+    <section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+      <header className="modal-header">
+        <div>
+          <span>Importação em massa</span>
+          <h2 id="import-dialog-title">Importar instalações</h2>
+          <p>Um arquivo com vários ambientes e componentes, conferido antes de gravar.</p>
+        </div>
+        <button className="icon-button" onClick={close} disabled={busy} aria-label="Fechar importação"><X size={18} /></button>
+      </header>
+      <form onSubmit={event => { event.preventDefault(); void check() }}>
+        {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+        <div className="form-grid">
+          <label>Formato
+            <select aria-label="Formato do arquivo" value={format} onChange={event => { setFormat(event.target.value); setPreview(null) }}>
+              <option value="yaml">YAML</option>
+              <option value="json">JSON</option>
+            </select>
+          </label>
+          <label>Arquivo
+            <input type="file" aria-label="Arquivo de importação" accept=".yaml,.yml,.json" onChange={event => readFile(event.target.files?.[0])} />
+          </label>
+        </div>
+        <label className="import-content">Conteúdo
+          <textarea aria-label="Conteúdo do arquivo" value={content} rows={14} spellCheck={false}
+            onChange={event => { setContent(event.target.value); setPreview(null) }}
+            placeholder={'schemaVersion: 1\ninstallations:\n  - name: ERP Produção\n    environment: Production\n    components:\n      - name: AppServer\n        type: AppServer'} />
+        </label>
+
+        {preview && <div className={preview.valid ? 'success-banner' : 'form-error'}>
+          {preview.valid ? <Check size={16} /> : <AlertTriangle size={16} />}
+          {preview.valid
+            ? `${preview.installationCount} instalação(ões) e ${preview.componentCount} componente(s) prontos para importar.`
+            : 'O arquivo tem problemas e não pode ser aplicado.'}
+        </div>}
+        {preview && preview.errors.length > 0 && <ul className="import-messages errors">{preview.errors.map(item => <li key={item}>{item}</li>)}</ul>}
+        {preview && preview.warnings.length > 0 && <ul className="import-messages">{preview.warnings.map(item => <li key={item}>{item}</li>)}</ul>}
+
+        <footer className="modal-actions">
+          <button type="button" className="secondary-button" onClick={close} disabled={busy}>Cancelar</button>
+          <button type="submit" className="secondary-button" disabled={busy || !content.trim()}>{busy ? 'Conferindo…' : 'Conferir arquivo'}</button>
+          <button type="button" className="primary-button" disabled={busy || !preview?.valid} onClick={() => void apply()}>
+            {busy ? 'Importando…' : 'Importar'}
+          </button>
+        </footer>
+      </form>
+    </section>
+  </div>
+}
 
 function InstallationDialog({ installationId, close, onSaved }: { installationId: string | null; close: () => void; onSaved: () => Promise<void> }) {
   const [name, setName] = useState('')

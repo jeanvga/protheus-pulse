@@ -53,6 +53,12 @@ public enum ProbeType
     Disk,
     Log,
     Heartbeat,
+
+    /// <summary>
+    /// Reservado para verificações do próprio Pulse; nenhum coletor o produz hoje.
+    /// Mantido porque o valor é gravado como número no histórico de probes, e removê-lo
+    /// deslocaria os índices das verificações de servidor que vêm depois.
+    /// </summary>
     Internal,
 
     /// <summary>Uso de processador da máquina onde o Pulse está instalado.</summary>
@@ -89,6 +95,11 @@ public enum UserRole
 
 public enum NotificationChannelType
 {
+    /// <summary>
+    /// Só aparece no painel: o despachante ignora este tipo em vez de enviar para fora.
+    /// É o destino implícito de todo alerta, e existe para o modo demonstração poder
+    /// mostrar um canal cadastrado sem endereço externo nenhum.
+    /// </summary>
     Dashboard,
     Smtp,
     Webhook,

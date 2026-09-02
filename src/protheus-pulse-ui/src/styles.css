@@ -458,3 +458,11 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .token-reveal code { font: 10px ui-monospace, monospace; color: var(--text); overflow-wrap: anywhere; user-select: all; }
 .job-card p code { font: 8px ui-monospace, monospace; color: var(--text-soft); }
 .job-metrics .mini-component-actions { margin-left: 4px; }
+
+/* Importação em massa e backup. */
+.import-content { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; color: var(--text-soft); font-size: 9px; font-weight: 600; }
+.import-content textarea { width: 100%; padding: 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: 10px ui-monospace, monospace; line-height: 1.6; resize: vertical; }
+.import-messages { margin: 12px 0 0; padding: 11px 12px 11px 28px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-soft); color: var(--text-soft); font-size: 9px; line-height: 1.6; }
+.import-messages.errors { border-color: rgba(255, 100, 119, .2); background: rgba(255, 100, 119, .06); color: var(--critical); }
+.backup-list { padding-inline: 0; }
+.backup-list .secondary-button { height: 28px; padding: 0 11px; font-size: 9px; }

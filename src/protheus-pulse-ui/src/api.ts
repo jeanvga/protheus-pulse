@@ -1,7 +1,7 @@
 import * as signalR from '@microsoft/signalr'
 import { demoAlertRules, demoHeartbeats, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
 import type {
-  AlertOccurrencePage, AlertQuery, AlertRule, BackupFile, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
+  AlertOccurrencePage, AlertQuery, AlertRule, BackupFile, ImportPreview, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
   CreateHeartbeatInput, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings,
   CreateNotificationChannelInput, DashboardSummary, EmailSettings, EmailTestResult,
   InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, MaintenanceWindow, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, NotificationChannel, SaveNetworkInput, SelfSignedCertificate, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
@@ -124,6 +124,16 @@ export async function getNetworkSettings(): Promise<NetworkSettings> {
 
 export async function saveNetworkSettings(payload: SaveNetworkInput): Promise<NetworkSettings> {
   return request<NetworkSettings>('/api/v1/settings/network', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function previewInstallationImport(format: string, content: string): Promise<ImportPreview> {
+  if (staticDemo) throw new Error('A importação não está disponível na demonstração estática.')
+  return request<ImportPreview>('/api/v1/installations/import/preview', { method: 'POST', body: JSON.stringify({ format, content }) })
+}
+
+export async function applyInstallationImport(format: string, content: string): Promise<ImportPreview> {
+  if (staticDemo) throw new Error('A importação não está disponível na demonstração estática.')
+  return request<ImportPreview>('/api/v1/installations/import', { method: 'POST', body: JSON.stringify({ format, content, confirm: true }) })
 }
 
 export async function getBackups(): Promise<BackupFile[]> {

@@ -42,10 +42,11 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 - **Modo manutenção:** para todos os ambientes monitorados de uma vez e suspende os alertas. Ao encerrar, sobe tudo de volta.
 - **Instalação exclusiva:** marque um ambiente como exclusivo e, ao entrar em manutenção, ele é reiniciado (derrubando as sessões conectadas) e fica sendo o único no ar — para compilar e salvar configuração sem ninguém dentro.
 - **Auto-start:** um watchdog religa sozinho os serviços que caírem. Se um serviço não sobe por erro de configuração ou licença, ele desiste depois de algumas tentativas em vez de ficar tentando para sempre.
-- Toda ação fica registrada em auditoria, com quem fez e quando.
+- Toda ação fica registrada em auditoria, com quem fez e quando, consultável na aba **Auditoria** com busca e filtro por ação e período.
 
 **Segurança**
 
+- **HTTPS opcional** no painel, com certificado próprio (`.pfx`) ou gerado para a máquina em um clique. Recomendado sempre que o acesso pela rede estiver ligado.
 - Login local com perfis Administrator, Operator e Viewer. Só Administrator mexe em serviço.
 - Senha com PBKDF2-SHA256 e 210 mil iterações.
 - Escuta só em `127.0.0.1:5058` por padrão, com limite de requisições e cabeçalhos de segurança.
@@ -58,6 +59,7 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 - Um único `setup.exe`, sem precisar abrir PowerShell.
 - Registra o serviço Windows, gera a chave de assinatura e configura recuperação automática.
 - Atualização preserva o banco e as configurações.
+- **Backup** pelo painel: banco, chave de cifra e configuração num pacote para levar para fora da máquina.
 
 ## Baixar e instalar (uso normal)
 

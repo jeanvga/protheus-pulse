@@ -14,6 +14,8 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Histórico de ocorrências completo na aba Alertas, com filtro por estado e por período e carregamento por página. A tela lia as oito ocorrências que o resumo do painel devolve, então a partir da nona o histórico ficava inalcançável — e os contadores de "Resolvidos" e "Todos" encolhiam conforme incidentes novos empurravam os velhos para fora. Agora a contagem por estado vem do banco inteiro.
 - Aba **Diagnóstico** consultando o serviço em vez de afirmar. Os quatro cartões traziam o estado escrito no código e diziam "saudável" mesmo com o banco fora; agora vêm de `GET /diagnostics`, e sem resposta do serviço a tela informa que está sem contato em vez de inventar saúde.
 
+- Importação em massa na aba Instalações: as duas rotas existiam e eram testadas, mas quem tinha dez ambientes para cadastrar continuava clicando um a um. O arquivo é conferido antes de gravar — erro aparecendo depois de metade importada seria pior que não ter a importação.
+
 ### Fixed
 
 - O detalhe da auditoria gravava enum como número: quem lesse o registro via `"Type": 2` em vez de `"Type": "Webhook"`. O registro só serve se for legível meses depois sem consultar o código para traduzir o índice. A serialização foi centralizada em um único lugar, que os nove pontos de gravação agora usam.

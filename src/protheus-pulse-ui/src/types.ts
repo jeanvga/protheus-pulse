@@ -560,6 +560,15 @@ export interface SaveNetworkInput {
   certificatePassword?: string
 }
 
+export interface ImportPreview {
+  valid: boolean
+  schemaVersion: number
+  installationCount: number
+  componentCount: number
+  errors: string[]
+  warnings: string[]
+}
+
 export interface BackupFile {
   name: string
   sizeBytes: number
