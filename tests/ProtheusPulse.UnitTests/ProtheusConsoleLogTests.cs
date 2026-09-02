@@ -107,6 +107,52 @@ public sealed class ProtheusConsoleLogTests
     }
 
     [Fact]
+    public void ThreadErrorBlockAlsoYieldsEnvironmentCompanyModuleAndRoutine()
+    {
+        string[] body =
+        [
+            "THREAD ERROR ([332], usuario.teste, P0001234)   17/07/2026   18:55:11",
+            "argument error in function Len() on MEUFONTE(MEUFONTE.PRW) 01/01/2026 08:00:00 line : 120",
+            "[environment: AMBIENTEP]",
+            "[remark: [KILL] [APPKILL] Emp :01/0101 Logged :usuario.teste           SIGAFAT  Obj :MVC_SZ1 - @ Ordem de Carregamento]"
+        ];
+
+        var summary = ProtheusConsoleLog.TryDescribeThreadError(body);
+
+        Assert.NotNull(summary);
+        Assert.Equal("AMBIENTEP", summary.Environment);
+        Assert.Equal("01/0101", summary.Company);
+        Assert.Equal("SIGAFAT", summary.Module);
+        Assert.Equal("MVC_SZ1", summary.Routine);
+    }
+
+    [Fact]
+    public async Task CollectorStoresTheStructuredContextOfAThreadError()
+    {
+        var content = string.Join(
+            "\r\n",
+            "2026-07-17T18:55:11.097000-03:00 332|",
+            "THREAD ERROR ([332], usuario.teste, P0001234)   17/07/2026   18:55:11",
+            "argument error in function Len() on MEUFONTE(MEUFONTE.PRW) 01/01/2026 08:00:00 line : 120",
+            "[environment: AMBIENTEP]",
+            "[remark: Emp :01/0101 Logged :usuario.teste           SIGAFAT  Obj :MVC_SZ1]",
+            string.Empty);
+
+        var events = await CollectAsync(content, Encoding.UTF8);
+
+        var context = Assert.Single(events).Context;
+        Assert.NotNull(context);
+        Assert.Equal("332", context.ThreadId);
+        Assert.Equal("usuario.teste", context.User);
+        Assert.Equal("P0001234", context.Computer);
+        Assert.Equal("MEUFONTE.PRW", context.SourceFile);
+        Assert.Equal(120, context.SourceLine);
+        Assert.Equal("AMBIENTEP", context.Environment);
+        Assert.Equal("SIGAFAT", context.Module);
+        Assert.Equal("MVC_SZ1", context.Routine);
+    }
+
+    [Fact]
     public void DescribeAppendsTheAdvplSourceWhenTheMessageDoesNotCarryIt()
     {
         var summary = new ThreadErrorSummary("usuario.teste", "P0001234", "DKD010: DB error (Update)", "APLIB060.PRW", 183);

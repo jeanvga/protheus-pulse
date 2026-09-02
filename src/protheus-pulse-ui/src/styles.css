@@ -232,3 +232,54 @@ a.secondary-button { text-decoration: none; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+/* Instalações em lista: uma linha por ambiente, detalhes sob demanda. */
+.installation-list { display: flex; flex-direction: column; gap: 8px; }
+.installation-row { padding: 0; overflow: hidden; transition: border-color .16s ease, box-shadow .16s ease; }
+.installation-row:hover { border-color: var(--border); box-shadow: 0 6px 18px rgba(0, 0, 0, .22); }
+.installation-row.is-open { border-color: rgba(38, 217, 242, .28); }
+.installation-row-main { width: 100%; min-height: 58px; padding: 12px 18px; border: 0; background: transparent; color: inherit; display: flex; align-items: center; gap: 14px; cursor: pointer; text-align: left; }
+.installation-row-main:hover { background: var(--surface-soft); }
+.installation-row-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.installation-row-caret { flex: none; color: var(--text-muted); transform: rotate(-90deg); transition: transform .16s ease; }
+.installation-row.is-open .installation-row-caret { transform: rotate(0deg); }
+.installation-row-identity { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.installation-row-identity h3 { margin: 0; font: 700 13px 'Segoe UI Variable Display', 'Segoe UI', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.installation-row-tags { display: flex; gap: 6px; flex: none; }
+.installation-row-stat { flex: none; color: var(--text-muted); font-size: 9px; white-space: nowrap; }
+.installation-row-stat strong { color: var(--text-soft); }
+.installation-row-body { padding: 4px 18px 16px; border-top: 1px solid var(--border-soft); }
+@media (max-width: 900px) { .installation-row-tags, .installation-row-stat { display: none; } }
+
+/* Informações estruturadas do erro do AppServer. */
+.log-facts { margin: 7px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.log-facts li { padding: 3px 8px; border: 1px solid var(--border-soft); border-radius: 999px; background: var(--surface-soft); display: inline-flex; gap: 5px; align-items: baseline; }
+.log-facts span { color: var(--text-muted); font-size: 8px; text-transform: uppercase; letter-spacing: .4px; }
+.log-facts strong { color: var(--text-soft); font-size: 9px; font-weight: 600; }
+
+/* Configurações em seções recolhíveis. */
+.settings-section { padding: 0; margin-bottom: 10px; overflow: hidden; }
+.settings-section-head { width: 100%; padding: 15px 18px; border: 0; background: transparent; color: inherit; display: flex; align-items: center; gap: 13px; cursor: pointer; text-align: left; }
+.settings-section-head:hover { background: var(--surface-soft); }
+.settings-section-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.settings-section-head h3 { margin: 0; font-size: 11px; }
+.settings-section-head p { margin: 3px 0 0; color: var(--text-muted); font-size: 9px; }
+.settings-section-head > div { flex: 1; min-width: 0; }
+.settings-section-icon { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--surface-soft); color: var(--accent); }
+.settings-section-caret { flex: none; color: var(--text-muted); transform: rotate(-90deg); transition: transform .16s ease; }
+.settings-section.is-open .settings-section-caret { transform: rotate(0deg); }
+.settings-section-body { padding: 0 18px 18px; border-top: 1px solid var(--border-soft); }
+.settings-section-body > .panel { border: 0; padding: 0; background: transparent; }
+
+.retention-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.retention-counts > div { padding: 11px 13px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--surface-soft); }
+.retention-counts span { display: block; color: var(--text-muted); font-size: 8px; text-transform: uppercase; letter-spacing: .5px; }
+.retention-counts strong { display: block; margin-top: 4px; font-size: 15px; }
+@media (max-width: 720px) { .retention-counts { grid-template-columns: 1fr; } }
+
+/* Acabamento geral: foco visível e transição em tudo que responde ao ponteiro. */
+button, select, input, textarea { transition: border-color .14s ease, background-color .14s ease, color .14s ease; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.panel { transition: border-color .16s ease; }
+.log-group { transition: background-color .14s ease; }
+.log-group:hover { background: var(--surface-soft); }

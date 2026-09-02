@@ -50,13 +50,26 @@ public sealed record ProbeObservation(
 
 public sealed record MetricObservation(string Name, double Value, string Unit);
 
+/// <summary>Contexto estruturado de um erro do AppServer, quando o registro traz.</summary>
+public sealed record LogEventContext(
+    string? ThreadId = null,
+    string? User = null,
+    string? Computer = null,
+    string? SourceFile = null,
+    int? SourceLine = null,
+    string? Environment = null,
+    string? Company = null,
+    string? Module = null,
+    string? Routine = null);
+
 public sealed record LogEventObservation(
     Guid LogSourceId,
     DateTimeOffset ObservedAt,
     string Level,
     string Message,
     string Fingerprint,
-    int OccurrenceCount);
+    int OccurrenceCount,
+    LogEventContext? Context = null);
 
 public sealed record LogCollectionResult(
     ProbeObservation Observation,

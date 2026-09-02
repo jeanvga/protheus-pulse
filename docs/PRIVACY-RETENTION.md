@@ -17,7 +17,7 @@ Não devem ser persistidos: senhas em claro, tokens, conteúdo integral de INI, 
 
 ## Retenção
 
-O padrão reserva 30 dias de histórico e agrega métricas detalhadas por hora após 7 dias. O job inicia cinco minutos após o serviço e roda diariamente; administradores podem executá-lo com `POST /api/v1/maintenance/retention/run`.
+O padrão reserva 30 dias de histórico e agrega métricas detalhadas por hora após 7 dias. Administradores ajustam os dois prazos na aba **Configurações → Retenção de dados**, entre 1 e 365 dias, e a tela mostra quantas verificações, eventos de log e amostras de métrica estão guardados. O valor da tela vence o do `appsettings.json`, que continua valendo enquanto ninguém salvar pela interface. O job inicia cinco minutos após o serviço e roda diariamente; administradores podem executá-lo com `POST /api/v1/maintenance/retention/run`.
 
 Cada execução:
 

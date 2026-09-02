@@ -132,8 +132,26 @@ public sealed class LogEvent : Entity
     public required string Message { get; set; }
     public required string Fingerprint { get; set; }
     public int OccurrenceCount { get; set; } = 1;
+    // Campos extraídos do bloco THREAD ERROR do AppServer; nulos para log de outra origem.
+    public string? ThreadId { get; set; }
+    public string? User { get; set; }
+    public string? Computer { get; set; }
+    public string? SourceFile { get; set; }
+    public int? SourceLine { get; set; }
+    public string? Environment { get; set; }
+    public string? Company { get; set; }
+    public string? Module { get; set; }
+    public string? Routine { get; set; }
     public Component Component { get; set; } = null!;
     public LogSource LogSource { get; set; } = null!;
+}
+
+/// <summary>Quanto tempo o histórico fica no banco, editável na aba Configurações.</summary>
+public sealed class RetentionSetting : Entity
+{
+    public int HistoryRetentionDays { get; set; } = 30;
+    public int MetricAggregationAfterDays { get; set; } = 7;
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 public sealed class HeartbeatDefinition : Entity

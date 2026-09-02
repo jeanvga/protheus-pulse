@@ -132,7 +132,16 @@ public static class ApiEndpoints
                     item.ObservedAt,
                     item.Level,
                     item.Message,
-                    item.OccurrenceCount
+                    item.OccurrenceCount,
+                    item.ThreadId,
+                    item.User,
+                    item.Computer,
+                    item.SourceFile,
+                    item.SourceLine,
+                    item.Environment,
+                    item.Company,
+                    item.Module,
+                    item.Routine
                 })
                 .ToListAsync(cancellationToken);
             return Results.Ok(new

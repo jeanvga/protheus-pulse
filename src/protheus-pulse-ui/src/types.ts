@@ -46,6 +46,33 @@ export interface LogEventItem {
   level: string
   message: string
   occurrenceCount: number
+  threadId?: string | null
+  user?: string | null
+  computer?: string | null
+  sourceFile?: string | null
+  sourceLine?: number | null
+  environment?: string | null
+  company?: string | null
+  module?: string | null
+  routine?: string | null
+}
+
+export interface RetentionCounts {
+  probeResults: number
+  logEvents: number
+  metricSamples: number
+}
+
+export interface RetentionSettings {
+  historyRetentionDays: number
+  metricAggregationAfterDays: number
+  updatedAt: string | null
+  counts: RetentionCounts
+}
+
+export interface SaveRetentionRequest {
+  historyRetentionDays: number
+  metricAggregationAfterDays: number
 }
 
 export interface LogEventQuery {

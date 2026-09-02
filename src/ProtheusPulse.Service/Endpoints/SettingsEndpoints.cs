@@ -2,10 +2,12 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using MimeKit;
 using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
+using ProtheusPulse.Service.Configuration;
 using ProtheusPulse.Service.Monitoring;
 
 namespace ProtheusPulse.Service.Endpoints;
@@ -23,8 +25,71 @@ public static class SettingsEndpoints
         api.MapGet("/settings/email", GetAsync).RequireAuthorization("Administrator");
         api.MapPut("/settings/email", SaveAsync).RequireAuthorization("Administrator");
         api.MapPost("/settings/email/test", SendTestAsync).RequireAuthorization("Administrator").RequireRateLimiting("serviceControl");
+        api.MapGet("/settings/retention", GetRetentionAsync).RequireAuthorization("Administrator");
+        api.MapPut("/settings/retention", SaveRetentionAsync).RequireAuthorization("Administrator");
         return api;
     }
+
+    /// <summary>
+    /// Quanto tempo o histórico fica no SQLite. Sem isso o banco cresce sem teto no
+    /// servidor do cliente, e o valor só existia no appsettings, fora do alcance da tela.
+    /// </summary>
+    private static async Task<IResult> GetRetentionAsync(
+        PulseDbContext dbContext,
+        PulseOptions options,
+        CancellationToken cancellationToken)
+    {
+        var stored = await dbContext.RetentionSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        var counts = new RetentionCounts(
+            await dbContext.ProbeResults.CountAsync(cancellationToken),
+            await dbContext.LogEvents.CountAsync(cancellationToken),
+            await dbContext.MetricSamples.CountAsync(cancellationToken));
+        return Results.Ok(new RetentionSettingsResponse(
+            stored?.HistoryRetentionDays ?? options.HistoryRetentionDays,
+            stored?.MetricAggregationAfterDays ?? options.MetricAggregationAfterDays,
+            stored?.UpdatedAt,
+            counts));
+    }
+
+    private static async Task<IResult> SaveRetentionAsync(
+        SaveRetentionRequest request,
+        PulseDbContext dbContext,
+        IClock clock,
+        CancellationToken cancellationToken)
+    {
+        if (request.HistoryRetentionDays is < 1 or > 365)
+        {
+            return Results.BadRequest(new { message = "O histórico deve ficar entre 1 e 365 dias." });
+        }
+
+        if (request.MetricAggregationAfterDays < 1 || request.MetricAggregationAfterDays > request.HistoryRetentionDays)
+        {
+            return Results.BadRequest(new { message = "A agregação deve ficar entre 1 dia e o tamanho do histórico." });
+        }
+
+        var stored = await dbContext.RetentionSettings.FirstOrDefaultAsync(cancellationToken);
+        if (stored is null)
+        {
+            stored = new RetentionSetting();
+            dbContext.RetentionSettings.Add(stored);
+        }
+
+        stored.HistoryRetentionDays = request.HistoryRetentionDays;
+        stored.MetricAggregationAfterDays = request.MetricAggregationAfterDays;
+        stored.UpdatedAt = clock.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.Ok(new { stored.HistoryRetentionDays, stored.MetricAggregationAfterDays, stored.UpdatedAt });
+    }
+
+    public sealed record SaveRetentionRequest(int HistoryRetentionDays, int MetricAggregationAfterDays);
+
+    public sealed record RetentionCounts(int ProbeResults, int LogEvents, int MetricSamples);
+
+    public sealed record RetentionSettingsResponse(
+        int HistoryRetentionDays,
+        int MetricAggregationAfterDays,
+        DateTimeOffset? UpdatedAt,
+        RetentionCounts Counts);
 
     private static async Task<IResult> GetAsync(
         PulseDbContext dbContext,

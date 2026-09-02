@@ -17,8 +17,12 @@ public sealed class RetentionService(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
-        var retentionCutoff = clock.UtcNow.AddDays(-Math.Clamp(options.HistoryRetentionDays, 1, 365));
-        var aggregationCutoff = clock.UtcNow.AddDays(-Math.Clamp(options.MetricAggregationAfterDays, 1, options.HistoryRetentionDays));
+        // O valor da tela vence o do appsettings; sem linha gravada, vale a configuração.
+        var stored = await dbContext.RetentionSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        var historyDays = Math.Clamp(stored?.HistoryRetentionDays ?? options.HistoryRetentionDays, 1, 365);
+        var aggregationDays = Math.Clamp(stored?.MetricAggregationAfterDays ?? options.MetricAggregationAfterDays, 1, historyDays);
+        var retentionCutoff = clock.UtcNow.AddDays(-historyDays);
+        var aggregationCutoff = clock.UtcNow.AddDays(-aggregationDays);
         var detailedSamples = await dbContext.MetricSamples
             .Where(item => item.AggregationWindow == null
                 && item.ObservedAt >= retentionCutoff

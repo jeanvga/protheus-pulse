@@ -24,6 +24,7 @@ public sealed class PulseDbContext(DbContextOptions<PulseDbContext> options) : D
     public DbSet<MaintenanceWindow> MaintenanceWindows => Set<MaintenanceWindow>();
     public DbSet<User> Users => Set<User>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<RetentionSetting> RetentionSettings => Set<RetentionSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -111,10 +112,23 @@ public sealed class PulseDbContext(DbContextOptions<PulseDbContext> options) : D
             entity.Property(item => item.Level).HasMaxLength(20);
             entity.Property(item => item.Message).HasMaxLength(1_000);
             entity.Property(item => item.Fingerprint).HasMaxLength(64);
+            entity.Property(item => item.ThreadId).HasMaxLength(20);
+            entity.Property(item => item.User).HasMaxLength(120);
+            entity.Property(item => item.Computer).HasMaxLength(120);
+            entity.Property(item => item.SourceFile).HasMaxLength(160);
+            entity.Property(item => item.Environment).HasMaxLength(80);
+            entity.Property(item => item.Company).HasMaxLength(40);
+            entity.Property(item => item.Module).HasMaxLength(40);
+            entity.Property(item => item.Routine).HasMaxLength(80);
             entity.HasIndex(item => new { item.ComponentId, item.ObservedAt });
             entity.HasIndex(item => new { item.LogSourceId, item.Fingerprint, item.ObservedAt });
             entity.HasOne(item => item.Component).WithMany().HasForeignKey(item => item.ComponentId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(item => item.LogSource).WithMany(item => item.Events).HasForeignKey(item => item.LogSourceId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RetentionSetting>(entity =>
+        {
+            entity.ToTable("RetentionSettings");
         });
 
         modelBuilder.Entity<HeartbeatDefinition>(entity =>

@@ -265,6 +265,7 @@ describe('App', () => {
     expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Configurações' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Envio de e-mail/ }))
     expect(await screen.findByLabelText('Servidor SMTP')).toHaveValue('smtp.exemplo.com.br')
 
     fireEvent.change(screen.getByLabelText('Segurança SMTP'), { target: { value: 'SslOnConnect' } })
@@ -287,6 +288,7 @@ describe('App', () => {
     expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Configurações' }))
 
+    fireEvent.click(await screen.findByRole('button', { name: /Envio de e-mail/ }))
     fireEvent.click(await screen.findByRole('button', { name: /Enviar teste/ }))
 
     await waitFor(() => expect(sendTestEmail).toHaveBeenCalled())

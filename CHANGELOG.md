@@ -2,6 +2,25 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.6.0] - 2026-09-02
+
+### Added
+
+- Leitura do `console.log` no formato de registro que o AppServer realmente grava: o cabeçalho `2026-01-15T09:12:33.400000-03:00 4321|` abre o evento e as linhas seguintes pertencem a ele. O horário guardado passa a ser o que o AppServer escreveu, e não a hora em que o Pulse leu o arquivo — sem isso não dava para correlacionar um erro com o incidente relatado. Um bloco `THREAD ERROR`, que chega a passar de dez mil linhas com a pilha ADVPL inteira, vira um evento só. Arquivo sem esse cabeçalho continua lido linha a linha.
+- Informações estruturadas em cada evento de log de erro: usuário, máquina, thread, ambiente, empresa/filial, módulo, rotina e o fonte ADVPL com a linha onde estourou. A página de Logs mostra esses dados junto da mensagem, então "argument error in function Len()" passa a vir com `MNTR676.PRX:1249` e o módulo em que aconteceu.
+- Busca e filtros de log no servidor: texto, nível, componente e período, com paginação e contagem por nível. Antes a busca era feita no navegador sobre as 200 linhas já carregadas, então encontrava apenas o que estava na tela enquanto o banco guardava trinta dias.
+- Prazo de retenção editável em **Configurações → Retenção de dados**, entre 1 e 365 dias, com a contagem de verificações, eventos de log e amostras guardadas. O valor só existia no `appsettings.json`, fora do alcance de quem opera, e sem ele o SQLite crescia sem teto no servidor do cliente.
+
+### Changed
+
+- A aba Instalações passou de cartões em duas colunas para lista: uma linha por ambiente, com nome, situação, contagem de componentes e as etiquetas de exclusivo e auto-start visíveis de imediato, e os detalhes recolhíveis por linha.
+- A aba Configurações abre com as seções fechadas. O formulário de e-mail vinha sempre aberto e empurrava o resto da tela para baixo.
+- Acabamento geral da interface: foco visível por teclado em todo controle, transições de estado e realce de linha na lista de eventos.
+
+### Fixed
+
+- Encoding do `console.log`. O `EncodingName` das origens nascia `auto`, mas não havia caso para `auto` na resolução e tudo caía em UTF-8; nos arquivos reais usados para mapeamento nenhum é UTF-8 válido — são CP1252, e todo acento virava caractere de substituição, inclusive dentro da assinatura usada para agrupar mensagens iguais. Agora `auto` tenta UTF-8 estrito e usa CP1252 quando ele falha, e `cp1252`, `latin1`, `utf-8`, `unicode`, `utf-16be` e `ascii` podem ser escolhidos explicitamente.
+
 ## [1.5.0] - 2026-09-01
 
 ### Added

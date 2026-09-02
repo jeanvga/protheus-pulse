@@ -7,7 +7,16 @@ namespace ProtheusPulse.Infrastructure.Monitoring;
 public sealed record ConsoleLogRecord(DateTimeOffset Timestamp, string ThreadId, IReadOnlyList<string> Body);
 
 /// <summary>Identificação estruturada de um bloco <c>THREAD ERROR</c> do AppServer.</summary>
-public sealed record ThreadErrorSummary(string User, string Computer, string Message, string? SourceFile, int? SourceLine);
+public sealed record ThreadErrorSummary(
+    string User,
+    string Computer,
+    string Message,
+    string? SourceFile,
+    int? SourceLine,
+    string? Environment = null,
+    string? Company = null,
+    string? Module = null,
+    string? Routine = null);
 
 /// <summary>
 /// Leitura do <c>console.log</c> do AppServer no formato que o Protheus realmente escreve.
@@ -178,7 +187,11 @@ public static partial class ProtheusConsoleLog
                 match.Groups["computer"].Value.Trim(),
                 message,
                 sourceFile,
-                sourceLine);
+                sourceLine,
+                FirstCapture(body, EnvironmentRegex()),
+                FirstCapture(body, CompanyRegex()),
+                FirstCapture(body, ModuleRegex()),
+                FirstCapture(body, RoutineRegex()));
         }
 
         return null;
@@ -200,6 +213,49 @@ public static partial class ProtheusConsoleLog
 
         return text;
     }
+
+    /// <summary>Primeira ocorrência do grupo <c>value</c> no corpo do registro.</summary>
+    private static string? FirstCapture(IReadOnlyList<string> body, Regex expression)
+    {
+        foreach (var line in body)
+        {
+            var match = expression.Match(line);
+            if (match.Success)
+            {
+                var value = match.Groups["value"].Value.Trim();
+                if (value.Length > 0)
+                {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    [GeneratedRegex(
+        @"\[environment:\s*(?<value>[^\]]+)\]",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        matchTimeoutMilliseconds: 100)]
+    private static partial Regex EnvironmentRegex();
+
+    [GeneratedRegex(
+        @"Emp\s*:\s*(?<value>[0-9A-Za-z/]+)",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        matchTimeoutMilliseconds: 100)]
+    private static partial Regex CompanyRegex();
+
+    [GeneratedRegex(
+        @"Logged\s*:\s*\S+\s+(?<value>[A-Za-z][A-Za-z0-9_]*)",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        matchTimeoutMilliseconds: 100)]
+    private static partial Regex ModuleRegex();
+
+    [GeneratedRegex(
+        @"Obj\s*:\s*(?<value>[A-Za-z0-9_]+)",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        matchTimeoutMilliseconds: 100)]
+    private static partial Regex RoutineRegex();
 
     [GeneratedRegex(
         @"^THREAD ERROR \(\[\d+\],\s*(?<user>[^,]*),\s*(?<computer>[^)]*)\)",

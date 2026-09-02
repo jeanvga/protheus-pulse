@@ -142,7 +142,16 @@ public sealed partial class MonitoringWorker(
                 Level = item.Level,
                 Message = item.Message,
                 Fingerprint = item.Fingerprint,
-                OccurrenceCount = item.OccurrenceCount
+                OccurrenceCount = item.OccurrenceCount,
+                ThreadId = item.Context?.ThreadId,
+                User = item.Context?.User,
+                Computer = item.Context?.Computer,
+                SourceFile = item.Context?.SourceFile,
+                SourceLine = item.Context?.SourceLine,
+                Environment = item.Context?.Environment,
+                Company = item.Context?.Company,
+                Module = item.Context?.Module,
+                Routine = item.Context?.Routine
             }));
             foreach (var item in logResult.Events)
             {

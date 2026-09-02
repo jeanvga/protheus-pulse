@@ -2,7 +2,7 @@ import * as signalR from '@microsoft/signalr'
 import { demoServerResources, demoSummary } from './demoData'
 import type {
   AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, EmailSettings, EmailTestResult,
-  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus,
+  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, RetentionSettings, SaveRetentionRequest,
   PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
   ServiceActionResponse, ServiceDiscoveryResult,
 } from './types'
@@ -92,6 +92,15 @@ export async function discoverPaths(root: string, fileNames: string[]): Promise<
 
 export async function collectNow(): Promise<CollectionResult> {
   return request<CollectionResult>('/api/v1/diagnostics/collect-now', { method: 'POST', body: '{}' })
+}
+
+export async function getRetentionSettings(): Promise<RetentionSettings> {
+  if (staticDemo) return { historyRetentionDays: 30, metricAggregationAfterDays: 7, updatedAt: null, counts: { probeResults: 0, logEvents: 0, metricSamples: 0 } }
+  return request<RetentionSettings>('/api/v1/settings/retention')
+}
+
+export async function saveRetentionSettings(payload: SaveRetentionRequest): Promise<void> {
+  await request('/api/v1/settings/retention', { method: 'PUT', body: JSON.stringify(payload) })
 }
 
 export async function getLogEvents(query: LogEventQuery = {}): Promise<LogEventPage> {

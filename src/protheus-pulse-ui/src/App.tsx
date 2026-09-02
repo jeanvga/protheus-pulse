@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Activity, AlertTriangle, Archive, Bell, Boxes, BriefcaseBusiness, Check, ChevronDown, CircleHelp,
@@ -10,13 +10,13 @@ import type { LucideIcon } from 'lucide-react'
 import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createInstallation, deleteInstallation, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAuthStatus, getDashboard,
-  getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getServerResources,
+  getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getRetentionSettings, getServerResources, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAutoStart, setExclusiveInstallation, setup,
   updateInstallation,
 } from './api'
 import type {
   AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
-  EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventPage, MaintenanceStatus, PathCandidate,
+  EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, PathCandidate, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
 } from './types'
@@ -460,6 +460,7 @@ interface InstallationGroup {
 }
 
 function Installations({ summary, refresh, addInstallation, editInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void; editInstallation: (id: string) => void }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -584,19 +585,31 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
     {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.{maintenance.exclusiveInstallation ? ` Somente “${maintenance.exclusiveInstallation.name}” segue no ar, reiniciado no início da janela para compilar e salvar configurações sem sessões antigas.` : ''}</div>}
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
     {message && <div className="success-banner"><Check size={16} /> {message}</div>}
-    <div className="installation-grid">{groups.map(group => {
+    <div className="installation-list">{groups.map(group => {
       const { id: installationId, name, components } = group
       const isDemo = components.every(item => item.isDemo)
       const canAutomate = isAdministrator && !isDemo && !summary.demoMode
-      return <article className="panel installation-card" key={installationId}>
-        <header><div><span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span><h3>{name}</h3>{group.isExclusive && <span className="exclusive-tag"><Crown size={13} /> Exclusivo</span>}{group.autoStartEnabled && <span className="auto-start-tag"><Zap size={13} /> Auto-start</span>}</div><StatusBadge status={worstStatus(components)} /></header>
-        <div className="installation-stat"><span>{components.length} componentes</span><span>{components.filter(item => item.status === 'Healthy').length} saudáveis</span></div>
+      const isOpen = expanded[installationId] ?? true
+      const healthy = components.filter(item => item.status === 'Healthy').length
+      return <article className={`panel installation-row ${isOpen ? 'is-open' : ''}`} key={installationId}>
+        <button type="button" className="installation-row-main" aria-expanded={isOpen} onClick={() => setExpanded(current => ({ ...current, [installationId]: !isOpen }))}>
+          <ChevronDown className="installation-row-caret" size={16} />
+          <div className="installation-row-identity">
+            <span className="environment-tag">{environmentLabel(components[0]?.installationEnvironment)}</span>
+            <h3>{name}</h3>
+          </div>
+          <div className="installation-row-tags">{group.isExclusive && <span className="exclusive-tag"><Crown size={13} /> Exclusivo</span>}{group.autoStartEnabled && <span className="auto-start-tag"><Zap size={13} /> Auto-start</span>}</div>
+          <div className="installation-row-stat"><strong>{components.length}</strong> componentes · <strong>{healthy}</strong> saudáveis</div>
+          <StatusBadge status={worstStatus(components)} />
+        </button>
+        {isOpen && <div className="installation-row-body">
         {canAutomate && <div className="automation-row">
           <button className={group.isExclusive ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.isExclusive} title="Instalação reiniciada no início da manutenção, que permanece como o único ambiente no ar" onClick={() => void toggleExclusive(group)}><Crown size={14} /> {group.isExclusive ? 'Exclusivo na manutenção' : 'Definir como exclusivo'}</button>
           <button className={group.autoStartEnabled ? 'chip-button active' : 'chip-button'} disabled={busy || automationBusyId === installationId} aria-pressed={group.autoStartEnabled} title="Sobe automaticamente os serviços deste ambiente quando eles caem. Um serviço parado pelo painel fica de fora até ser iniciado pelo painel." onClick={() => void toggleAutoStart(group)}><Zap size={14} /> {group.autoStartEnabled ? 'Auto-start ativo' : 'Ativar auto-start'}</button>
         </div>}
         {components.map(component => <div className="mini-component" key={component.id}><div><i className={`status-dot ${component.status.toLowerCase()}`} /><span>{component.name}</span>{component.windowsServiceName && <small className={`service-state ${serviceStateTone(component.windowsServiceStatus)}`}><i />{serviceStatusLabel(component.windowsServiceStatus)}{group.autoStartEnabled ? autoStartNote(component) : ''}</small>}{isAdministrator && !component.isDemo && component.windowsServiceName && <span className="mini-component-actions"><ServiceActionButton component={component} action="start" icon={Play} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="restart" icon={RotateCw} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /><ServiceActionButton component={component} action="stop" icon={Square} busy={serviceBusyId === component.id} disabled={busy} run={runServiceAction} /></span>}</div><small>{component.summary}</small></div>)}
         {!isDemo && installationId && <footer className="installation-actions"><button className="secondary-button" onClick={() => editInstallation(installationId)}><Pencil size={15} /> Configurar</button><button className="danger-button" disabled={busy} onClick={() => void remove(installationId, name)}><Trash2 size={15} /> Remover</button></footer>}
+        </div>}
       </article>
     })}</div>
   </div>
@@ -889,6 +902,20 @@ const logPeriodFilters = [
 
 const logPageSize = 100
 
+function LogEventFacts({ item }: { item: LogEventItem }) {
+  const facts: Array<[string, string]> = []
+  if (item.sourceFile) facts.push(['Fonte', item.sourceLine ? `${item.sourceFile}:${item.sourceLine}` : item.sourceFile])
+  if (item.routine) facts.push(['Rotina', item.routine])
+  if (item.module) facts.push(['Módulo', item.module])
+  if (item.company) facts.push(['Empresa/filial', item.company])
+  if (item.user) facts.push(['Usuário', item.user])
+  if (item.computer) facts.push(['Máquina', item.computer])
+  if (item.environment) facts.push(['Ambiente', item.environment])
+  if (item.threadId) facts.push(['Thread', item.threadId])
+  if (facts.length === 0) return null
+  return <ul className="log-facts">{facts.map(([label, value]) => <li key={label}><span>{label}</span><strong>{value}</strong></li>)}</ul>
+}
+
 function LogsPage({ components }: { components: ComponentSnapshot[] }) {
   const [page, setPage] = useState<LogEventPage>({ total: 0, byLevel: {}, items: [] })
   const [search, setSearch] = useState('')
@@ -958,7 +985,7 @@ function LogsPage({ components }: { components: ComponentSnapshot[] }) {
         : shown === 0
           ? <div className="empty-state"><Check size={22} /> {filtersActive ? 'Nenhum evento de log para os filtros atuais.' : 'Nenhum evento de log coletado ainda.'}</div>
           : <>
-            {page.items.map(item => <div className="log-group" key={item.id}><span className={`log-count ${item.level === 'Information' ? 'muted' : ''}`}>{item.occurrenceCount}×</span><div><strong>{item.message}</strong><p>{item.componentName} · {item.installationName}</p><small>{new Date(item.observedAt).toLocaleString('pt-BR')} · {formatRelative(item.observedAt)}</small></div><StatusBadge status={logLevelStatus(item.level)} label={logLevelLabel(item.level)} /></div>)}
+            {page.items.map(item => <div className="log-group" key={item.id}><span className={`log-count ${item.level === 'Information' ? 'muted' : ''}`}>{item.occurrenceCount}×</span><div><strong>{item.message}</strong><p>{item.componentName} · {item.installationName}</p><LogEventFacts item={item} /><small>{new Date(item.observedAt).toLocaleString('pt-BR')} · {formatRelative(item.observedAt)}</small></div><StatusBadge status={logLevelStatus(item.level)} label={logLevelLabel(item.level)} /></div>)}
             {hasMore && <button className="secondary-button load-more" disabled={loading} onClick={() => void load(shown)}>{loading ? 'Carregando…' : `Carregar mais ${Math.min(logPageSize, page.total - shown)}`}</button>}
           </>}
     </article>
@@ -988,12 +1015,78 @@ function AlertsPage({ alerts, refresh }: { alerts: AlertSnapshot[]; refresh: () 
   return <div className="page-body">{error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}<section className="summary-chips"><button className="active">Ativos <strong>{alerts.filter(item => item.state === 'Active').length}</strong></button><button>Reconhecidos <strong>{alerts.filter(item => item.state === 'Acknowledged').length}</strong></button><button>Resolvidos <strong>{alerts.filter(item => item.state === 'Resolved').length}</strong></button><button>Silenciados <strong>{alerts.filter(item => item.state === 'Silenced').length}</strong></button></section><article className="panel"><AlertList alerts={alerts} acknowledge={id => void acknowledge(id)} busyId={busyId} /></article></div>
 }
 
+/// Seções fechadas por padrão: a aba inteira aberta de uma vez virava uma tela sem fim.
+function SettingsSection({ icon: Icon, title, summary, children }: { icon: LucideIcon; title: string; summary: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return <article className={`panel settings-section ${open ? 'is-open' : ''}`}>
+    <button type="button" className="settings-section-head" aria-expanded={open} onClick={() => setOpen(current => !current)}>
+      <span className="settings-section-icon"><Icon size={18} /></span>
+      <div><h3>{title}</h3><p>{summary}</p></div>
+      <ChevronDown className="settings-section-caret" size={17} />
+    </button>
+    {open && <div className="settings-section-body">{children}</div>}
+  </article>
+}
+
+function RetentionSettingsCard() {
+  const [settings, setSettings] = useState<RetentionSettings | null>(null)
+  const [historyDays, setHistoryDays] = useState('30')
+  const [aggregationDays, setAggregationDays] = useState('7')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const loaded = await getRetentionSettings()
+        setSettings(loaded)
+        setHistoryDays(String(loaded.historyRetentionDays))
+        setAggregationDays(String(loaded.metricAggregationAfterDays))
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a retenção.')
+      }
+    })()
+  }, [])
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setMessage(null)
+    try {
+      await saveRetentionSettings({ historyRetentionDays: Number(historyDays), metricAggregationAfterDays: Number(aggregationDays) })
+      setMessage('Retenção salva. A limpeza roda diariamente e na próxima execução já usa o novo prazo.')
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a retenção.')
+    } finally { setBusy(false) }
+  }
+
+  const stored = settings?.counts
+  return <form className="settings-form" onSubmit={event => void save(event)}>
+    <p className="field-hint">O Pulse guarda o histórico em SQLite no próprio servidor. Sem prazo, o arquivo cresce sem teto: a limpeza diária apaga probes, eventos de log e métricas mais antigos que o prazo, e preserva usuários, configuração e auditoria.</p>
+    {stored && <div className="retention-counts">
+      <div><span>Verificações</span><strong>{stored.probeResults.toLocaleString('pt-BR')}</strong></div>
+      <div><span>Eventos de log</span><strong>{stored.logEvents.toLocaleString('pt-BR')}</strong></div>
+      <div><span>Amostras de métrica</span><strong>{stored.metricSamples.toLocaleString('pt-BR')}</strong></div>
+    </div>}
+    <div className="form-grid">
+      <label>Guardar histórico por (dias)<input type="number" min={1} max={365} value={historyDays} onChange={event => setHistoryDays(event.target.value)} /></label>
+      <label>Agregar métricas por hora após (dias)<input type="number" min={1} max={365} value={aggregationDays} onChange={event => setAggregationDays(event.target.value)} /></label>
+    </div>
+    <p className="field-hint">Entre 1 e 365 dias. A agregação não pode passar do tamanho do histórico: amostras detalhadas viram médias por hora depois desse prazo, o que reduz o banco sem perder a tendência.</p>
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+    {message && <div className="success-banner"><Check size={16} /> {message}</div>}
+    <div className="form-actions"><button className="primary-button" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Salvar retenção'}</button></div>
+  </form>
+}
+
 function SettingsPage() {
   const isAdministrator = session.role === 'Administrator'
   const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · E-mail · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
   return <div className="page-body">
     {isAdministrator
-      ? <EmailSettingsCard />
+      ? <><SettingsSection icon={Mail} title="Envio de e-mail" summary="Servidor SMTP, remetente, destinatários e teste de envio"><EmailSettingsCard /></SettingsSection><SettingsSection icon={Archive} title="Retenção de dados" summary="Por quanto tempo o histórico fica no banco antes de ser apagado"><RetentionSettingsCard /></SettingsSection></>
       : <div className="read-only-notice"><LockKeyhole size={22} /><div><strong>Somente administradores</strong><p>Os dados de envio de e-mail e os tokens dos agentes de log só aparecem para o perfil Administrator.</p></div></div>}
     <div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div>
     <div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Coleta segura e ações auditadas</strong><p>A coleta é somente leitura e não escreve nas pastas monitoradas. Iniciar, reiniciar ou parar serviços exige perfil Administrator e fica registrado na auditoria.</p></div></div>

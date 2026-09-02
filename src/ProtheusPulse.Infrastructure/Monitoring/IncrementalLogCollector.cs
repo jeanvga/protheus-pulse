@@ -134,7 +134,13 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
                     continue;
                 }
 
-                Accumulate(grouped, source.Id, ResolveObservedAt(record.Timestamp), described.Level, described.Message);
+                Accumulate(
+                    grouped,
+                    source.Id,
+                    ResolveObservedAt(record.Timestamp),
+                    described.Level,
+                    described.Message,
+                    described.Context);
             }
         }
         else
@@ -166,7 +172,8 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
                 item.Level,
                 item.Message,
                 item.Fingerprint,
-                item.Count))
+                item.Count,
+                item.Context))
             .ToArray();
     }
 
@@ -233,7 +240,8 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
         Guid logSourceId,
         DateTimeOffset observedAt,
         string level,
-        string message)
+        string message,
+        LogEventContext? context = null)
     {
         var fingerprint = LogTextSanitizer.CreateFingerprint(message);
         if (grouped.TryGetValue(fingerprint, out var existing))
@@ -242,7 +250,10 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
             return;
         }
 
-        grouped[fingerprint] = new MutableLogEvent(logSourceId, observedAt, level, message, fingerprint);
+        grouped[fingerprint] = new MutableLogEvent(logSourceId, observedAt, level, message, fingerprint)
+        {
+            Context = context
+        };
     }
 
     /// <summary>
@@ -250,7 +261,7 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
     /// mensagem do erro com o fonte ADVPL onde ele estourou, e não as milhares de linhas
     /// da pilha; devolve <c>null</c> quando não há nada que valha guardar.
     /// </summary>
-    private static (string Level, string Message)? Describe(ConsoleLogRecord record)
+    private static (string Level, string Message, LogEventContext? Context)? Describe(ConsoleLogRecord record)
     {
         if (ProtheusConsoleLog.TryDescribeThreadError(record.Body) is { } threadError)
         {
@@ -258,7 +269,17 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
             var severity = record.Body.Any(line => line.Contains("[FATAL]", StringComparison.OrdinalIgnoreCase))
                 ? "Critical"
                 : "Error";
-            return described.Length == 0 ? null : (severity, described);
+            var context = new LogEventContext(
+                record.ThreadId,
+                Bounded(threadError.User),
+                Bounded(threadError.Computer),
+                threadError.SourceFile,
+                threadError.SourceLine,
+                threadError.Environment,
+                threadError.Company,
+                threadError.Module,
+                threadError.Routine);
+            return described.Length == 0 ? null : (severity, described, context);
         }
 
         foreach (var candidate in record.Body)
@@ -270,11 +291,14 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
             }
 
             var level = LogTextSanitizer.DetectLevel(message);
-            return level == "Debug" ? null : (level, message);
+            return level == "Debug" ? null : (level, message, new LogEventContext(record.ThreadId));
         }
 
         return null;
     }
+
+    /// <summary>Texto vazio vira nulo: coluna sem valor é mais honesta que string em branco.</summary>
+    private static string? Bounded(string value) => value.Length == 0 ? null : value;
 
     /// <summary>
     /// O horário vem do próprio AppServer, não da hora em que o Pulse leu o arquivo. Um
@@ -302,5 +326,6 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
         public string Message { get; } = message;
         public string Fingerprint { get; } = fingerprint;
         public int Count { get; set; } = 1;
+        public LogEventContext? Context { get; init; }
     }
 }
