@@ -85,6 +85,6 @@ public sealed record LogCollectionResult(
 public sealed class ProbeCollectorOptions
 {
     public int MaximumLogBytesPerCycle { get; init; } = 262_144;
-    public double DiskWarningPercent { get; init; } = 15;
-    public double DiskCriticalPercent { get; init; } = 5;
+    public double DiskWarningPercent { get; set; } = 15;
+    public double DiskCriticalPercent { get; set; } = 5;
 }

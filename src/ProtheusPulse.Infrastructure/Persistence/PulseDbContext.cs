@@ -18,6 +18,7 @@ public sealed class PulseDbContext(DbContextOptions<PulseDbContext> options) : D
     public DbSet<HeartbeatDefinition> HeartbeatDefinitions => Set<HeartbeatDefinition>();
     public DbSet<ProbeResult> ProbeResults => Set<ProbeResult>();
     public DbSet<MetricSample> MetricSamples => Set<MetricSample>();
+    public DbSet<ServerThresholdSetting> ServerThresholdSettings => Set<ServerThresholdSetting>();
     public DbSet<AlertRule> AlertRules => Set<AlertRule>();
     public DbSet<AlertOccurrence> AlertOccurrences => Set<AlertOccurrence>();
     public DbSet<NotificationChannel> NotificationChannels => Set<NotificationChannel>();

@@ -163,6 +163,23 @@ public sealed class RetentionSetting : Entity
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+/// <summary>
+/// Limites de atenção e crítico do servidor, editáveis na aba Configurações.
+/// Vinham só do appsettings, o que obrigava a editar arquivo e reiniciar o serviço.
+/// </summary>
+public sealed class ServerThresholdSetting : Entity
+{
+    public double CpuWarningPercent { get; set; } = 80;
+    public double CpuCriticalPercent { get; set; } = 92;
+    public double MemoryWarningPercent { get; set; } = 85;
+    public double MemoryCriticalPercent { get; set; } = 94;
+
+    /// <summary>Percentual de espaço <em>livre</em>: abaixo dele o volume entra em atenção.</summary>
+    public double DiskFreeWarningPercent { get; set; } = 15;
+    public double DiskFreeCriticalPercent { get; set; } = 5;
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public sealed class HeartbeatDefinition : Entity
 {
     public Guid ComponentId { get; set; }

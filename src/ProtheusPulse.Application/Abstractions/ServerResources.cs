@@ -54,16 +54,16 @@ public sealed record ServerResourceSample(
 
 public sealed class ServerResourceOptions
 {
-    public double CpuWarningPercent { get; init; } = 80;
-    public double CpuCriticalPercent { get; init; } = 92;
-    public double MemoryWarningPercent { get; init; } = 85;
-    public double MemoryCriticalPercent { get; init; } = 94;
+    public double CpuWarningPercent { get; set; } = 80;
+    public double CpuCriticalPercent { get; set; } = 92;
+    public double MemoryWarningPercent { get; set; } = 85;
+    public double MemoryCriticalPercent { get; set; } = 94;
 
     /// <summary>Percentual de espaço <em>livre</em> que ainda é apenas atenção.</summary>
-    public double DiskWarningPercent { get; init; } = 15;
+    public double DiskWarningPercent { get; set; } = 15;
 
     /// <summary>Percentual de espaço <em>livre</em> considerado crítico.</summary>
-    public double DiskCriticalPercent { get; init; } = 5;
+    public double DiskCriticalPercent { get; set; } = 5;
 
     public int HistorySamples { get; init; } = 120;
 }

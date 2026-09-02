@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Infrastructure.Persistence;
+using ProtheusPulse.Service.Endpoints;
 
 namespace ProtheusPulse.Service.HostedServices;
 
@@ -58,6 +59,18 @@ public sealed partial class DatabaseInitializer(
             var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
             await dbContext.Database.MigrateAsync(cancellationToken);
             await scope.ServiceProvider.GetRequiredService<ISystemTargetSeeder>().SeedAsync(cancellationToken);
+
+            // Os limites do servidor foram editados na tela em algum momento: as opções que
+            // os coletores recebem vêm do appsettings e precisam voltar ao valor salvo.
+            var storedThresholds = await dbContext.ServerThresholdSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+            if (storedThresholds is not null)
+            {
+                SettingsEndpoints.Apply(
+                    storedThresholds,
+                    scope.ServiceProvider.GetRequiredService<ServerResourceOptions>(),
+                    scope.ServiceProvider.GetRequiredService<ProbeCollectorOptions>());
+            }
+
             if (seedDemoData)
             {
                 var seeder = scope.ServiceProvider.GetRequiredService<IDemoDataSeeder>();

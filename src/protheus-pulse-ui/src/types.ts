@@ -279,6 +279,11 @@ export interface AuditQuery {
   skip?: number
 }
 
+/// Os mesmos limites que a aba Servidor exibe, agora com quando foram alterados.
+export interface ServerThresholdSettings extends ServerThresholds {
+  updatedAt: string | null
+}
+
 export interface HeartbeatDefinition {
   id: string
   componentId: string

@@ -2,7 +2,7 @@ import * as signalR from '@microsoft/signalr'
 import { demoAlertRules, demoHeartbeats, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
 import type {
   AlertOccurrencePage, AlertQuery, AlertRule, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
-  CreateHeartbeatInput, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken,
+  CreateHeartbeatInput, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings,
   CreateNotificationChannelInput, DashboardSummary, EmailSettings, EmailTestResult,
   InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, MaintenanceWindow, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, NotificationChannel, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
   PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
@@ -268,6 +268,16 @@ export async function getAlerts(query: AlertQuery = {}): Promise<AlertOccurrence
   if (query.skip) parameters.set('skip', String(query.skip))
   const suffix = parameters.toString()
   return request<AlertOccurrencePage>(`/api/v1/alerts${suffix ? `?${suffix}` : ''}`)
+}
+
+export async function getServerThresholds(): Promise<ServerThresholdSettings> {
+  if (staticDemo) return { cpuWarningPercent: 80, cpuCriticalPercent: 92, memoryWarningPercent: 85, memoryCriticalPercent: 94, diskFreeWarningPercent: 15, diskFreeCriticalPercent: 5, updatedAt: null }
+  return request<ServerThresholdSettings>('/api/v1/settings/server-thresholds')
+}
+
+export async function saveServerThresholds(input: Omit<ServerThresholdSettings, 'updatedAt'>): Promise<ServerThresholdSettings> {
+  if (staticDemo) throw new Error('Os limites não podem ser salvos na demonstração estática.')
+  return request<ServerThresholdSettings>('/api/v1/settings/server-thresholds', { method: 'PUT', body: JSON.stringify(input) })
 }
 
 export async function getHeartbeatDefinitions(): Promise<HeartbeatDefinition[]> {

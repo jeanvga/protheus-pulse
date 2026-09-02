@@ -11,12 +11,12 @@ import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteAlertRule, deleteInstallation, deleteMaintenanceWindow, deleteNotificationChannel, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAlertRules, getAuthStatus, getDashboard,
-  createHeartbeatDefinition, deleteHeartbeatDefinition, getAlerts, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
+  createHeartbeatDefinition, deleteHeartbeatDefinition, getAlerts, getServerThresholds, saveServerThresholds, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAlertRuleEnabled, setAutoStart, setExclusiveInstallation, setNotificationChannelEnabled, setup,
   updateAlertRule, updateInstallation,
 } from './api'
 import type {
-  AlertOccurrencePage, AlertRule, AlertSeverity, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
+  AlertOccurrencePage, AlertRule, AlertSeverity, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
   BrowseResult, ComponentProposal, ComponentProposalResult, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, MaintenanceWindow, NetworkSettings, NotificationChannel, NotificationChannelType, PathCandidate, ProbeType, PulseUser, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
@@ -2106,6 +2106,76 @@ function SettingsSection({ icon: Icon, title, summary, children }: { icon: Lucid
   </article>
 }
 
+function ServerThresholdsCard() {
+  const [draft, setDraft] = useState({ cpuWarning: '80', cpuCritical: '92', memoryWarning: '85', memoryCritical: '94', diskWarning: '15', diskCritical: '5' })
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const apply = (settings: ServerThresholdSettings) => {
+    setDraft({
+      cpuWarning: String(settings.cpuWarningPercent),
+      cpuCritical: String(settings.cpuCriticalPercent),
+      memoryWarning: String(settings.memoryWarningPercent),
+      memoryCritical: String(settings.memoryCriticalPercent),
+      diskWarning: String(settings.diskFreeWarningPercent),
+      diskCritical: String(settings.diskFreeCriticalPercent),
+    })
+    setUpdatedAt(settings.updatedAt)
+  }
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        apply(await getServerThresholds())
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os limites.')
+      } finally { setLoading(false) }
+    })()
+  }, [])
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setMessage(null)
+    try {
+      apply(await saveServerThresholds({
+        cpuWarningPercent: Number(draft.cpuWarning),
+        cpuCriticalPercent: Number(draft.cpuCritical),
+        memoryWarningPercent: Number(draft.memoryWarning),
+        memoryCriticalPercent: Number(draft.memoryCritical),
+        diskFreeWarningPercent: Number(draft.diskWarning),
+        diskFreeCriticalPercent: Number(draft.diskCritical),
+      }))
+      setMessage('Limites salvos. O próximo ciclo de coleta já usa os novos valores.')
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar os limites.')
+    } finally { setBusy(false) }
+  }
+
+  if (loading) return <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando limites…</div>
+
+  return <form className="settings-form" onSubmit={event => void save(event)}>
+    <p className="field-hint">São os mesmos limites que pintam a aba Servidor e que classificam o estado das verificações de processador, memória e disco. Até aqui só mudavam editando o <code>appsettings.json</code> no servidor e reiniciando o serviço.</p>
+    <div className="form-grid">
+      <label>Processador · atenção (%)<input type="number" aria-label="Atenção do processador" min={1} max={100} value={draft.cpuWarning} onChange={event => setDraft({ ...draft, cpuWarning: event.target.value })} required /></label>
+      <label>Processador · crítico (%)<input type="number" aria-label="Crítico do processador" min={1} max={100} value={draft.cpuCritical} onChange={event => setDraft({ ...draft, cpuCritical: event.target.value })} required /></label>
+      <label>Memória · atenção (%)<input type="number" aria-label="Atenção da memória" min={1} max={100} value={draft.memoryWarning} onChange={event => setDraft({ ...draft, memoryWarning: event.target.value })} required /></label>
+      <label>Memória · crítico (%)<input type="number" aria-label="Crítico da memória" min={1} max={100} value={draft.memoryCritical} onChange={event => setDraft({ ...draft, memoryCritical: event.target.value })} required /></label>
+      <label>Disco livre · atenção (%)<input type="number" aria-label="Atenção do disco livre" min={0} max={100} value={draft.diskWarning} onChange={event => setDraft({ ...draft, diskWarning: event.target.value })} required /></label>
+      <label>Disco livre · crítico (%)<input type="number" aria-label="Crítico do disco livre" min={0} max={100} value={draft.diskCritical} onChange={event => setDraft({ ...draft, diskCritical: event.target.value })} required /></label>
+    </div>
+    <p className="field-hint">Processador e memória medem <strong>uso</strong>: o crítico fica acima da atenção. Disco mede o espaço <strong>livre</strong>: o crítico fica abaixo. Uma regra de alerta com limite próprio ignora estes valores e usa o dela.</p>
+    {updatedAt && <p className="field-hint">Alterado pela última vez em {new Date(updatedAt).toLocaleString('pt-BR')}.</p>}
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+    {message && <div className="success-banner"><Check size={16} /> {message}</div>}
+    <div className="form-actions"><button className="primary-button" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Salvar limites'}</button></div>
+  </form>
+}
+
 function RetentionSettingsCard() {
   const [settings, setSettings] = useState<RetentionSettings | null>(null)
   const [historyDays, setHistoryDays] = useState('30')
@@ -2282,7 +2352,7 @@ function SettingsPage() {
   const items = [{ icon: Clock3, title: 'Intervalos e retenção', text: '30 dias de histórico · agregação após 7 dias' }, { icon: UserRound, title: 'Usuários e perfis', text: 'Administrator, Operator e Viewer' }, { icon: Bell, title: 'Canais de notificação', text: 'Dashboard · E-mail · Webhook · Teams · Slack · Discord' }, { icon: ShieldCheck, title: 'Segurança', text: 'Bind local · HTTPS recomendado para acesso em rede' }]
   return <div className="page-body">
     {isAdministrator
-      ? <><SettingsSection icon={Mail} title="Envio de e-mail" summary="Servidor SMTP, remetente, destinatários e teste de envio"><EmailSettingsCard /></SettingsSection><SettingsSection icon={Archive} title="Retenção de dados" summary="Por quanto tempo o histórico fica no banco antes de ser apagado"><RetentionSettingsCard /></SettingsSection><SettingsSection icon={UserRound} title="Usuários e perfis" summary="Contas de acesso ao painel e o que cada perfil pode fazer"><UsersSettingsCard /></SettingsSection><SettingsSection icon={Boxes} title="Acesso pela rede" summary="Abrir o painel de outro computador por http://ip:porta"><NetworkSettingsCard /></SettingsSection></>
+      ? <><SettingsSection icon={Mail} title="Envio de e-mail" summary="Servidor SMTP, remetente, destinatários e teste de envio"><EmailSettingsCard /></SettingsSection><SettingsSection icon={Cpu} title="Limites do servidor" summary="A partir de quanto uso o processador, a memória e o disco entram em atenção e crítico"><ServerThresholdsCard /></SettingsSection><SettingsSection icon={Archive} title="Retenção de dados" summary="Por quanto tempo o histórico fica no banco antes de ser apagado"><RetentionSettingsCard /></SettingsSection><SettingsSection icon={UserRound} title="Usuários e perfis" summary="Contas de acesso ao painel e o que cada perfil pode fazer"><UsersSettingsCard /></SettingsSection><SettingsSection icon={Boxes} title="Acesso pela rede" summary="Abrir o painel de outro computador por http://ip:porta"><NetworkSettingsCard /></SettingsSection></>
       : <div className="read-only-notice"><LockKeyhole size={22} /><div><strong>Somente administradores</strong><p>Os dados de envio de e-mail e os tokens dos agentes de log só aparecem para o perfil Administrator.</p></div></div>}
     <div className="settings-grid">{items.map(({ icon: Icon, title, text }) => <article className="panel setting-card" key={title}><span><Icon size={20} /></span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div>
     <div className="read-only-notice"><ShieldCheck size={22} /><div><strong>Coleta segura e ações auditadas</strong><p>A coleta é somente leitura e não escreve nas pastas monitoradas. Iniciar, reiniciar ou parar serviços exige perfil Administrator e fica registrado na auditoria.</p></div></div>

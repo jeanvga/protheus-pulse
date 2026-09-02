@@ -28,6 +28,8 @@ public static class SettingsEndpoints
         api.MapGet("/settings/email", GetAsync).RequireAuthorization("Administrator");
         api.MapPut("/settings/email", SaveAsync).RequireAuthorization("Administrator");
         api.MapPost("/settings/email/test", SendTestAsync).RequireAuthorization("Administrator").RequireRateLimiting("serviceControl");
+        api.MapGet("/settings/server-thresholds", GetServerThresholdsAsync).RequireAuthorization("Administrator");
+        api.MapPut("/settings/server-thresholds", SaveServerThresholdsAsync).RequireAuthorization("Administrator");
         api.MapGet("/settings/retention", GetRetentionAsync).RequireAuthorization("Administrator");
         api.MapPut("/settings/retention", SaveRetentionAsync).RequireAuthorization("Administrator");
         api.MapGet("/settings/network", GetNetworkAsync).RequireAuthorization("Administrator");
@@ -100,6 +102,125 @@ public static class SettingsEndpoints
     private static readonly JsonSerializerOptions NetworkSerializerOptions = new() { WriteIndented = true };
 
     public sealed record SaveNetworkRequest(bool AllowRemoteAccess, int Port);
+
+    /// <summary>
+    /// Aplica os limites gravados às opções que os coletores já têm em mãos, para o ajuste
+    /// valer no ciclo seguinte em vez de exigir reinício do serviço.
+    /// </summary>
+    public static void Apply(ServerThresholdSetting stored, ServerResourceOptions server, ProbeCollectorOptions probes)
+    {
+        server.CpuWarningPercent = stored.CpuWarningPercent;
+        server.CpuCriticalPercent = stored.CpuCriticalPercent;
+        server.MemoryWarningPercent = stored.MemoryWarningPercent;
+        server.MemoryCriticalPercent = stored.MemoryCriticalPercent;
+        server.DiskWarningPercent = stored.DiskFreeWarningPercent;
+        server.DiskCriticalPercent = stored.DiskFreeCriticalPercent;
+        probes.DiskWarningPercent = stored.DiskFreeWarningPercent;
+        probes.DiskCriticalPercent = stored.DiskFreeCriticalPercent;
+    }
+
+    private static async Task<IResult> GetServerThresholdsAsync(
+        PulseDbContext dbContext,
+        ServerResourceOptions options,
+        CancellationToken cancellationToken)
+    {
+        var stored = await dbContext.ServerThresholdSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return Results.Ok(new ServerThresholdResponse(
+            stored?.CpuWarningPercent ?? options.CpuWarningPercent,
+            stored?.CpuCriticalPercent ?? options.CpuCriticalPercent,
+            stored?.MemoryWarningPercent ?? options.MemoryWarningPercent,
+            stored?.MemoryCriticalPercent ?? options.MemoryCriticalPercent,
+            stored?.DiskFreeWarningPercent ?? options.DiskWarningPercent,
+            stored?.DiskFreeCriticalPercent ?? options.DiskCriticalPercent,
+            stored?.UpdatedAt));
+    }
+
+    private static async Task<IResult> SaveServerThresholdsAsync(
+        ServerThresholdRequest request,
+        PulseDbContext dbContext,
+        ServerResourceOptions serverOptions,
+        ProbeCollectorOptions probeOptions,
+        IClock clock,
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        if (request.CpuWarningPercent is <= 0 or > 100 || request.CpuCriticalPercent is <= 0 or > 100
+            || request.CpuWarningPercent >= request.CpuCriticalPercent)
+        {
+            errors["cpu"] = ["A atenção do processador deve ficar entre 1 e 100 e abaixo do crítico."];
+        }
+
+        if (request.MemoryWarningPercent is <= 0 or > 100 || request.MemoryCriticalPercent is <= 0 or > 100
+            || request.MemoryWarningPercent >= request.MemoryCriticalPercent)
+        {
+            errors["memory"] = ["A atenção da memória deve ficar entre 1 e 100 e abaixo do crítico."];
+        }
+
+        // Disco é medido pelo espaço livre: o crítico fica abaixo da atenção.
+        if (request.DiskFreeWarningPercent is < 0 or > 100 || request.DiskFreeCriticalPercent is < 0 or > 100
+            || request.DiskFreeCriticalPercent >= request.DiskFreeWarningPercent)
+        {
+            errors["disk"] = ["O espaço livre crítico deve ficar entre 0 e 100 e abaixo do de atenção."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var stored = await dbContext.ServerThresholdSettings.FirstOrDefaultAsync(cancellationToken);
+        if (stored is null)
+        {
+            stored = new ServerThresholdSetting();
+            dbContext.ServerThresholdSettings.Add(stored);
+        }
+
+        stored.CpuWarningPercent = request.CpuWarningPercent;
+        stored.CpuCriticalPercent = request.CpuCriticalPercent;
+        stored.MemoryWarningPercent = request.MemoryWarningPercent;
+        stored.MemoryCriticalPercent = request.MemoryCriticalPercent;
+        stored.DiskFreeWarningPercent = request.DiskFreeWarningPercent;
+        stored.DiskFreeCriticalPercent = request.DiskFreeCriticalPercent;
+        stored.UpdatedAt = clock.UtcNow;
+        AddAudit(dbContext, clock, principal, httpContext, "ServerThresholdsUpdated", stored.Id, new
+        {
+            stored.CpuWarningPercent,
+            stored.CpuCriticalPercent,
+            stored.MemoryWarningPercent,
+            stored.MemoryCriticalPercent,
+            stored.DiskFreeWarningPercent,
+            stored.DiskFreeCriticalPercent
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        Apply(stored, serverOptions, probeOptions);
+        return Results.Ok(new ServerThresholdResponse(
+            stored.CpuWarningPercent,
+            stored.CpuCriticalPercent,
+            stored.MemoryWarningPercent,
+            stored.MemoryCriticalPercent,
+            stored.DiskFreeWarningPercent,
+            stored.DiskFreeCriticalPercent,
+            stored.UpdatedAt));
+    }
+
+    public sealed record ServerThresholdRequest(
+        double CpuWarningPercent,
+        double CpuCriticalPercent,
+        double MemoryWarningPercent,
+        double MemoryCriticalPercent,
+        double DiskFreeWarningPercent,
+        double DiskFreeCriticalPercent);
+
+    public sealed record ServerThresholdResponse(
+        double CpuWarningPercent,
+        double CpuCriticalPercent,
+        double MemoryWarningPercent,
+        double MemoryCriticalPercent,
+        double DiskFreeWarningPercent,
+        double DiskFreeCriticalPercent,
+        DateTimeOffset? UpdatedAt);
 
     public sealed record NetworkSettingsResponse(
         bool AllowRemoteAccess,

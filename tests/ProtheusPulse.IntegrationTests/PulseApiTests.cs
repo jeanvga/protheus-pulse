@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.HostedServices;
@@ -1026,6 +1027,51 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ServerThresholdsAreEditableAndTakeEffectWithoutRestart()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        using var saveRequest = AuthorizedRequest(HttpMethod.Put, "/api/v1/settings/server-thresholds", token, new
+        {
+            cpuWarningPercent = 70,
+            cpuCriticalPercent = 88,
+            memoryWarningPercent = 75,
+            memoryCriticalPercent = 90,
+            diskFreeWarningPercent = 20,
+            diskFreeCriticalPercent = 8
+        });
+        var saveResponse = await client.SendAsync(saveRequest);
+        saveResponse.EnsureSuccessStatusCode();
+
+        // O ajuste vale no ciclo seguinte: as opções que os coletores já têm são atualizadas.
+        var serverOptions = factory.Services.GetRequiredService<ServerResourceOptions>();
+        var probeOptions = factory.Services.GetRequiredService<ProbeCollectorOptions>();
+        Assert.Equal(70, serverOptions.CpuWarningPercent);
+        Assert.Equal(90, serverOptions.MemoryCriticalPercent);
+        Assert.Equal(20, serverOptions.DiskWarningPercent);
+        Assert.Equal(8, probeOptions.DiskCriticalPercent);
+
+        using var readRequest = AuthorizedRequest(HttpMethod.Get, "/api/v1/settings/server-thresholds", token);
+        var read = await client.SendAsync(readRequest);
+        read.EnsureSuccessStatusCode();
+        var stored = await read.Content.ReadFromJsonAsync<ServerThresholdResponse>();
+        Assert.NotNull(stored);
+        Assert.Equal(70, stored.CpuWarningPercent);
+        Assert.NotNull(stored.UpdatedAt);
+
+        // Disco é medido pelo espaço livre: o crítico não pode ficar acima da atenção.
+        using var invalid = AuthorizedRequest(HttpMethod.Put, "/api/v1/settings/server-thresholds", token, new
+        {
+            cpuWarningPercent = 70,
+            cpuCriticalPercent = 88,
+            memoryWarningPercent = 75,
+            memoryCriticalPercent = 90,
+            diskFreeWarningPercent = 5,
+            diskFreeCriticalPercent = 20
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(invalid)).StatusCode);
+    }
+
+    [Fact]
     public async Task AuditTrailIsReadableAndCarriesWhoDidWhat()
     {
         var token = await AuthenticateDemoAdministratorAsync();
@@ -1470,6 +1516,14 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record TcpCheckConfigurationResponse(string Host, int Port);
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
+    private sealed record ServerThresholdResponse(
+        double CpuWarningPercent,
+        double CpuCriticalPercent,
+        double MemoryWarningPercent,
+        double MemoryCriticalPercent,
+        double DiskFreeWarningPercent,
+        double DiskFreeCriticalPercent,
+        DateTimeOffset? UpdatedAt);
     private sealed record AlertPageResponse(int Total, Dictionary<string, int> ByState, List<AlertEntryResponse> Items);
     private sealed record AlertEntryResponse(Guid Id, string RuleName, string Severity, string State, DateTimeOffset StartedAt);
     private sealed record AuditPageResponse(int Total, Dictionary<string, int> ByAction, List<AuditEntryResponse> Items);
