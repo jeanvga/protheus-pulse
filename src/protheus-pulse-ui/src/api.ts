@@ -45,7 +45,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function getAuthStatus(): Promise<AuthStatus> {
-  if (staticDemo) return { requiresSetup: false, demoMode: true, demoUsername: 'demo.admin', demoPassword: 'PulseDemo!2026' }
+  if (staticDemo) return { requiresSetup: false, demoMode: true, demoUsername: 'demo.admin', demoPassword: 'PulseDemo!2026', version: '1.10.0' }
   return request<AuthStatus>('/api/v1/auth/status')
 }
 

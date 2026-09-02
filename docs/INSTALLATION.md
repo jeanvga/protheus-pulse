@@ -101,3 +101,28 @@ Como o processo roda como `LocalSystem`, uma conta Administrator do Pulse contro
 A desinstalação pelo menu Aplicativos do Windows remove o serviço e os binários, mas preserva `C:\ProgramData\ProtheusPulse`. Para apagar permanentemente banco, logs, chave JWT e chaves DPAPI, primeiro desinstale o produto, faça o backup necessário e remova explicitamente essa pasta com uma sessão administrativa.
 
 Essa operação é irreversível após a confirmação.
+
+## HTTPS no painel
+
+Por padrão o painel escuta em `http://127.0.0.1:5058`, acessível só do próprio servidor. Ao ligar **Acesso pela rede** em Configurações, ligue também o **HTTPS**: sem ele, a senha e o token de sessão trafegam em texto claro na rede do cliente.
+
+Em **Configurações › Acesso pela rede** há dois caminhos:
+
+- **Certificado da sua rede** — informe o caminho de um `.pfx` que traga a chave privada. Se ele tiver senha, informe-a no campo próprio; ela é cifrada com Data Protection e guardada fora do `network.json`.
+- **Certificado para esta máquina** — o botão gera um certificado autoassinado em `C:\ProgramData\ProtheusPulse\certs`, válido por dois anos, com o nome da máquina, `localhost` e os IPs locais. O navegador avisa que não conhece quem assinou, mas o tráfego deixa de ir em texto claro.
+
+O certificado é conferido ao salvar e a gravação é recusada se ele não servir. Se mesmo assim ele falhar na inicialização — arquivo movido, permissão negada — o serviço sobe em HTTP e registra o motivo em `logs\startup-trace.log`, em vez de ficar inacessível sem caminho de volta pela tela.
+
+Depois de salvar, reinicie o serviço para o novo endereço valer:
+
+```powershell
+Restart-Service ProtheusPulse
+```
+
+## Backup
+
+**Configurações › Backup** gera um pacote com o banco, a chave de Data Protection e a configuração de rede, e o disponibiliza para download. A chave é indispensável: sem ela, um banco restaurado perde as URLs dos pontos de contato e a senha do SMTP, que ficam cifradas por ela.
+
+Os dez pacotes mais recentes ficam em `C:\ProgramData\ProtheusPulse\backups`. Leve uma cópia para fora da máquina — um backup que mora no disco que falhou não serve.
+
+A restauração é manual de propósito: trocar o banco embaixo de um serviço em execução corrompe o que estiver sendo escrito. O passo a passo vai dentro do pacote, no `LEIAME.txt`.

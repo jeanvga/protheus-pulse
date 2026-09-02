@@ -11,6 +11,8 @@ A aba **Alertas** do painel tem quatro seções, na mesma divisão que o Grafana
 | Pontos de contato | Cadastra e ativa webhook, Teams, Slack e Discord. | Administrator |
 | Silenciamentos | Abre e encerra janela de manutenção. | Administrator para alterar |
 
+A aba **Ocorrências** consulta `GET /api/v1/alerts`, com filtro por estado, componente e período e paginação; a contagem por estado é calculada ignorando o filtro de estado, porque alimenta os próprios botões.
+
 O editor de regra pede, em quatro passos, o nome, a condição (componente, verificação e estados que contam como falha), o comportamento da avaliação (falhas consecutivas e cooldown) e a severidade. Antes de salvar, a tela mostra em uma frase o que a regra vai fazer.
 
 Regra criada pelo coletor aparece marcada como **Padrão**. Removê-la não a elimina para sempre: no ciclo seguinte o coletor recria a regra padrão daquela verificação, porque o componente ficou sem nenhuma. Para parar de alertar, desative em vez de remover.
