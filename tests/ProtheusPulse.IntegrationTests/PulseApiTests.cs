@@ -964,6 +964,62 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AuditTrailIsReadableAndCarriesWhoDidWhat()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        var channelName = $"Auditoria {Guid.NewGuid():N}";
+        using var createRequest = AuthorizedPost("/api/v1/notification-channels", token, new
+        {
+            name = channelName,
+            type = "Webhook",
+            url = "https://notify.example.invalid/hooks/auditoria",
+            enabled = false
+        });
+        (await client.SendAsync(createRequest)).EnsureSuccessStatusCode();
+
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/v1/audit?action=NotificationChannelCreated&take=200", token);
+        var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var page = await response.Content.ReadFromJsonAsync<AuditPageResponse>();
+        Assert.NotNull(page);
+        Assert.True(page.Total > 0);
+        Assert.All(page.Items, item => Assert.Equal("NotificationChannelCreated", item.Action));
+
+        var entry = page.Items[0];
+        Assert.Equal("NotificationChannel", entry.EntityType);
+        Assert.Equal("demo.admin", entry.Username);
+        Assert.NotNull(entry.UserDisplayName);
+        // O nome do canal não entra na auditoria; só o tipo e o estado, já sanitizados.
+        Assert.DoesNotContain(channelName, entry.Details ?? string.Empty, StringComparison.Ordinal);
+        Assert.Contains("Webhook", entry.Details ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AuditTrailIsClosedToNonAdministrators()
+    {
+        var administratorToken = await AuthenticateDemoAdministratorAsync();
+        var username = $"leitor{Guid.NewGuid():N}"[..18];
+        const string password = "SenhaDeTeste!2026";
+        using var createUser = AuthorizedPost("/api/v1/users", administratorToken, new
+        {
+            username,
+            displayName = "Leitor de plantão",
+            password,
+            role = "Viewer"
+        });
+        (await client.SendAsync(createUser)).EnsureSuccessStatusCode();
+
+        var login = await client.PostAsJsonAsync(new Uri("/api/v1/auth/login", UriKind.Relative), new { username, password });
+        login.EnsureSuccessStatusCode();
+        var viewer = await login.Content.ReadFromJsonAsync<TokenResponse>();
+        Assert.NotNull(viewer);
+
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/v1/audit", viewer.AccessToken);
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task NotificationChannelConfigurationIsProtectedAndNeverReturned()
     {
         var token = await AuthenticateDemoAdministratorAsync();
@@ -1342,6 +1398,17 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record TcpCheckConfigurationResponse(string Host, int Port);
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
+    private sealed record AuditPageResponse(int Total, Dictionary<string, int> ByAction, List<AuditEntryResponse> Items);
+    private sealed record AuditEntryResponse(
+        Guid Id,
+        string Action,
+        string EntityType,
+        string? EntityId,
+        DateTimeOffset OccurredAt,
+        string? RemoteAddress,
+        string? Details,
+        string? UserDisplayName,
+        string? Username);
     private sealed record AlertRuleResponse(
         Guid Id,
         Guid ComponentId,

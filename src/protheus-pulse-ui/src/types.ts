@@ -236,6 +236,43 @@ export interface AuthStatus {
   demoMode: boolean
   demoUsername?: string
   demoPassword?: string
+  version?: string
+}
+
+export interface AuditEventItem {
+  id: string
+  action: string
+  entityType: string
+  entityId?: string | null
+  occurredAt: string
+  remoteAddress?: string | null
+  details?: string | null
+  userDisplayName?: string | null
+  username?: string | null
+}
+
+export interface AuditEventPage {
+  total: number
+  byAction: Record<string, number>
+  items: AuditEventItem[]
+}
+
+export interface AuditQuery {
+  search?: string
+  action?: string
+  from?: string
+  take?: number
+  skip?: number
+}
+
+export interface DiagnosticsInfo {
+  service: string
+  status: HealthStatus
+  database: string
+  demoMode: boolean
+  platform: string
+  version: string
+  notes: string[]
 }
 
 export interface AuthToken {

@@ -12,6 +12,10 @@ namespace ProtheusPulse.Service.Endpoints;
 
 public static class ApiEndpoints
 {
+    /// <summary>Versão do pacote, usada no diagnóstico e no rodapé do painel.</summary>
+    private static readonly string ProductVersion =
+        typeof(ApiEndpoints).Assembly.GetName().Version?.ToString(3) ?? "development";
+
     private static readonly string[] DiagnosticNotes = ["Nenhum caminho monitorado ou segredo é exposto neste diagnóstico."];
     private static readonly string[] UsernameRequired = ["Informe o nome de usuário."];
 
@@ -24,7 +28,8 @@ public static class ApiEndpoints
             requiresSetup = !await db.Users.AnyAsync(cancellationToken),
             demoMode,
             demoUsername = demoMode ? DemoDataSeeder.DemoUsername : null,
-            demoPassword = demoMode ? DemoDataSeeder.DemoPassword : null
+            demoPassword = demoMode ? DemoDataSeeder.DemoPassword : null,
+            version = ProductVersion
         })).AllowAnonymous();
 
         api.MapPost("/auth/setup", SetupAsync).AllowAnonymous().RequireRateLimiting("authentication");
@@ -154,6 +159,70 @@ public static class ApiEndpoints
             });
         }).RequireAuthorization("Viewer");
 
+        // A auditoria já era gravada em toda ação administrativa e não tinha como ser lida:
+        // o painel mostrava um texto fixo no lugar dela.
+        api.MapGet("/audit", async (
+            PulseDbContext db,
+            string? search,
+            string? action,
+            DateTimeOffset? from,
+            int? take,
+            int? skip,
+            CancellationToken cancellationToken) =>
+        {
+            var query = db.AuditEvents.AsNoTracking();
+            if (!string.IsNullOrWhiteSpace(action) && !string.Equals(action, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(item => item.Action == action);
+            }
+
+            if (from is { } start)
+            {
+                query = query.Where(item => item.OccurredAt >= start);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim()
+                    .Replace("\\", "\\\\", StringComparison.Ordinal)
+                    .Replace("%", "\\%", StringComparison.Ordinal)
+                    .Replace("_", "\\_", StringComparison.Ordinal);
+                var pattern = $"%{term}%";
+                query = query.Where(item => EF.Functions.Like(item.Action, pattern, "\\")
+                    || EF.Functions.Like(item.EntityType, pattern, "\\")
+                    || (item.User != null && EF.Functions.Like(item.User.DisplayName, pattern, "\\"))
+                    || (item.User != null && EF.Functions.Like(item.User.Username, pattern, "\\")));
+            }
+
+            var byAction = await query
+                .GroupBy(item => item.Action)
+                .Select(group => new { Action = group.Key, Count = group.Count() })
+                .ToListAsync(cancellationToken);
+            var items = await query
+                .OrderByDescending(item => item.OccurredAt)
+                .Skip(Math.Max(0, skip ?? 0))
+                .Take(Math.Clamp(take ?? 50, 1, 200))
+                .Select(item => new
+                {
+                    item.Id,
+                    item.Action,
+                    item.EntityType,
+                    item.EntityId,
+                    item.OccurredAt,
+                    item.RemoteAddress,
+                    Details = item.SanitizedDetailsJson,
+                    UserDisplayName = item.User != null ? item.User.DisplayName : null,
+                    Username = item.User != null ? item.User.Username : null
+                })
+                .ToListAsync(cancellationToken);
+            return Results.Ok(new
+            {
+                Total = byAction.Sum(entry => entry.Count),
+                ByAction = byAction.OrderByDescending(entry => entry.Count).ToDictionary(entry => entry.Action, entry => entry.Count),
+                Items = items
+            });
+        }).RequireAuthorization("Administrator");
+
         api.MapGet("/maintenance-windows", async (PulseDbContext db, CancellationToken cancellationToken) => Results.Ok(await db.MaintenanceWindows
             .AsNoTracking()
             .OrderByDescending(item => item.StartsAt)
@@ -178,7 +247,7 @@ public static class ApiEndpoints
             database = "SQLite",
             demoMode,
             platform = Environment.OSVersion.Platform.ToString(),
-            version = typeof(ApiEndpoints).Assembly.GetName().Version?.ToString() ?? "development",
+            version = ProductVersion,
             notes = DiagnosticNotes
         })).RequireAuthorization("Administrator");
 

@@ -7,6 +7,7 @@ using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Monitoring;
+using ProtheusPulse.Service.Observability;
 
 namespace ProtheusPulse.Service.Endpoints;
 
@@ -469,7 +470,7 @@ public static class ServiceControlEndpoints
             Action = action,
             EntityType = entityType,
             EntityId = entityId.ToString(),
-            SanitizedDetailsJson = JsonSerializer.Serialize(details),
+            SanitizedDetailsJson = AuditDetails.Serialize(details),
             RemoteAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
             OccurredAt = clock.UtcNow
         });

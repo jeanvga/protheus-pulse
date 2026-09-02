@@ -9,6 +9,7 @@ using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Configuration;
+using ProtheusPulse.Service.Observability;
 
 namespace ProtheusPulse.Service.Endpoints;
 
@@ -517,7 +518,7 @@ public static class DiscoveryEndpoints
             UserId = GetUserId(principal),
             Action = action,
             EntityType = "Discovery",
-            SanitizedDetailsJson = JsonSerializer.Serialize(new { resultCount, dryRun = true }),
+            SanitizedDetailsJson = AuditDetails.Serialize(new { resultCount, dryRun = true }),
             RemoteAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
             OccurredAt = clock.UtcNow
         });

@@ -6,6 +6,7 @@ using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Configuration;
+using ProtheusPulse.Service.Observability;
 
 namespace ProtheusPulse.Service.Endpoints;
 
@@ -482,7 +483,7 @@ public static class InstallationEndpoints
             Action = action,
             EntityType = nameof(Installation),
             EntityId = installation.Id.ToString(),
-            SanitizedDetailsJson = JsonSerializer.Serialize(new
+            SanitizedDetailsJson = AuditDetails.Serialize(new
             {
                 environment = installation.Environment,
                 componentCount = request.Components?.Count ?? 0,

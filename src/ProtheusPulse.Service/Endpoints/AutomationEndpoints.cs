@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
+using ProtheusPulse.Service.Observability;
 
 namespace ProtheusPulse.Service.Endpoints;
 
@@ -123,7 +124,7 @@ public static class AutomationEndpoints
             Action = action,
             EntityType = nameof(Installation),
             EntityId = installation.Id.ToString(),
-            SanitizedDetailsJson = JsonSerializer.Serialize(details),
+            SanitizedDetailsJson = AuditDetails.Serialize(details),
             RemoteAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
             OccurredAt = clock.UtcNow
         });

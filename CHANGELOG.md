@@ -2,6 +2,18 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [Não lançado]
+
+### Added
+
+- Aba **Auditoria** de verdade, com busca, filtro por ação e por período e carregamento por página. O serviço já gravava 22 tipos de ação administrativa — login, ação em serviço, mudança de regra, manutenção, conta, configuração — com usuário e endereço de origem, e não havia como ler nada disso: a tela mostrava dois parágrafos escritos à mão, iguais em qualquer instalação. Restrita a Administrator, porque expõe quem fez o quê.
+- Aba **Diagnóstico** consultando o serviço em vez de afirmar. Os quatro cartões traziam o estado escrito no código e diziam "saudável" mesmo com o banco fora; agora vêm de `GET /diagnostics`, e sem resposta do serviço a tela informa que está sem contato em vez de inventar saúde.
+
+### Fixed
+
+- O detalhe da auditoria gravava enum como número: quem lesse o registro via `"Type": 2` em vez de `"Type": "Webhook"`. O registro só serve se for legível meses depois sem consultar o código para traduzir o índice. A serialização foi centralizada em um único lugar, que os nove pontos de gravação agora usam.
+- O rodapé do painel mostrava `1.4.0` desde aquela versão. A versão passa a vir do serviço, pelo status que a tela já consulta na abertura.
+
 ## [1.10.0] - 2026-09-02
 
 ### Added

@@ -9,7 +9,7 @@ vi.mock('./api', () => ({
     get role() { return sessionStorage.getItem('pulse.test.role') },
     set role(value: string | null) { if (value) sessionStorage.setItem('pulse.test.role', value); else sessionStorage.removeItem('pulse.test.role') },
   },
-  getAuthStatus: vi.fn().mockResolvedValue({ requiresSetup: false, demoMode: true }),
+  getAuthStatus: vi.fn().mockResolvedValue({ requiresSetup: false, demoMode: true, version: '1.10.0' }),
   getDashboard: vi.fn().mockResolvedValue(demoSummary),
   createInstallation: vi.fn(),
   getInstallationConfiguration: vi.fn(),
@@ -45,13 +45,15 @@ vi.mock('./api', () => ({
   getMaintenanceWindows: vi.fn(),
   createMaintenanceWindow: vi.fn(),
   deleteMaintenanceWindow: vi.fn(),
+  getAuditEvents: vi.fn(),
+  getDiagnostics: vi.fn(),
 }))
 
 import {
   acknowledgeAlert, collectNow, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteInstallation, discoverPaths,
   discoverServices, executeServiceAction, getAlertRules, getDashboard, getEmailSettings, getInstallationConfiguration,
-  getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
+  getAuditEvents, getDiagnostics, getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
   setAutoStart, setExclusiveInstallation, updateInstallation,
 } from './api'
 import App, { serviceActionAllowed } from './App'
@@ -128,6 +130,26 @@ describe('App', () => {
     vi.mocked(createNotificationChannel).mockReset().mockResolvedValue(undefined)
     vi.mocked(getMaintenanceWindows).mockReset().mockResolvedValue(demoMaintenanceWindows)
     vi.mocked(createMaintenanceWindow).mockReset().mockResolvedValue(undefined)
+    vi.mocked(getAuditEvents).mockReset().mockResolvedValue({
+      total: 2,
+      byAction: { ServiceActionExecuted: 1, LoginSucceeded: 1 },
+      items: [
+        {
+          id: 'audit-1', action: 'ServiceActionExecuted', entityType: 'Component', entityId: 'c1f2a3b4-0000-0000-0000-000000000000',
+          occurredAt: new Date('2026-09-02T12:00:00Z').toISOString(), remoteAddress: '192.168.0.10',
+          details: '{"action":"restart","serviceName":"AppServerProd"}', userDisplayName: 'Jean Mendes', username: 'jean',
+        },
+        {
+          id: 'audit-2', action: 'LoginSucceeded', entityType: 'User', entityId: null,
+          occurredAt: new Date('2026-09-02T11:00:00Z').toISOString(), remoteAddress: '127.0.0.1',
+          details: null, userDisplayName: 'Jean Mendes', username: 'jean',
+        },
+      ],
+    })
+    vi.mocked(getDiagnostics).mockReset().mockResolvedValue({
+      service: 'Protheus Pulse', status: 'Healthy', database: 'SQLite', demoMode: true,
+      platform: 'Win32NT', version: '1.10.0', notes: ['A coleta é somente leitura.'],
+    })
   })
 
   it('exibe o resumo demonstrativo depois da autenticação', async () => {
@@ -388,6 +410,51 @@ describe('App', () => {
       endsAt: new Date(new Date('2026-09-10T22:00').getTime() + 360 * 60_000).toISOString(),
       reason: undefined,
     }))
+  })
+
+  it('mostra na auditoria os eventos que o servidor devolve', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Auditoria' }))
+
+    expect(await screen.findByText('Executou ação em serviço Windows', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText('Entrou no painel', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getAllByText(/Jean Mendes \(jean\)/)).toHaveLength(2)
+    expect(screen.getByText(/action: restart · serviceName: AppServerProd/)).toBeInTheDocument()
+    expect(getAuditEvents).toHaveBeenCalled()
+  })
+
+  it('esconde a auditoria de quem não é administrador', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Operator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Auditoria' }))
+
+    expect(await screen.findByText('Somente administradores')).toBeInTheDocument()
+    expect(getAuditEvents).not.toHaveBeenCalled()
+  })
+
+  it('mostra o diagnóstico como crítico quando o serviço não responde', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    vi.mocked(getDiagnostics).mockRejectedValue(new Error('A API retornou 503.'))
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnóstico' }))
+
+    // A tela antiga afirmava "Healthy" mesmo com o serviço fora.
+    expect(await screen.findByText('A API retornou 503.')).toBeInTheDocument()
+    expect(screen.getByText('A API não respondeu; o painel está sem contato com o serviço.')).toBeInTheDocument()
+    expect(screen.getAllByText('Crítico').length).toBeGreaterThan(0)
+  })
+
+  it('mostra no rodapé a versão informada pelo servidor', async () => {
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    expect(screen.getByText(/Protheus Pulse 1\.10\.0 · produto independente/)).toBeInTheDocument()
   })
 
   it('abre a aba Servidor com processador, memória e discos', async () => {

@@ -11,12 +11,12 @@ import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteAlertRule, deleteInstallation, deleteMaintenanceWindow, deleteNotificationChannel, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAlertRules, getAuthStatus, getDashboard,
-  getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
+  getAuditEvents, getDiagnostics, getEmailSettings, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAlertRuleEnabled, setAutoStart, setExclusiveInstallation, setNotificationChannelEnabled, setup,
   updateAlertRule, updateInstallation,
 } from './api'
 import type {
-  AlertRule, AlertSeverity, AlertSnapshot, AlertState, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
+  AlertRule, AlertSeverity, AlertSnapshot, AlertState, AuditEventPage, AuthStatus, AuthToken, DiagnosticsInfo, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
   BrowseResult, ComponentProposal, ComponentProposalResult, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, MaintenanceWindow, NetworkSettings, NotificationChannel, NotificationChannelType, PathCandidate, ProbeType, PulseUser, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
@@ -152,7 +152,7 @@ export default function App() {
 
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => void loadSummary()}><RefreshCw size={15} /> Tentar novamente</button></div>}
         {!summary ? <DashboardSkeleton /> : <PageContent page={page} summary={summary} refresh={loadSummary} goTo={setPage} addInstallation={() => setInstallationEditorId(null)} editInstallation={setInstallationEditorId} />}
-        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse 1.4.0 · produto independente</span></footer>
+        <footer className="app-footer"><span><span className="live-dot" /> Atualização em tempo real</span><span>Protheus Pulse {authStatus?.version ?? ''} · produto independente</span></footer>
       </main>
       {installationEditorId !== undefined && <InstallationDialog installationId={installationEditorId} close={() => setInstallationEditorId(undefined)} onSaved={installationCreated} />}
     </div>
@@ -2292,12 +2292,226 @@ function EmailSettingsCard() {
   </article>
 }
 
+const auditPageSize = 50
+
+const auditPeriodFilters = [
+  { id: '24h', label: 'Últimas 24 horas', hours: 24 },
+  { id: '7d', label: 'Últimos 7 dias', hours: 168 },
+  { id: '30d', label: 'Últimos 30 dias', hours: 720 },
+  { id: 'all', label: 'Todo o período', hours: 0 },
+]
+
+/// O nome técnico da ação é o que fica gravado; a tela mostra o que a pessoa fez.
+const auditActionLabels: Record<string, string> = {
+  LoginSucceeded: 'Entrou no painel',
+  InitialAdministratorCreated: 'Criou a conta administrativa inicial',
+  InstallationCreated: 'Cadastrou uma instalação',
+  InstallationUpdated: 'Alterou uma instalação',
+  InstallationDeleted: 'Removeu uma instalação',
+  ServiceActionExecuted: 'Executou ação em serviço Windows',
+  MaintenanceModeEntered: 'Entrou no modo manutenção',
+  MaintenanceModeExited: 'Encerrou o modo manutenção',
+  MaintenanceWindowCreated: 'Abriu um silenciamento',
+  MaintenanceWindowDeleted: 'Encerrou um silenciamento',
+  AlertRuleCreated: 'Criou uma regra de alerta',
+  AlertRuleUpdated: 'Editou uma regra de alerta',
+  AlertRuleDeleted: 'Removeu uma regra de alerta',
+  AlertRuleStateChanged: 'Ativou ou desativou uma regra',
+  AlertAcknowledged: 'Reconheceu um alerta',
+  NotificationChannelCreated: 'Cadastrou um ponto de contato',
+  NotificationChannelDeleted: 'Removeu um ponto de contato',
+  NotificationChannelStateChanged: 'Ativou ou desativou um ponto de contato',
+  EmailSettingsUpdated: 'Alterou o envio de e-mail',
+  EmailSettingsTested: 'Enviou e-mail de teste',
+  ExclusiveInstallationChanged: 'Alterou a instalação exclusiva',
+  AutoStartSettingChanged: 'Alterou o auto-start',
+  HeartbeatDefinitionCreated: 'Cadastrou um heartbeat',
+  HeartbeatDefinitionDeleted: 'Removeu um heartbeat',
+  HeartbeatTokenRotated: 'Rotacionou o token de um heartbeat',
+  UserCreated: 'Criou uma conta',
+  UserUpdated: 'Alterou uma conta',
+  UserDeleted: 'Removeu uma conta',
+  UserPasswordReset: 'Redefiniu uma senha',
+  NetworkSettingsUpdated: 'Alterou o acesso pela rede',
+  RetentionSettingsUpdated: 'Alterou a retenção',
+}
+
+function auditActionLabel(action: string) {
+  return auditActionLabels[action] ?? action
+}
+
+/// Ações que mexem no ambiente monitorado merecem destaque na lista.
+const auditSensitiveActions = new Set([
+  'ServiceActionExecuted', 'MaintenanceModeEntered', 'MaintenanceModeExited',
+  'InstallationDeleted', 'UserDeleted', 'UserPasswordReset', 'NetworkSettingsUpdated',
+])
+
+function auditDetails(details?: string | null) {
+  if (!details || details === '{}') return null
+  try {
+    const parsed = JSON.parse(details) as Record<string, unknown>
+    const entries = Object.entries(parsed).filter(([, value]) => value !== null && value !== '')
+    if (entries.length === 0) return null
+    return entries.map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ')
+  } catch {
+    return null
+  }
+}
+
 function AuditPage() {
-  return <div className="page-body"><article className="panel"><PanelHeader title="Eventos administrativos" subtitle="Horários em UTC com origem sanitizada" /><div className="audit-line"><span><LockKeyhole size={16} /></span><div><strong>LoginSucceeded</strong><p>Administrador da demonstração iniciou uma sessão local.</p><small>Agora · 127.0.0.1</small></div></div><div className="audit-line"><span><ShieldCheck size={16} /></span><div><strong>InitialAdministratorCreated</strong><p>Conta administrativa inicial criada com hash PBKDF2-SHA256.</p><small>Na primeira inicialização</small></div></div></article></div>
+  const [page, setPage] = useState<AuditEventPage>({ total: 0, byAction: {}, items: [] })
+  const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+  const [action, setAction] = useState('all')
+  const [period, setPeriod] = useState('7d')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const isAdministrator = session.role === 'Administrator'
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const from = useMemo(() => {
+    const hours = auditPeriodFilters.find(item => item.id === period)?.hours ?? 0
+    return hours === 0 ? undefined : new Date(Date.now() - hours * 3_600_000).toISOString()
+  }, [period])
+
+  const query = useMemo(() => ({ search: appliedSearch, action, from }), [appliedSearch, action, from])
+
+  const load = useCallback(async (skip: number) => {
+    if (!isAdministrator) { setLoading(false); return }
+    setLoading(true)
+    try {
+      const result = await getAuditEvents({ ...query, take: auditPageSize, skip })
+      setPage(previous => skip === 0 ? result : { ...result, items: [...previous.items, ...result.items] })
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a auditoria.')
+    } finally { setLoading(false) }
+  }, [query, isAdministrator])
+
+  useEffect(() => { void load(0) }, [load])
+
+  if (!isAdministrator) {
+    return <div className="page-body"><div className="read-only-notice"><LockKeyhole size={22} /><div><strong>Somente administradores</strong><p>A auditoria registra quem fez cada alteração, com endereço de origem. Só o perfil Administrator pode consultá-la.</p></div></div></div>
+  }
+
+  const shown = page.items.length
+  const hasMore = shown < page.total
+  const knownActions = Object.keys(page.byAction).sort((left, right) => auditActionLabel(left).localeCompare(auditActionLabel(right), 'pt-BR'))
+
+  return <div className="page-body">
+    <section className="toolbar">
+      <div className="search-box"><Search size={17} /><input aria-label="Pesquisar auditoria" placeholder="Pesquisar ação, tipo ou usuário…" value={search} onChange={event => setSearch(event.target.value)} /></div>
+      <label className="toolbar-field">Ação
+        <select aria-label="Filtrar por ação" value={action} onChange={event => setAction(event.target.value)}>
+          <option value="all">Todas</option>
+          {knownActions.map(item => <option key={item} value={item}>{auditActionLabel(item)}</option>)}
+        </select>
+      </label>
+      <label className="toolbar-field">Período
+        <select aria-label="Filtrar período da auditoria" value={period} onChange={event => setPeriod(event.target.value)}>
+          {auditPeriodFilters.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+        </select>
+      </label>
+      <button className="secondary-button" disabled={loading} onClick={() => void load(0)}><RefreshCw size={16} /> Atualizar</button>
+    </section>
+
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+
+    <article className="panel">
+      <PanelHeader title="Eventos administrativos" subtitle={`${page.total.toLocaleString('pt-BR')} evento(s) no período · horários no fuso do servidor`} />
+      {loading && shown === 0 && <div className="modal-loading"><RefreshCw className="spin" size={20} /> Carregando auditoria…</div>}
+      {!loading && shown === 0 && <div className="tab-empty">
+        <Archive size={22} />
+        <div><strong>Nenhum evento no período</strong><p>A auditoria guarda login, ação em serviço, mudança de regra, manutenção, conta e configuração. Ela não é apagada pela retenção — amplie o período se procura algo antigo.</p></div>
+      </div>}
+      {page.items.map(item => {
+        const detail = auditDetails(item.details)
+        return <div className="audit-line" key={item.id}>
+          <span className={auditSensitiveActions.has(item.action) ? 'sensitive' : ''}>
+            {auditSensitiveActions.has(item.action) ? <ShieldCheck size={16} /> : <LockKeyhole size={16} />}
+          </span>
+          <div>
+            <strong>{auditActionLabel(item.action)}</strong>
+            <p>{item.userDisplayName ?? 'Sistema'}{item.username ? ` (${item.username})` : ''} · {item.entityType}{item.entityId ? ` ${item.entityId.slice(0, 8)}` : ''}</p>
+            {detail && <p className="audit-detail">{detail}</p>}
+            <small>{new Date(item.occurredAt).toLocaleString('pt-BR')}{item.remoteAddress ? ` · ${item.remoteAddress}` : ''}</small>
+          </div>
+        </div>
+      })}
+      {hasMore && <button className="secondary-button load-more" disabled={loading} onClick={() => void load(shown)}>
+        {loading ? 'Carregando…' : `Carregar mais (${(page.total - shown).toLocaleString('pt-BR')} restantes)`}
+      </button>}
+    </article>
+  </div>
 }
 
 function DiagnosticsPage({ demo }: { demo: boolean }) {
-  return <div className="page-body"><div className="diagnostic-grid"><Diagnostic title="Serviço web" status="Healthy" detail="Respondendo em 127.0.0.1:5058" /><Diagnostic title="Banco local" status="Healthy" detail="SQLite disponível e migration aplicada" /><Diagnostic title="Atualização em tempo real" status="Healthy" detail="Hub SignalR ativo" /><Diagnostic title="Coletores reais" status={demo ? "Unknown" : "Healthy"} detail={demo ? "Desativados no modo demonstração" : "Agendador somente leitura ativo"} /></div>{demo && <div className="demo-notice"><HeartPulse size={22} /><div><strong>Modo demonstração ativo</strong><p>Todos os alvos e eventos exibidos são sintéticos e claramente marcados.</p></div></div>}</div>
+  const [info, setInfo] = useState<DiagnosticsInfo | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const isAdministrator = session.role === 'Administrator'
+
+  const load = useCallback(async () => {
+    if (!isAdministrator) { setLoading(false); return }
+    setLoading(true)
+    try {
+      setInfo(await getDiagnostics())
+      setError(null)
+    } catch (reason) {
+      setInfo(null)
+      setError(reason instanceof Error ? reason.message : 'Não foi possível consultar o diagnóstico.')
+    } finally { setLoading(false) }
+  }, [isAdministrator])
+
+  useEffect(() => { void load() }, [load])
+
+  if (!isAdministrator) {
+    return <div className="page-body"><div className="read-only-notice"><LockKeyhole size={22} /><div><strong>Somente administradores</strong><p>O diagnóstico expõe caminho de dados, plataforma e estado do banco. Só o perfil Administrator pode consultá-lo.</p></div></div></div>
+  }
+
+  // Sem resposta do servidor não há como afirmar que algo está saudável.
+  const reachable = info !== null
+  const databaseStatus: HealthStatus = !reachable ? 'Unknown' : info.status
+  const collectorStatus: HealthStatus = !reachable ? 'Unknown' : demo ? 'Unknown' : 'Healthy'
+
+  return <div className="page-body">
+    <section className="toolbar">
+      <span className="refresh-hint"><Activity size={15} /> Consultado a cada abertura da aba</span>
+      <button className="secondary-button" disabled={loading} onClick={() => void load()}><RefreshCw size={16} /> {loading ? 'Consultando…' : 'Consultar de novo'}</button>
+    </section>
+
+    {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
+
+    <div className="diagnostic-grid">
+      <Diagnostic
+        title="Serviço web"
+        status={reachable ? 'Healthy' : 'Critical'}
+        detail={reachable ? `${info.service} respondeu a esta consulta` : 'A API não respondeu; o painel está sem contato com o serviço.'} />
+      <Diagnostic
+        title="Banco local"
+        status={databaseStatus}
+        detail={reachable ? `${info.database} ${info.status === 'Healthy' ? 'disponível com o esquema aplicado' : 'não respondeu à verificação de conexão'}` : 'Sem resposta do serviço.'} />
+      <Diagnostic
+        title="Plataforma"
+        status={reachable ? 'Healthy' : 'Unknown'}
+        detail={reachable ? `${info.platform} · versão ${info.version}` : 'Sem resposta do serviço.'} />
+      <Diagnostic
+        title="Coletores reais"
+        status={collectorStatus}
+        detail={!reachable ? 'Sem resposta do serviço.' : demo ? 'Desativados no modo demonstração.' : 'Agendador somente leitura ativo.'} />
+    </div>
+
+    {reachable && info.notes.length > 0 && <article className="panel settings-panel">
+      <PanelHeader title="O que este serviço faz e não faz" subtitle="Limites declarados pelo próprio serviço" />
+      <ul className="diagnostic-notes">{info.notes.map(note => <li key={note}><Check size={14} /> {note}</li>)}</ul>
+    </article>}
+
+    {demo && <div className="demo-notice"><HeartPulse size={22} /><div><strong>Modo demonstração ativo</strong><p>Todos os alvos e eventos exibidos são sintéticos e claramente marcados.</p></div></div>}
+  </div>
 }
 
 function Diagnostic({ title, status, detail }: { title: string; status: HealthStatus; detail: string }) {

@@ -443,3 +443,11 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 /* Fora de .form-grid o rótulo ficava com o tamanho herdado do corpo: 16px no meio de um formulário de 9px. */
 .settings-options .checkbox-label { color: var(--text-soft); font-size: 9px; font-weight: 600; }
 .settings-options .checkbox-label input { accent-color: var(--accent); }
+
+/* Auditoria e diagnóstico consultados do servidor. */
+.audit-line > span.sensitive { background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning); }
+.audit-line .audit-detail { margin: 3px 0 0; color: var(--text-muted); font: 8px ui-monospace, monospace; overflow-wrap: anywhere; }
+.diagnostic-notes { margin: 0; padding: 0 20px 18px; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.diagnostic-notes li { display: flex; align-items: flex-start; gap: 8px; color: var(--text-soft); font-size: 9px; line-height: 1.5; }
+.diagnostic-notes svg { flex: none; margin-top: 2px; color: var(--healthy); }
+.toolbar .refresh-hint { margin-right: auto; align-self: center; }

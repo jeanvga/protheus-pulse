@@ -8,6 +8,7 @@ using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Configuration;
 using ProtheusPulse.Service.Hubs;
 using ProtheusPulse.Service.Monitoring;
+using ProtheusPulse.Service.Observability;
 
 namespace ProtheusPulse.Service.HostedServices;
 
@@ -244,7 +245,7 @@ public sealed partial class AutoStartWorker(
             Action = action,
             EntityType = nameof(Component),
             EntityId = target.ComponentId.ToString(),
-            SanitizedDetailsJson = JsonSerializer.Serialize(new
+            SanitizedDetailsJson = AuditDetails.Serialize(new
             {
                 serviceName = target.ServiceName,
                 attempt,
