@@ -1,4 +1,4 @@
-import type { DashboardSummary, ServerResources } from './types'
+import type { AlertRule, DashboardSummary, MaintenanceWindow, NotificationChannel, ServerResources } from './types'
 
 const now = Date.now()
 
@@ -41,6 +41,10 @@ export const demoSummary: DashboardSummary = {
     {
       id: 'console', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', installationEnvironment: 'Homologation', name: 'Console de Integração', type: 'Generic', status: 'Warning',
       lastStateChangeAt: new Date(now - 26 * 60000).toISOString(), summary: '8 erros semelhantes agrupados nos últimos 15 minutos.', metricLabel: 'Erros agrupados', metricValue: 8, metricUnit: 'eventos', isDemo: true,
+    },
+    {
+      id: 'server', installationId: 'system', installationName: 'Servidor local', installationEnvironment: 'Custom', name: 'SRV-PROTHEUS-DEMO', type: 'Generic', status: 'Warning',
+      lastStateChangeAt: new Date(now - 9 * 60000).toISOString(), summary: 'Volume mais cheio: E:\\ em 97% de uso, com 3% livre, entre 3 volumes.', metricLabel: 'Disco em uso', metricValue: 97, metricUnit: '%', isDemo: true, isSystem: true,
     },
   ],
   alerts: [
@@ -92,3 +96,54 @@ export const demoServerResources: ServerResources = {
     diskFreeCriticalPercent: 5,
   },
 }
+
+export const demoAlertRules: AlertRule[] = [
+  {
+    id: 'rule-heartbeat', componentId: 'job', installationId: 'prod', installationName: 'ERP Produção · DEMO', componentName: 'Job Fechamento',
+    name: 'Heartbeat atrasado', probeType: 'Heartbeat', severity: 'Critical', enabled: true,
+    minimumConsecutiveFailures: 2, cooldownSeconds: 300, triggerStatuses: ['Warning', 'Critical'], isAutomatic: true,
+  },
+  {
+    id: 'rule-tls', componentId: 'portal', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', componentName: 'Portal HTTPS',
+    name: 'Certificado próximo do vencimento', probeType: 'TlsCertificate', severity: 'Warning', enabled: true,
+    minimumConsecutiveFailures: 1, cooldownSeconds: 86_400, triggerStatuses: ['Warning', 'Critical'], isAutomatic: false,
+  },
+  {
+    id: 'rule-http', componentId: 'rest', installationId: 'prod', installationName: 'ERP Produção · DEMO', componentName: 'AppServer REST',
+    name: 'Falha no coletor Http', probeType: 'Http', severity: 'Critical', enabled: true,
+    minimumConsecutiveFailures: 2, cooldownSeconds: 300, triggerStatuses: ['Warning', 'Critical'], isAutomatic: true,
+  },
+  {
+    id: 'rule-log', componentId: 'console', installationId: 'hml', installationName: 'Integrações Homologação · DEMO', componentName: 'Console de Integração',
+    name: 'Erros agrupados no console', probeType: 'Log', severity: 'Warning', enabled: false,
+    minimumConsecutiveFailures: 3, cooldownSeconds: 1_800, triggerStatuses: ['Critical'], isAutomatic: false,
+  },
+  {
+    id: 'rule-server-memory', componentId: 'server', installationId: 'system', installationName: 'Servidor local', componentName: 'SRV-PROTHEUS-DEMO',
+    name: 'Memória acima de 90%', probeType: 'ServerMemory', severity: 'Warning', enabled: true,
+    minimumConsecutiveFailures: 3, cooldownSeconds: 1_800, triggerStatuses: ['Warning', 'Critical'], thresholdPercent: 90, isAutomatic: false,
+  },
+  {
+    id: 'rule-server-disk', componentId: 'server', installationId: 'system', installationName: 'Servidor local', componentName: 'SRV-PROTHEUS-DEMO',
+    name: 'Disco acima de 95%', probeType: 'ServerDisk', severity: 'Critical', enabled: true,
+    minimumConsecutiveFailures: 2, cooldownSeconds: 3_600, triggerStatuses: ['Warning', 'Critical'], thresholdPercent: 95, isAutomatic: false,
+  },
+  {
+    id: 'rule-server-cpu', componentId: 'server', installationId: 'system', installationName: 'Servidor local', componentName: 'SRV-PROTHEUS-DEMO',
+    name: 'Processador do servidor', probeType: 'ServerCpu', severity: 'Critical', enabled: true,
+    minimumConsecutiveFailures: 2, cooldownSeconds: 300, triggerStatuses: ['Warning', 'Critical'], isAutomatic: true,
+  },
+]
+
+export const demoNotificationChannels: NotificationChannel[] = [
+  { id: 'channel-teams', name: 'Plantão de infraestrutura', type: 'Teams', enabled: true, configured: true },
+  { id: 'channel-webhook', name: 'Central de monitoramento', type: 'Webhook', enabled: false, configured: true },
+]
+
+export const demoMaintenanceWindows: MaintenanceWindow[] = [
+  {
+    id: 'window-virada', installationId: 'prod', componentId: null, installationName: 'ERP Produção · DEMO', componentName: null,
+    name: 'Virada de mês', startsAt: new Date(now + 3 * 86400000).toISOString(), endsAt: new Date(now + 3 * 86400000 + 4 * 3600000).toISOString(),
+    reason: 'Fechamento contábil com o ERP parado.',
+  },
+]

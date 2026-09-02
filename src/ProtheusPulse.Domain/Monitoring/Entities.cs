@@ -11,6 +11,13 @@ public sealed class Installation : Entity
     public bool IsDemo { get; set; }
 
     /// <summary>
+    /// Instalação criada pelo próprio Pulse para hospedar o alvo da máquina local.
+    /// Ela não aparece na aba Instalações nem entra nos totais do painel, mas passa
+    /// pela coleta e pelo motor de alerta como qualquer outra.
+    /// </summary>
+    public bool IsSystem { get; set; }
+
+    /// <summary>
     /// Instalação que permanece no ar durante o modo manutenção para compilar e salvar configurações.
     /// No máximo uma instalação fica marcada por vez.
     /// </summary>

@@ -156,7 +156,19 @@ public static class ApiEndpoints
 
         api.MapGet("/maintenance-windows", async (PulseDbContext db, CancellationToken cancellationToken) => Results.Ok(await db.MaintenanceWindows
             .AsNoTracking()
-            .Select(item => new { item.Id, item.InstallationId, item.ComponentId, item.Name, item.StartsAt, item.EndsAt, item.Reason })
+            .OrderByDescending(item => item.StartsAt)
+            .Select(item => new
+            {
+                item.Id,
+                item.InstallationId,
+                item.ComponentId,
+                item.Name,
+                item.StartsAt,
+                item.EndsAt,
+                item.Reason,
+                InstallationName = item.Installation != null ? item.Installation.Name : item.Component!.Installation.Name,
+                ComponentName = item.Component != null ? item.Component.Name : null
+            })
             .ToListAsync(cancellationToken))).RequireAuthorization("Viewer");
 
         api.MapGet("/diagnostics", async (PulseDbContext db, CancellationToken cancellationToken) => Results.Ok(new

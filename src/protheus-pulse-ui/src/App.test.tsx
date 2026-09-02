@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { demoServerResources, demoSummary } from './demoData'
+import { demoAlertRules, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
 
 vi.mock('./api', () => ({
   session: {
@@ -33,13 +33,26 @@ vi.mock('./api', () => ({
   getEmailSettings: vi.fn(),
   saveEmailSettings: vi.fn(),
   sendTestEmail: vi.fn(),
+  getAlertRules: vi.fn(),
+  createAlertRule: vi.fn(),
+  updateAlertRule: vi.fn(),
+  setAlertRuleEnabled: vi.fn(),
+  deleteAlertRule: vi.fn(),
+  getNotificationChannels: vi.fn(),
+  createNotificationChannel: vi.fn(),
+  setNotificationChannelEnabled: vi.fn(),
+  deleteNotificationChannel: vi.fn(),
+  getMaintenanceWindows: vi.fn(),
+  createMaintenanceWindow: vi.fn(),
+  deleteMaintenanceWindow: vi.fn(),
 }))
 
 import {
-  acknowledgeAlert, collectNow, createInstallation, deleteInstallation, discoverPaths,
-  discoverServices, executeServiceAction, getDashboard, getEmailSettings, getInstallationConfiguration,
-  getServerResources, saveEmailSettings, sendTestEmail, setAutoStart, setExclusiveInstallation,
-  updateInstallation,
+  acknowledgeAlert, collectNow, createAlertRule, createInstallation, createMaintenanceWindow,
+  createNotificationChannel, deleteInstallation, discoverPaths,
+  discoverServices, executeServiceAction, getAlertRules, getDashboard, getEmailSettings, getInstallationConfiguration,
+  getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
+  setAutoStart, setExclusiveInstallation, updateInstallation,
 } from './api'
 import App, { serviceActionAllowed } from './App'
 
@@ -108,6 +121,13 @@ describe('App', () => {
     vi.mocked(getEmailSettings).mockReset().mockResolvedValue(emailSettings)
     vi.mocked(saveEmailSettings).mockReset().mockResolvedValue(undefined)
     vi.mocked(sendTestEmail).mockReset().mockResolvedValue({ success: true, message: 'Mensagem entregue a 1 destinatário(s).' })
+    vi.mocked(getAlertRules).mockReset().mockResolvedValue(demoAlertRules)
+    vi.mocked(createAlertRule).mockReset().mockResolvedValue(undefined)
+    vi.mocked(setAlertRuleEnabled).mockReset().mockResolvedValue(undefined)
+    vi.mocked(getNotificationChannels).mockReset().mockResolvedValue(demoNotificationChannels)
+    vi.mocked(createNotificationChannel).mockReset().mockResolvedValue(undefined)
+    vi.mocked(getMaintenanceWindows).mockReset().mockResolvedValue(demoMaintenanceWindows)
+    vi.mocked(createMaintenanceWindow).mockReset().mockResolvedValue(undefined)
   })
 
   it('exibe o resumo demonstrativo depois da autenticação', async () => {
@@ -231,6 +251,143 @@ describe('App', () => {
     fireEvent.click(acknowledgeButtons[0])
 
     await waitFor(() => expect(acknowledgeAlert).toHaveBeenCalled())
+  })
+
+  it('lista as regras agrupadas por instalação e liga o interruptor de uma delas', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Alertas/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Regras de alerta' }))
+
+    expect(await screen.findByText('Heartbeat atrasado')).toBeInTheDocument()
+    expect(screen.getByText('Certificado próximo do vencimento')).toBeInTheDocument()
+    expect(screen.getAllByText('Padrão')).toHaveLength(3)
+    expect(screen.getByText(/Heartbeat de job · abre em atenção ou crítico depois de 2 coletas seguidas/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ativa' })[0])
+    await waitFor(() => expect(setAlertRuleEnabled).toHaveBeenCalledWith('rule-heartbeat', false))
+  })
+
+  it('cria uma regra de alerta pelo formulário em etapas', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Alertas/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Regras de alerta' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova regra' }))
+
+    fireEvent.change(screen.getByLabelText('Nome da regra'), { target: { value: 'Broker fora do ar' } })
+    fireEvent.change(screen.getByLabelText('Componente'), { target: { value: 'broker' } })
+    fireEvent.change(screen.getByLabelText('Verificação'), { target: { value: 'Tcp' } })
+    fireEvent.change(screen.getByLabelText('Falhas consecutivas'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Cooldown'), { target: { value: '900' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Desconhecido/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(createAlertRule).toHaveBeenCalledWith({
+      componentId: 'broker',
+      name: 'Broker fora do ar',
+      probeType: 'Tcp',
+      severity: 'Critical',
+      minimumConsecutiveFailures: 3,
+      cooldownSeconds: 900,
+      triggerStatuses: ['Warning', 'Critical', 'Unknown'],
+      thresholdPercent: null,
+    }))
+  })
+
+  it('cria uma regra de servidor com limite de uso em percentual', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Alertas/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Regras de alerta' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova regra' }))
+
+    fireEvent.change(screen.getByLabelText('Componente'), { target: { value: 'server' } })
+    // O alvo da máquina só aceita as verificações de servidor: as de componente somem da lista.
+    const verifications = screen.getByLabelText('Verificação') as HTMLSelectElement
+    expect([...verifications.options].map(option => option.value)).toEqual(['ServerCpu', 'ServerMemory', 'ServerDisk'])
+    expect(screen.queryByRole('checkbox', { name: /Desconhecido/ })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Nome da regra'), { target: { value: 'Memória acima de 90%' } })
+    fireEvent.change(verifications, { target: { value: 'ServerMemory' } })
+    fireEvent.change(screen.getByLabelText('Limite de uso'), { target: { value: '90' } })
+    fireEvent.change(screen.getByLabelText('Falhas consecutivas'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Severidade'), { target: { value: 'Warning' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(createAlertRule).toHaveBeenCalledWith({
+      componentId: 'server',
+      name: 'Memória acima de 90%',
+      probeType: 'ServerMemory',
+      severity: 'Warning',
+      minimumConsecutiveFailures: 3,
+      cooldownSeconds: 300,
+      triggerStatuses: ['Warning', 'Critical'],
+      thresholdPercent: 90,
+    }))
+  })
+
+  it('mantém o alvo do servidor fora da tabela de componentes e das instalações', async () => {
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+    expect(screen.queryByText('SRV-PROTHEUS-DEMO')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Instalações' }))
+    expect(await screen.findByText('ERP Produção · DEMO')).toBeInTheDocument()
+    expect(screen.queryByText('Servidor local')).not.toBeInTheDocument()
+  })
+
+  it('cadastra um ponto de contato na aba de alertas', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Alertas/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Pontos de contato' }))
+
+    expect(await screen.findByText('Plantão de infraestrutura')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Nome do ponto de contato'), { target: { value: 'Central NOC' } })
+    fireEvent.change(screen.getByLabelText('Tipo do ponto de contato'), { target: { value: 'Slack' } })
+    fireEvent.change(screen.getByLabelText('URL do ponto de contato'), { target: { value: 'https://hooks.exemplo.invalid/pulse' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar ponto de contato' }))
+
+    await waitFor(() => expect(createNotificationChannel).toHaveBeenCalledWith({
+      name: 'Central NOC',
+      type: 'Slack',
+      url: 'https://hooks.exemplo.invalid/pulse',
+      enabled: true,
+    }))
+  })
+
+  it('abre um silenciamento com início e duração', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Alertas/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Silenciamentos' }))
+
+    expect(await screen.findByText('Virada de mês')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Alvo do silenciamento'), { target: { value: 'component:worker' } })
+    fireEvent.change(screen.getByLabelText('Nome do silenciamento'), { target: { value: 'Atualização do worker' } })
+    fireEvent.change(screen.getByLabelText('Início do silenciamento'), { target: { value: '2026-09-10T22:00' } })
+    fireEvent.change(screen.getByLabelText('Duração do silenciamento'), { target: { value: '360' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Criar silenciamento' }))
+
+    await waitFor(() => expect(createMaintenanceWindow).toHaveBeenCalledWith({
+      installationId: undefined,
+      componentId: 'worker',
+      name: 'Atualização do worker',
+      startsAt: new Date('2026-09-10T22:00').toISOString(),
+      endsAt: new Date(new Date('2026-09-10T22:00').getTime() + 360 * 60_000).toISOString(),
+      reason: undefined,
+    }))
   })
 
   it('abre a aba Servidor com processador, memória e discos', async () => {

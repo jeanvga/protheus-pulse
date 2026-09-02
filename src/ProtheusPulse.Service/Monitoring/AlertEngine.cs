@@ -10,6 +10,12 @@ public sealed class AlertEngine(PulseDbContext dbContext, IClock clock)
 {
     private static readonly HealthStatus[] DefaultTriggerStatuses = [HealthStatus.Warning, HealthStatus.Critical];
 
+    /// <summary>
+    /// A configuração é gravada em camelCase e o record que a lê é PascalCase: sem ignorar a caixa,
+    /// toda regra caía no padrão e os estados escolhidos na tela não valiam nada.
+    /// </summary>
+    private static readonly JsonSerializerOptions ConfigurationSerializerOptions = new() { PropertyNameCaseInsensitive = true };
+
     public async Task<IReadOnlyList<AlertTransition>> EvaluateAsync(
         Component component,
         IReadOnlyList<(ProbeType Type, ProbeObservation Observation)> observations,
@@ -44,7 +50,8 @@ public sealed class AlertEngine(PulseDbContext dbContext, IClock clock)
                 continue;
             }
 
-            var failure = IsFailure(rule, current.Observation.Status);
+            var configuration = ReadConfiguration(rule.ConfigurationJson);
+            var failure = IsFailure(rule.ProbeType, configuration, current.Observation);
             if (occurrence?.State == AlertState.Silenced)
             {
                 if (failure)
@@ -72,7 +79,7 @@ public sealed class AlertEngine(PulseDbContext dbContext, IClock clock)
                 continue;
             }
 
-            if (occurrence is not null || !await HasMinimumFailuresAsync(component.Id, rule, current.Observation.Status, cancellationToken))
+            if (occurrence is not null || !await HasMinimumFailuresAsync(component.Id, rule, configuration, cancellationToken))
             {
                 continue;
             }
@@ -114,7 +121,7 @@ public sealed class AlertEngine(PulseDbContext dbContext, IClock clock)
             var rule = new AlertRule
             {
                 ComponentId = component.Id,
-                Name = $"Falha no coletor {item.Type}",
+                Name = DefaultRuleName(item.Type),
                 RuleKey = $"AUTO-{component.Id:N}-{item.Type}",
                 ProbeType = item.Type,
                 Severity = item.Observation.IsRequired ? AlertSeverity.Critical : AlertSeverity.Warning,
@@ -129,16 +136,34 @@ public sealed class AlertEngine(PulseDbContext dbContext, IClock clock)
         return created;
     }
 
+    /// <summary>
+    /// O alerta só abre depois de o mesmo problema aparecer em coletas seguidas. A contagem
+    /// olha o histórico já gravado; a coleta em curso ainda não foi salva e entra como a última.
+    /// </summary>
     private async Task<bool> HasMinimumFailuresAsync(
         Guid componentId,
         AlertRule rule,
-        HealthStatus currentStatus,
+        RuleConfiguration configuration,
         CancellationToken cancellationToken)
     {
         var minimum = Math.Clamp(rule.MinimumConsecutiveFailures, 1, 20);
         if (minimum == 1)
         {
             return true;
+        }
+
+        if (configuration.ThresholdPercent is { } threshold && ServerMetricNames.ForProbe(rule.ProbeType) is { } metricName)
+        {
+            // O estado gravado no histórico foi classificado pelo limite global do servidor,
+            // não pelo desta regra: para um limiar próprio só a própria medida serve.
+            var samples = await dbContext.MetricSamples
+                .AsNoTracking()
+                .Where(item => item.ComponentId == componentId && item.Name == metricName)
+                .OrderByDescending(item => item.ObservedAt)
+                .Take(minimum - 1)
+                .Select(item => item.Value)
+                .ToListAsync(cancellationToken);
+            return samples.Count == minimum - 1 && samples.All(value => value > threshold);
         }
 
         var previous = await dbContext.ProbeResults
@@ -148,26 +173,59 @@ public sealed class AlertEngine(PulseDbContext dbContext, IClock clock)
             .Take(minimum - 1)
             .Select(item => item.Status)
             .ToListAsync(cancellationToken);
-        return previous.Count == minimum - 1
-            && IsFailure(rule, currentStatus)
-            && previous.All(status => IsFailure(rule, status));
+        return previous.Count == minimum - 1 && previous.All(configuration.TriggerStatuses.Contains);
     }
 
-    private static bool IsFailure(AlertRule rule, HealthStatus status)
+    /// <summary>
+    /// Com limiar próprio a regra compara a medida; sem ele, compara o estado que o coletor
+    /// classificou pelos limites globais da aba Servidor.
+    /// </summary>
+    private static bool IsFailure(ProbeType probeType, RuleConfiguration configuration, ProbeObservation observation)
+    {
+        if (configuration.ThresholdPercent is { } threshold && ServerMetricNames.ForProbe(probeType) is { } metricName)
+        {
+            var usage = observation.Metrics?.FirstOrDefault(item => item.Name == metricName)?.Value;
+            if (usage.HasValue)
+            {
+                return usage.Value > threshold;
+            }
+        }
+
+        return configuration.TriggerStatuses.Contains(observation.Status);
+    }
+
+    private static string DefaultRuleName(ProbeType probeType) => probeType switch
+    {
+        ProbeType.ServerCpu => "Processador do servidor",
+        ProbeType.ServerMemory => "Memória do servidor",
+        ProbeType.ServerDisk => "Discos do servidor",
+        _ => $"Falha no coletor {probeType}"
+    };
+
+    /// <summary>Estados que a regra trata como falha; cai no padrão quando a configuração está vazia ou ilegível.</summary>
+    public static IReadOnlyList<HealthStatus> ReadTriggerStatuses(string configurationJson) =>
+        ReadConfiguration(configurationJson).TriggerStatuses;
+
+    /// <summary>Limiar de uso em percentual da regra, quando ela define um próprio.</summary>
+    public static double? ReadThresholdPercent(string configurationJson) =>
+        ReadConfiguration(configurationJson).ThresholdPercent;
+
+    private static RuleConfiguration ReadConfiguration(string configurationJson)
     {
         try
         {
-            var configuration = JsonSerializer.Deserialize<AlertRuleConfiguration>(rule.ConfigurationJson);
+            var configuration = JsonSerializer.Deserialize<AlertRuleConfiguration>(configurationJson, ConfigurationSerializerOptions);
             var configured = configuration?.TriggerStatuses?
                 .Select(value => Enum.TryParse<HealthStatus>(value, ignoreCase: true, out var parsed) ? parsed : (HealthStatus?)null)
                 .Where(value => value.HasValue)
                 .Select(value => value!.Value)
                 .ToArray();
-            return (configured is { Length: > 0 } ? configured : DefaultTriggerStatuses).Contains(status);
+            var threshold = configuration?.ThresholdPercent is { } value and > 0 and <= 100 ? value : (double?)null;
+            return new RuleConfiguration(configured is { Length: > 0 } ? configured : DefaultTriggerStatuses, threshold);
         }
         catch (JsonException)
         {
-            return DefaultTriggerStatuses.Contains(status);
+            return new RuleConfiguration(DefaultTriggerStatuses, null);
         }
     }
 
@@ -193,7 +251,9 @@ public sealed class AlertEngine(PulseDbContext dbContext, IClock clock)
     private static string Bound(string value, int maximumLength) =>
         value.Length <= maximumLength ? value : value[..maximumLength];
 
-    private sealed record AlertRuleConfiguration(IReadOnlyList<string>? TriggerStatuses);
+    private sealed record AlertRuleConfiguration(IReadOnlyList<string>? TriggerStatuses, double? ThresholdPercent);
+
+    private sealed record RuleConfiguration(IReadOnlyList<HealthStatus> TriggerStatuses, double? ThresholdPercent);
 }
 
 public sealed record AlertTransition(

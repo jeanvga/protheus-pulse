@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordService, Pbkdf2PasswordService>();
         services.AddScoped<IDashboardQuery, EfDashboardQuery>();
         services.AddScoped<IDemoDataSeeder, DemoDataSeeder>();
+        services.AddScoped<ISystemTargetSeeder, SystemTargetSeeder>();
         services.AddSingleton<IProbeCollector, WindowsServiceProbeCollector>();
         services.AddSingleton<IProbeCollector, ProcessProbeCollector>();
         services.AddSingleton<IProbeCollector, TcpProbeCollector>();
@@ -27,6 +28,9 @@ public static class DependencyInjection
         services.AddSingleton<IProbeCollector, FileProbeCollector>();
         services.AddSingleton<IProbeCollector, DiskProbeCollector>();
         services.AddSingleton<IProbeCollector, HeartbeatProbeCollector>();
+        services.AddSingleton<IProbeCollector, ServerCpuProbeCollector>();
+        services.AddSingleton<IProbeCollector, ServerMemoryProbeCollector>();
+        services.AddSingleton<IProbeCollector, ServerDiskProbeCollector>();
         services.AddSingleton<IIncrementalLogCollector, IncrementalLogCollector>();
         // Singleton: o uso de CPU é a diferença entre duas leituras consecutivas.
         services.AddSingleton<IServerResourceMonitor, ServerResourceCollector>();

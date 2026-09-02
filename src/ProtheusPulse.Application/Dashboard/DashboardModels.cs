@@ -34,6 +34,7 @@ public sealed record ComponentSnapshot(
     double? MetricValue,
     string? MetricUnit,
     bool IsDemo,
+    bool IsSystem = false,
     string? WindowsServiceName = null,
     string? WindowsServiceStatus = null,
     bool InstallationIsExclusive = false,

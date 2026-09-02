@@ -53,7 +53,16 @@ public enum ProbeType
     Disk,
     Log,
     Heartbeat,
-    Internal
+    Internal,
+
+    /// <summary>Uso de processador da máquina onde o Pulse está instalado.</summary>
+    ServerCpu,
+
+    /// <summary>Uso de memória física da máquina onde o Pulse está instalado.</summary>
+    ServerMemory,
+
+    /// <summary>Ocupação dos volumes fixos da máquina, incluindo os que nenhum componente usa.</summary>
+    ServerDisk
 }
 
 public enum AlertSeverity

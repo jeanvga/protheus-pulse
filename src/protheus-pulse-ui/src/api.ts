@@ -1,10 +1,11 @@
 import * as signalR from '@microsoft/signalr'
-import { demoServerResources, demoSummary } from './demoData'
+import { demoAlertRules, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
 import type {
-  AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, EmailSettings, EmailTestResult,
-  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
+  AlertRule, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
+  CreateNotificationChannelInput, DashboardSummary, EmailSettings, EmailTestResult,
+  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, MaintenanceWindow, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, NotificationChannel, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
   PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
-  ServiceActionResponse, ServiceDiscoveryResult,
+  ServiceActionResponse, ServiceDiscoveryResult, UpdateAlertRuleInput,
 } from './types'
 
 const staticDemo = import.meta.env.VITE_DEMO_STATIC === 'true'
@@ -188,6 +189,66 @@ export async function exitMaintenance(): Promise<MaintenanceChangeResult> {
 export async function acknowledgeAlert(id: string): Promise<void> {
   if (staticDemo) throw new Error('O reconhecimento não está disponível na demonstração estática.')
   await request<void>(`/api/v1/alerts/${id}/acknowledge`, { method: 'POST', body: '{}' })
+}
+
+export async function getAlertRules(): Promise<AlertRule[]> {
+  if (staticDemo) return demoAlertRules
+  return request<AlertRule[]>('/api/v1/alert-rules')
+}
+
+export async function createAlertRule(input: CreateAlertRuleInput): Promise<void> {
+  if (staticDemo) throw new Error('As regras de alerta não podem ser criadas na demonstração estática.')
+  await request<void>('/api/v1/alert-rules', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export async function updateAlertRule(id: string, input: UpdateAlertRuleInput): Promise<void> {
+  if (staticDemo) throw new Error('As regras de alerta não podem ser editadas na demonstração estática.')
+  await request<void>(`/api/v1/alert-rules/${id}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
+export async function setAlertRuleEnabled(id: string, enabled: boolean): Promise<void> {
+  if (staticDemo) throw new Error('As regras de alerta não podem ser alteradas na demonstração estática.')
+  await request<void>(`/api/v1/alert-rules/${id}/enabled`, { method: 'PUT', body: JSON.stringify({ enabled }) })
+}
+
+export async function deleteAlertRule(id: string): Promise<void> {
+  if (staticDemo) throw new Error('As regras de alerta não podem ser removidas na demonstração estática.')
+  await request<void>(`/api/v1/alert-rules/${id}`, { method: 'DELETE' })
+}
+
+export async function getNotificationChannels(): Promise<NotificationChannel[]> {
+  if (staticDemo) return demoNotificationChannels
+  return request<NotificationChannel[]>('/api/v1/notification-channels')
+}
+
+export async function createNotificationChannel(input: CreateNotificationChannelInput): Promise<void> {
+  if (staticDemo) throw new Error('Os pontos de contato não podem ser criados na demonstração estática.')
+  await request<void>('/api/v1/notification-channels', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export async function setNotificationChannelEnabled(id: string, enabled: boolean): Promise<void> {
+  if (staticDemo) throw new Error('Os pontos de contato não podem ser alterados na demonstração estática.')
+  await request<void>(`/api/v1/notification-channels/${id}/enabled`, { method: 'PUT', body: JSON.stringify({ enabled }) })
+}
+
+export async function deleteNotificationChannel(id: string): Promise<void> {
+  if (staticDemo) throw new Error('Os pontos de contato não podem ser removidos na demonstração estática.')
+  await request<void>(`/api/v1/notification-channels/${id}`, { method: 'DELETE' })
+}
+
+export async function getMaintenanceWindows(): Promise<MaintenanceWindow[]> {
+  if (staticDemo) return demoMaintenanceWindows
+  return request<MaintenanceWindow[]>('/api/v1/maintenance-windows')
+}
+
+export async function createMaintenanceWindow(input: CreateMaintenanceWindowInput): Promise<void> {
+  if (staticDemo) throw new Error('Os silenciamentos não podem ser criados na demonstração estática.')
+  await request<void>('/api/v1/maintenance-windows', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export async function deleteMaintenanceWindow(id: string): Promise<void> {
+  if (staticDemo) throw new Error('Os silenciamentos não podem ser removidos na demonstração estática.')
+  await request<void>(`/api/v1/maintenance-windows/${id}`, { method: 'DELETE' })
 }
 
 export async function getServerResources(): Promise<ServerResources> {

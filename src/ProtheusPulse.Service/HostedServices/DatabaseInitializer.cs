@@ -57,6 +57,7 @@ public sealed partial class DatabaseInitializer(
             await using var scope = serviceProvider.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
             await dbContext.Database.MigrateAsync(cancellationToken);
+            await scope.ServiceProvider.GetRequiredService<ISystemTargetSeeder>().SeedAsync(cancellationToken);
             if (seedDemoData)
             {
                 var seeder = scope.ServiceProvider.GetRequiredService<IDemoDataSeeder>();

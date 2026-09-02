@@ -3,6 +3,8 @@ export type AlertSeverity = 'Info' | 'Warning' | 'Critical'
 export type AlertState = 'Active' | 'Acknowledged' | 'Resolved' | 'Silenced'
 export type EnvironmentKind = 'Production' | 'Homologation' | 'Development' | 'Custom'
 export type ComponentType = 'AppServer' | 'Broker' | 'Worker' | 'Rest' | 'WebApp' | 'DbAccess' | 'LicenseServer' | 'Tss' | 'Job' | 'HttpEndpoint' | 'WindowsService' | 'Generic'
+export type ProbeType = 'WindowsService' | 'Process' | 'Tcp' | 'Http' | 'TlsCertificate' | 'File' | 'Disk' | 'Log' | 'Heartbeat' | 'Internal' | 'ServerCpu' | 'ServerMemory' | 'ServerDisk'
+export type NotificationChannelType = 'Dashboard' | 'Smtp' | 'Webhook' | 'Teams' | 'Slack' | 'Discord'
 
 export interface DashboardTotals {
   installations: number
@@ -29,6 +31,8 @@ export interface ComponentSnapshot {
   metricValue?: number
   metricUnit?: string
   isDemo: boolean
+  /// Alvo interno que representa a máquina onde o Pulse roda; fica fora da aba Instalações.
+  isSystem?: boolean
   windowsServiceName?: string
   windowsServiceStatus?: string
   windowsServiceAutoStartSuspended?: boolean
@@ -140,6 +144,82 @@ export interface AlertSnapshot {
   startedAt: string
   resolvedAt?: string
   evidence: string
+}
+
+export interface AlertRule {
+  id: string
+  componentId: string
+  installationId: string
+  installationName: string
+  componentName: string
+  name: string
+  probeType: ProbeType
+  severity: AlertSeverity
+  enabled: boolean
+  minimumConsecutiveFailures: number
+  cooldownSeconds: number
+  triggerStatuses: HealthStatus[]
+  /// Limite de uso em percentual; só as verificações de servidor aceitam um próprio.
+  thresholdPercent?: number | null
+  /// Regra criada pelo coletor no primeiro ciclo do componente; volta a existir se for apagada.
+  isAutomatic: boolean
+}
+
+export interface CreateAlertRuleInput {
+  componentId: string
+  name: string
+  probeType: ProbeType
+  severity: AlertSeverity
+  minimumConsecutiveFailures: number
+  cooldownSeconds: number
+  triggerStatuses: HealthStatus[]
+  thresholdPercent?: number | null
+}
+
+export interface UpdateAlertRuleInput {
+  name: string
+  severity: AlertSeverity
+  enabled: boolean
+  minimumConsecutiveFailures: number
+  cooldownSeconds: number
+  triggerStatuses: HealthStatus[]
+  thresholdPercent?: number | null
+}
+
+export interface NotificationChannel {
+  id: string
+  name: string
+  type: NotificationChannelType
+  enabled: boolean
+  configured: boolean
+}
+
+export interface CreateNotificationChannelInput {
+  name: string
+  type: NotificationChannelType
+  url: string
+  enabled: boolean
+}
+
+export interface MaintenanceWindow {
+  id: string
+  installationId?: string | null
+  componentId?: string | null
+  installationName?: string | null
+  componentName?: string | null
+  name: string
+  startsAt: string
+  endsAt: string
+  reason?: string | null
+}
+
+export interface CreateMaintenanceWindowInput {
+  installationId?: string
+  componentId?: string
+  name: string
+  startsAt: string
+  endsAt: string
+  reason?: string
 }
 
 export interface DashboardSummary {

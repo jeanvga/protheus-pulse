@@ -25,7 +25,9 @@ Feito pela [Pullsia Tecnologia](https://pullsia.com.br), que trabalha com [desen
 
 **Alertas**
 
-- Regras prontas e regras próprias, com tolerância a falhas seguidas e cooldown para não encher de aviso repetido.
+- Aba **Alertas** dividida como no Grafana: ocorrências, regras de alerta, pontos de contato e silenciamentos.
+- Alerta de **processador, memória e disco do servidor**, com o limite em percentual definido na própria regra: atenção em 85% e crítico em 95% são duas regras sobre a mesma medida. O disco olha todos os volumes fixos, inclusive os que nenhum componente usa.
+- Regras prontas e regras próprias, criadas e editadas na tela em quatro passos: nome, condição, comportamento da avaliação e severidade. Tolerância a falhas seguidas e cooldown para não encher de aviso repetido.
 - Reconhecer, resolver e abrir janela de manutenção para silenciar alertas planejados.
 - Envio por **e-mail** (SMTP com STARTTLS, SSL/TLS implícito ou sem criptografia, porta e credenciais próprias, com teste de envio na tela) e por webhook HTTPS. Veja [docs/EMAIL.md](docs/EMAIL.md).
 

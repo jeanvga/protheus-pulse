@@ -364,3 +364,82 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .log-detail summary { color: var(--accent); font-size: 9px; cursor: pointer; user-select: none; }
 .log-detail summary:hover { color: var(--accent-bright); }
 .log-detail pre { margin: 8px 0 0; padding: 11px 13px; max-height: 320px; overflow: auto; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); color: var(--text-soft); font: 400 9px/1.6 'Cascadia Mono', 'Consolas', monospace; white-space: pre-wrap; word-break: break-word; }
+
+/* Alertas: abas de configuração, lista de regras agrupadas e editor em etapas. */
+.subtabs { display: flex; gap: 5px; margin-bottom: 9px; padding: 4px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface); }
+.subtab { height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); font-size: 9px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.subtab:hover { color: var(--text-soft); }
+.subtab.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.subtab i { min-width: 15px; height: 15px; padding: 0 4px; display: grid; place-items: center; border-radius: 999px; background: var(--critical); color: #fff; font: 700 7px 'Segoe UI', sans-serif; font-style: normal; }
+.subtab-hint { margin: 0 0 14px; padding-left: 2px; color: var(--text-muted); font-size: 9px; }
+.chip-row { display: inline-flex; align-items: center; gap: 6px; }
+.toolbar > .primary-button { margin-left: auto; }
+.form-actions { margin-top: 15px; display: flex; justify-content: flex-end; gap: 9px; }
+
+.rule-group { margin-bottom: 11px; }
+.rule-group-head { padding: 14px 18px; display: flex; align-items: center; gap: 11px; border-bottom: 1px solid var(--border-soft); }
+.rule-group-head > span { width: 31px; height: 31px; flex: none; display: grid; place-items: center; border-radius: 8px; background: rgba(88, 166, 255, .1); color: var(--blue); }
+.rule-group-head strong { display: block; font-size: 11px; }
+.rule-group-head small { display: block; margin-top: 3px; color: var(--text-muted); font-size: 8px; }
+.rule-subgroup { padding: 0 18px 4px; }
+.rule-subgroup + .rule-subgroup { border-top: 1px solid var(--border-soft); }
+.rule-subgroup-head { padding: 12px 0 2px; display: flex; align-items: center; gap: 7px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .7px; font-size: 7px; font-weight: 700; }
+.rule-row { padding: 11px 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid var(--border-soft); }
+.rule-subgroup-head + .rule-row { border-top: 0; }
+.rule-identity { min-width: 0; }
+.rule-title { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.rule-title strong { font-size: 10px; }
+.rule-identity p { margin: 5px 0 0; color: var(--text-muted); font-size: 8px; line-height: 1.5; }
+.rule-actions, .entity-actions { flex: none; display: flex; align-items: center; gap: 6px; }
+.rule-actions .chip-button, .entity-actions .chip-button { height: 26px; padding: 0 9px; font-size: 8px; }
+.rule-actions .row-action, .entity-actions .row-action { width: 28px; height: 28px; border: 1px solid var(--border-soft); border-radius: 7px; }
+.rule-actions .row-action:hover:not(:disabled), .entity-actions .row-action:hover:not(:disabled) { color: var(--text); border-color: var(--text-muted); }
+.rule-actions .row-action.danger:hover:not(:disabled), .entity-actions .row-action.danger:hover:not(:disabled) { color: var(--critical); border-color: var(--critical); }
+.severity-tag, .origin-tag { padding: 2px 7px; border-radius: 999px; font-size: 7px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; white-space: nowrap; }
+.severity-tag.critical { color: var(--critical); background: rgba(255, 100, 119, .1); }
+.severity-tag.warning { color: var(--warning); background: rgba(246, 185, 75, .1); }
+.severity-tag.info { color: var(--blue); background: rgba(88, 166, 255, .1); }
+.origin-tag { border: 1px solid var(--border-soft); background: var(--surface-soft); color: var(--text-muted); }
+
+.rule-steps { margin: 0; padding: 0; list-style: none; }
+.rule-step { padding: 17px 0; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 13px; border-top: 1px solid var(--border-soft); }
+.rule-step:first-child { padding-top: 2px; border-top: 0; }
+.rule-step-index { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--surface-soft); color: var(--accent); font-size: 9px; font-weight: 700; }
+.rule-step h3 { margin: 4px 0 0; font-size: 11px; }
+.rule-step > div > p { margin: 4px 0 11px; color: var(--text-muted); font-size: 9px; line-height: 1.5; }
+.rule-step > div > input { width: 100%; height: 40px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+.rule-step .field-hint { margin: 12px 0 8px; }
+.trigger-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 8px; }
+.trigger-option { padding: 10px 11px; display: flex; align-items: flex-start; gap: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); cursor: pointer; }
+.trigger-option.checked { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.trigger-option input { margin: 2px 0 0; accent-color: var(--accent); }
+.trigger-option strong { display: block; font-size: 9px; }
+.trigger-option small { display: block; margin-top: 3px; color: var(--text-muted); font-size: 8px; line-height: 1.45; }
+.rule-preview { margin-top: 17px; padding: 12px; display: flex; align-items: flex-start; gap: 9px; border: 1px solid rgba(38, 217, 242, .16); border-radius: 8px; background: rgba(38, 217, 242, .05); color: var(--text-soft); font-size: 9px; line-height: 1.55; }
+.rule-preview svg { flex: none; color: var(--accent); }
+
+.entity-list { margin: 0; padding: 4px 20px 16px; list-style: none; }
+.entity-row { padding: 12px 0; display: flex; align-items: center; gap: 13px; border-top: 1px solid var(--border-soft); }
+.entity-row:first-child { border-top: 0; }
+.entity-main { min-width: 0; flex: 1; }
+.entity-main strong { display: block; font-size: 10px; }
+.entity-main small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 8px; }
+.tab-empty { padding: 26px 20px; display: flex; align-items: flex-start; justify-content: center; gap: 12px; color: var(--text-muted); }
+.tab-empty > svg { flex: none; margin-top: 2px; color: var(--text-soft); }
+.tab-empty strong { display: block; color: var(--text); font-size: 11px; }
+.tab-empty p { margin: 5px 0 0; max-width: 520px; font-size: 9px; line-height: 1.55; }
+.setting-card .secondary-button { margin-left: auto; flex: none; }
+
+@media (max-width: 760px) {
+  .subtabs { overflow-x: auto; }
+  .subtab { flex: none; }
+  .rule-row, .entity-row { flex-direction: column; align-items: flex-start; }
+  .rule-actions, .entity-actions { width: 100%; justify-content: flex-end; }
+  .rule-step { grid-template-columns: 1fr; }
+  .rule-step-index { display: none; }
+  .setting-card .secondary-button { margin: 10px 0 0; }
+}
+
+/* Fora de .form-grid o rótulo ficava com o tamanho herdado do corpo: 16px no meio de um formulário de 9px. */
+.settings-options .checkbox-label { color: var(--text-soft); font-size: 9px; font-weight: 600; }
+.settings-options .checkbox-label input { accent-color: var(--accent); }

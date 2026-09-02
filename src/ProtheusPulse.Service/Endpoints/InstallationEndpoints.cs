@@ -107,6 +107,11 @@ public static class InstallationEndpoints
             return Results.NotFound(new { message = "Instalação não encontrada." });
         }
 
+        if (installation.IsSystem)
+        {
+            return Results.Conflict(new { message = "O alvo do servidor local é mantido pelo Pulse e não é editável." });
+        }
+
         if (installation.IsDemo)
         {
             return Results.Conflict(new { message = "Dados demonstrativos não podem ser alterados." });
@@ -178,6 +183,11 @@ public static class InstallationEndpoints
         if (installation is null)
         {
             return Results.NotFound(new { message = "Instalação não encontrada." });
+        }
+
+        if (installation.IsSystem)
+        {
+            return Results.Conflict(new { message = "O alvo do servidor local é mantido pelo Pulse e não pode ser removido." });
         }
 
         if (installation.IsDemo)

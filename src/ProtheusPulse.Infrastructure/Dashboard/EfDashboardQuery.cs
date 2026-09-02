@@ -23,7 +23,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
 
         var availabilitySamples = await dbContext.MetricSamples
             .AsNoTracking()
-            .Where(item => item.Name == "availability")
+            .Where(item => item.Name == "availability" && !item.Component.Installation.IsSystem)
             .OrderByDescending(item => item.ObservedAt)
             .Take(1_000)
             .ToListAsync(cancellationToken);
@@ -38,11 +38,12 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
             .Take(8)
             .ToListAsync(cancellationToken);
 
-        var installationCount = components.Select(item => item.InstallationId).Distinct().Count();
-        var healthy = components.Count(item => item.Status == HealthStatus.Healthy);
-        var warning = components.Count(item => item.Status == HealthStatus.Warning);
-        var critical = components.Count(item => item.Status == HealthStatus.Critical);
-        var unknown = components.Count(item => item.Status == HealthStatus.Unknown);
+        var monitored = components.Where(item => !item.Installation.IsSystem).ToArray();
+        var installationCount = monitored.Select(item => item.InstallationId).Distinct().Count();
+        var healthy = monitored.Count(item => item.Status == HealthStatus.Healthy);
+        var warning = monitored.Count(item => item.Status == HealthStatus.Warning);
+        var critical = monitored.Count(item => item.Status == HealthStatus.Critical);
+        var unknown = monitored.Count(item => item.Status == HealthStatus.Unknown);
         var latestAvailability = availabilitySamples
             .GroupBy(metric => metric.ComponentId)
             .Select(metrics => metrics
@@ -52,7 +53,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
             .ToArray();
         var available = latestAvailability.Length > 0
             ? latestAvailability.Average()
-            : components.Count == 0 ? 0 : (healthy + (warning * 0.5)) * 100d / components.Count;
+            : monitored.Length == 0 ? 0 : (healthy + (warning * 0.5)) * 100d / monitored.Length;
 
         var snapshots = components.Select(component =>
         {
@@ -75,6 +76,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
                 metric?.Value,
                 metric?.Unit,
                 component.IsDemo,
+                component.Installation.IsSystem,
                 component.WindowsServiceTargets.Select(target => target.ServiceName).FirstOrDefault(),
                 component.WindowsServiceTargets.Select(target => target.LastStatus).FirstOrDefault(),
                 component.Installation.IsExclusive,
@@ -100,7 +102,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
         var availability = BuildAvailability(availabilitySamples, available);
         var totals = new DashboardTotals(
             installationCount,
-            components.Count,
+            monitored.Length,
             healthy,
             warning,
             critical,
@@ -113,7 +115,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
 
     public async Task<IReadOnlyList<InstallationListItem>> GetInstallationsAsync(CancellationToken cancellationToken)
     {
-        var installations = await dbContext.Installations.AsNoTracking().Include(item => item.Components).OrderBy(item => item.Name).ToListAsync(cancellationToken);
+        var installations = await dbContext.Installations.AsNoTracking().Where(item => !item.IsSystem).Include(item => item.Components).OrderBy(item => item.Name).ToListAsync(cancellationToken);
         return installations.Select(item => new InstallationListItem(
             item.Id,
             item.Name,
@@ -129,6 +131,7 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
     {
         return await dbContext.Components
             .AsNoTracking()
+            .Where(item => !item.Installation.IsSystem)
             .OrderBy(item => item.Installation.Name)
             .ThenBy(item => item.Name)
             .Select(item => new ComponentListItem(
@@ -150,6 +153,9 @@ public sealed class EfDashboardQuery(PulseDbContext dbContext, IClock clock) : I
         "certificateDays" => "Validade TLS",
         "latency" => "Latência",
         "diskFree" => "Disco livre",
+        "cpuUsage" => "Processador",
+        "memoryUsage" => "Memória",
+        "diskUsage" => "Disco em uso",
         "errors" => "Erros agrupados",
         _ => name
     };

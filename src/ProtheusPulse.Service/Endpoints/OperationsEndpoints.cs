@@ -11,11 +11,18 @@ namespace ProtheusPulse.Service.Endpoints;
 
 public static class OperationsEndpoints
 {
+    /// <summary>Prefixo do <c>RuleKey</c> das regras que o coletor cria sozinho no primeiro ciclo do componente.</summary>
+    private const string AutomaticRulePrefix = "AUTO-";
+
+    private static readonly HealthStatus[] DefaultTriggerStatuses = [HealthStatus.Warning, HealthStatus.Critical];
+
     public static RouteGroupBuilder MapOperations(this RouteGroupBuilder api)
     {
         api.MapGet("/alert-rules", GetRulesAsync).RequireAuthorization("Viewer");
         api.MapPost("/alert-rules", CreateRuleAsync).RequireAuthorization("Administrator");
+        api.MapPut("/alert-rules/{id:guid}", UpdateRuleAsync).RequireAuthorization("Administrator");
         api.MapPut("/alert-rules/{id:guid}/enabled", SetRuleEnabledAsync).RequireAuthorization("Administrator");
+        api.MapDelete("/alert-rules/{id:guid}", DeleteRuleAsync).RequireAuthorization("Administrator");
         api.MapPost("/alerts/{id:guid}/acknowledge", AcknowledgeAlertAsync).RequireAuthorization("Operator");
 
         api.MapPost("/maintenance-windows", CreateMaintenanceAsync).RequireAuthorization("Administrator");
@@ -30,8 +37,9 @@ public static class OperationsEndpoints
         return api;
     }
 
-    private static async Task<IResult> GetRulesAsync(PulseDbContext dbContext, CancellationToken cancellationToken) =>
-        Results.Ok(await dbContext.AlertRules.AsNoTracking()
+    private static async Task<IResult> GetRulesAsync(PulseDbContext dbContext, CancellationToken cancellationToken)
+    {
+        var rules = await dbContext.AlertRules.AsNoTracking()
             .OrderBy(item => item.Component.Installation.Name)
             .ThenBy(item => item.Component.Name)
             .ThenBy(item => item.Name)
@@ -39,16 +47,37 @@ public static class OperationsEndpoints
             {
                 item.Id,
                 item.ComponentId,
+                item.Component.InstallationId,
                 InstallationName = item.Component.Installation.Name,
                 ComponentName = item.Component.Name,
                 item.Name,
+                item.RuleKey,
                 item.ProbeType,
                 item.Severity,
                 item.Enabled,
                 item.MinimumConsecutiveFailures,
-                item.CooldownSeconds
+                item.CooldownSeconds,
+                item.ConfigurationJson
             })
-            .ToListAsync(cancellationToken));
+            .ToListAsync(cancellationToken);
+        return Results.Ok(rules.Select(item => new
+        {
+            item.Id,
+            item.ComponentId,
+            item.InstallationId,
+            item.InstallationName,
+            item.ComponentName,
+            item.Name,
+            item.ProbeType,
+            item.Severity,
+            item.Enabled,
+            item.MinimumConsecutiveFailures,
+            item.CooldownSeconds,
+            TriggerStatuses = AlertEngine.ReadTriggerStatuses(item.ConfigurationJson),
+            ThresholdPercent = AlertEngine.ReadThresholdPercent(item.ConfigurationJson),
+            IsAutomatic = item.RuleKey.StartsWith(AutomaticRulePrefix, StringComparison.Ordinal)
+        }));
+    }
 
     private static async Task<IResult> CreateRuleAsync(
         CreateAlertRuleRequest request,
@@ -79,10 +108,7 @@ public static class OperationsEndpoints
             Enabled = true,
             MinimumConsecutiveFailures = request.MinimumConsecutiveFailures,
             CooldownSeconds = request.CooldownSeconds,
-            ConfigurationJson = JsonSerializer.Serialize(new
-            {
-                triggerStatuses = request.TriggerStatuses!.Select(item => item.ToString()).ToArray()
-            })
+            ConfigurationJson = SerializeConfiguration(request.TriggerStatuses, request.ThresholdPercent)
         };
         dbContext.AlertRules.Add(rule);
         AddAudit(dbContext, clock, principal, httpContext, "AlertRuleCreated", nameof(AlertRule), rule.Id, new
@@ -113,6 +139,77 @@ public static class OperationsEndpoints
 
         rule.Enabled = request.Enabled;
         AddAudit(dbContext, clock, principal, httpContext, "AlertRuleStateChanged", nameof(AlertRule), rule.Id, new { request.Enabled });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> UpdateRuleAsync(
+        Guid id,
+        UpdateAlertRuleRequest request,
+        PulseDbContext dbContext,
+        IClock clock,
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var rule = await dbContext.AlertRules.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (rule is null)
+        {
+            return Results.NotFound();
+        }
+
+        // O tipo de probe é imutável, então a validação do limiar usa o da regra já gravada.
+        var errors = ValidateRuleSettings(
+            request.Name,
+            request.Severity,
+            request.MinimumConsecutiveFailures,
+            request.CooldownSeconds,
+            request.TriggerStatuses,
+            request.ThresholdPercent,
+            rule.ProbeType);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        rule.Name = request.Name!.Trim();
+        rule.Severity = request.Severity!.Value;
+        rule.Enabled = request.Enabled;
+        rule.MinimumConsecutiveFailures = request.MinimumConsecutiveFailures;
+        rule.CooldownSeconds = request.CooldownSeconds;
+        rule.ConfigurationJson = SerializeConfiguration(request.TriggerStatuses, request.ThresholdPercent);
+        AddAudit(dbContext, clock, principal, httpContext, "AlertRuleUpdated", nameof(AlertRule), rule.Id, new
+        {
+            rule.ProbeType,
+            rule.Severity,
+            rule.Enabled,
+            rule.MinimumConsecutiveFailures,
+            rule.CooldownSeconds
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> DeleteRuleAsync(
+        Guid id,
+        PulseDbContext dbContext,
+        IClock clock,
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var rule = await dbContext.AlertRules.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (rule is null)
+        {
+            return Results.NotFound();
+        }
+
+        dbContext.AlertRules.Remove(rule);
+        AddAudit(dbContext, clock, principal, httpContext, "AlertRuleDeleted", nameof(AlertRule), rule.Id, new
+        {
+            rule.ProbeType,
+            IsAutomatic = rule.RuleKey.StartsWith(AutomaticRulePrefix, StringComparison.Ordinal)
+        });
         await dbContext.SaveChangesAsync(cancellationToken);
         return Results.NoContent();
     }
@@ -288,21 +385,67 @@ public static class OperationsEndpoints
 
     private static Dictionary<string, string[]> ValidateRule(CreateAlertRuleRequest request)
     {
-        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        if (!IsValidText(request.Name, 200)) errors["name"] = ["Informe um nome válido com até 200 caracteres."];
+        var errors = ValidateRuleSettings(
+            request.Name,
+            request.Severity,
+            request.MinimumConsecutiveFailures,
+            request.CooldownSeconds,
+            request.TriggerStatuses,
+            request.ThresholdPercent,
+            request.ProbeType);
         if (!request.ComponentId.HasValue) errors["componentId"] = ["Informe o componente."];
         if (!request.ProbeType.HasValue || !Enum.IsDefined(request.ProbeType.Value)) errors["probeType"] = ["Informe um tipo de probe válido."];
-        if (!request.Severity.HasValue || !Enum.IsDefined(request.Severity.Value)) errors["severity"] = ["Informe uma severidade válida."];
-        if (request.MinimumConsecutiveFailures is < 1 or > 20) errors["minimumConsecutiveFailures"] = ["O valor deve estar entre 1 e 20."];
-        if (request.CooldownSeconds is < 0 or > 86_400) errors["cooldownSeconds"] = ["O cooldown deve estar entre 0 e 86400 segundos."];
-        if (request.TriggerStatuses is null || request.TriggerStatuses.Count == 0
-            || request.TriggerStatuses.Any(item => item is HealthStatus.Healthy or HealthStatus.Maintenance || !Enum.IsDefined(item)))
+        return errors;
+    }
+
+    private static Dictionary<string, string[]> ValidateRuleSettings(
+        string? name,
+        AlertSeverity? severity,
+        int minimumConsecutiveFailures,
+        int cooldownSeconds,
+        IReadOnlyList<HealthStatus>? triggerStatuses,
+        double? thresholdPercent,
+        ProbeType? probeType)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        if (!IsValidText(name, 200)) errors["name"] = ["Informe um nome válido com até 200 caracteres."];
+        if (!severity.HasValue || !Enum.IsDefined(severity.Value)) errors["severity"] = ["Informe uma severidade válida."];
+        if (minimumConsecutiveFailures is < 1 or > 20) errors["minimumConsecutiveFailures"] = ["O valor deve estar entre 1 e 20."];
+        if (cooldownSeconds is < 0 or > 86_400) errors["cooldownSeconds"] = ["O cooldown deve estar entre 0 e 86400 segundos."];
+
+        // Com limiar próprio os estados deixam de valer, então a lista pode vir vazia.
+        var hasThreshold = thresholdPercent.HasValue;
+        if (!hasThreshold && (triggerStatuses is null || triggerStatuses.Count == 0))
+        {
+            errors["triggerStatuses"] = ["Informe ao menos um estado de falha válido."];
+        }
+        else if (triggerStatuses is not null
+            && triggerStatuses.Any(item => item is HealthStatus.Healthy or HealthStatus.Maintenance || !Enum.IsDefined(item)))
         {
             errors["triggerStatuses"] = ["Informe ao menos um estado de falha válido."];
         }
 
+        if (hasThreshold)
+        {
+            if (thresholdPercent is <= 0 or > 100)
+            {
+                errors["thresholdPercent"] = ["O limite deve estar entre 1 e 100 por cento."];
+            }
+            else if (probeType.HasValue && ServerMetricNames.ForProbe(probeType.Value) is null)
+            {
+                errors["thresholdPercent"] = ["Só as verificações de processador, memória e disco do servidor aceitam limite em percentual."];
+            }
+        }
+
         return errors;
     }
+
+    private static string SerializeConfiguration(IReadOnlyList<HealthStatus>? triggerStatuses, double? thresholdPercent) =>
+        JsonSerializer.Serialize(new
+        {
+            triggerStatuses = (triggerStatuses ?? DefaultTriggerStatuses).Distinct().Select(item => item.ToString()).ToArray(),
+            thresholdPercent
+        });
 
     private static Dictionary<string, string[]> ValidateMaintenance(CreateMaintenanceRequest request, DateTimeOffset now)
     {
@@ -378,7 +521,17 @@ public static class OperationsEndpoints
         AlertSeverity? Severity,
         int MinimumConsecutiveFailures,
         int CooldownSeconds,
-        IReadOnlyList<HealthStatus>? TriggerStatuses);
+        IReadOnlyList<HealthStatus>? TriggerStatuses,
+        double? ThresholdPercent = null);
+
+    public sealed record UpdateAlertRuleRequest(
+        string? Name,
+        AlertSeverity? Severity,
+        bool Enabled,
+        int MinimumConsecutiveFailures,
+        int CooldownSeconds,
+        IReadOnlyList<HealthStatus>? TriggerStatuses,
+        double? ThresholdPercent = null);
 
     public sealed record CreateMaintenanceRequest(
         Guid? InstallationId,

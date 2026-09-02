@@ -21,6 +21,9 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private static readonly string[] PilotTags = ["piloto", "servidor-a"];
     private static readonly string[] SampleWindowsRoots = ["C:\\TOTVS"];
     private static readonly string[] EmailRecipients = ["ti@exemplo.invalid", "plantao@exemplo.invalid"];
+    private static readonly string[] CriticalAndUnknownStatuses = ["Critical", "Unknown"];
+    private static readonly string[] WarningStatus = ["Warning"];
+    private static readonly string[] HealthyStatus = ["Healthy"];
     private static string? cachedAdministratorToken;
     private readonly HttpClient client;
     private readonly PulseWebApplicationFactory factory;
@@ -757,6 +760,210 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AdministratorCreatesEditsAndRemovesAlertRuleFromTheDashboard()
+    {
+        var installationId = Guid.NewGuid();
+        var componentId = Guid.NewGuid();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            dbContext.Installations.Add(new Installation
+            {
+                Id = installationId,
+                Name = $"Regras na interface {Guid.NewGuid():N}",
+                Environment = EnvironmentKind.Development,
+                CreatedAt = DateTimeOffset.UtcNow,
+                Components = [new Component { Id = componentId, Name = "Broker sintético", Type = ComponentType.Broker }]
+            });
+            await dbContext.SaveChangesAsync();
+        }
+
+        var token = await AuthenticateDemoAdministratorAsync();
+        using var createRequest = AuthorizedPost("/api/v1/alert-rules", token, new
+        {
+            componentId,
+            name = "Broker fora do ar",
+            probeType = "Tcp",
+            severity = "Critical",
+            minimumConsecutiveFailures = 3,
+            cooldownSeconds = 900,
+            triggerStatuses = CriticalAndUnknownStatuses
+        });
+        var createResponse = await client.SendAsync(createRequest);
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<IdResponse>();
+        Assert.NotNull(created);
+
+        // O editor reabre a regra a partir da listagem, então ela precisa devolver os estados de disparo.
+        var listed = await ReadAlertRuleAsync(token, created.Id);
+        Assert.Equal("Tcp", listed.ProbeType);
+        Assert.Equal("Critical", listed.Severity);
+        Assert.Equal(3, listed.MinimumConsecutiveFailures);
+        Assert.Equal(900, listed.CooldownSeconds);
+        Assert.Equal(CriticalAndUnknownStatuses, listed.TriggerStatuses);
+        Assert.Equal(installationId, listed.InstallationId);
+        Assert.False(listed.IsAutomatic);
+
+        using var updateRequest = AuthorizedRequest(HttpMethod.Put, $"/api/v1/alert-rules/{created.Id}", token, new
+        {
+            name = "Broker instável",
+            severity = "Warning",
+            enabled = false,
+            minimumConsecutiveFailures = 2,
+            cooldownSeconds = 300,
+            triggerStatuses = WarningStatus
+        });
+        var updateResponse = await client.SendAsync(updateRequest);
+        Assert.Equal(HttpStatusCode.NoContent, updateResponse.StatusCode);
+
+        var updated = await ReadAlertRuleAsync(token, created.Id);
+        Assert.Equal("Broker instável", updated.Name);
+        Assert.Equal("Warning", updated.Severity);
+        Assert.False(updated.Enabled);
+        Assert.Equal(2, updated.MinimumConsecutiveFailures);
+        Assert.Equal(WarningStatus, updated.TriggerStatuses);
+        Assert.Equal("Tcp", updated.ProbeType);
+
+        using var invalidRequest = AuthorizedRequest(HttpMethod.Put, $"/api/v1/alert-rules/{created.Id}", token, new
+        {
+            name = "Broker instável",
+            severity = "Warning",
+            enabled = true,
+            minimumConsecutiveFailures = 2,
+            cooldownSeconds = 300,
+            triggerStatuses = HealthyStatus
+        });
+        var invalidResponse = await client.SendAsync(invalidRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidResponse.StatusCode);
+
+        using var deleteRequest = AuthorizedRequest(HttpMethod.Delete, $"/api/v1/alert-rules/{created.Id}", token);
+        var deleteResponse = await client.SendAsync(deleteRequest);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        var remaining = await ReadAlertRulesAsync(token);
+        Assert.DoesNotContain(remaining, item => item.Id == created.Id);
+    }
+
+    [Fact]
+    public async Task ServerTargetIsCollectedForAlertingAndKeptOutOfTheInstallationList()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        Guid installationId;
+        Guid componentId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var installation = await dbContext.Installations.AsNoTracking()
+                .Include(item => item.Components)
+                .SingleAsync(item => item.IsSystem);
+            installationId = installation.Id;
+            componentId = Assert.Single(installation.Components).Id;
+        }
+
+        // Processador, memória e disco precisam virar probe: é o que dá regra e ocorrência.
+        var worker = factory.Services.GetRequiredService<MonitoringWorker>();
+        await worker.RunNowAsync(CancellationToken.None);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            var probeTypes = await dbContext.ProbeResults.AsNoTracking()
+                .Where(item => item.ComponentId == componentId)
+                .Select(item => item.ProbeType)
+                .Distinct()
+                .ToListAsync();
+            Assert.Contains(ProbeType.ServerCpu, probeTypes);
+            Assert.Contains(ProbeType.ServerMemory, probeTypes);
+            Assert.Contains(ProbeType.ServerDisk, probeTypes);
+
+            // O primeiro ciclo já deixa uma regra padrão por verificação, pronta para editar na tela.
+            var ruleNames = await dbContext.AlertRules.AsNoTracking()
+                .Where(item => item.ComponentId == componentId)
+                .Select(item => item.Name)
+                .ToListAsync();
+            Assert.Contains("Memória do servidor", ruleNames);
+        }
+
+        using var installationsRequest = AuthorizedRequest(HttpMethod.Get, "/api/v1/installations", token);
+        var installationsResponse = await client.SendAsync(installationsRequest);
+        installationsResponse.EnsureSuccessStatusCode();
+        Assert.DoesNotContain(
+            installationId.ToString(),
+            await installationsResponse.Content.ReadAsStringAsync(),
+            StringComparison.OrdinalIgnoreCase);
+
+        using var deleteRequest = AuthorizedRequest(HttpMethod.Delete, $"/api/v1/installations/{installationId}", token);
+        var deleteResponse = await client.SendAsync(deleteRequest);
+        Assert.Equal(HttpStatusCode.Conflict, deleteResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ServerRuleAcceptsAPercentThresholdAndRejectsItOnOtherProbes()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        Guid serverComponentId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<PulseDbContext>();
+            serverComponentId = await dbContext.Components.AsNoTracking()
+                .Where(item => item.Installation.IsSystem)
+                .Select(item => item.Id)
+                .SingleAsync();
+        }
+
+        using var createRequest = AuthorizedPost("/api/v1/alert-rules", token, new
+        {
+            componentId = serverComponentId,
+            name = $"Memória acima de 90% {Guid.NewGuid():N}",
+            probeType = "ServerMemory",
+            severity = "Warning",
+            minimumConsecutiveFailures = 3,
+            cooldownSeconds = 1_800,
+            triggerStatuses = WarningStatus,
+            thresholdPercent = 90
+        });
+        var createResponse = await client.SendAsync(createRequest);
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<IdResponse>();
+        Assert.NotNull(created);
+
+        var listed = await ReadAlertRuleAsync(token, created.Id);
+        Assert.Equal(90, listed.ThresholdPercent);
+
+        // Verificação de componente não tem uso em percentual para comparar.
+        using var invalidRequest = AuthorizedPost("/api/v1/alert-rules", token, new
+        {
+            componentId = serverComponentId,
+            name = "Limite onde não cabe",
+            probeType = "Tcp",
+            severity = "Warning",
+            minimumConsecutiveFailures = 2,
+            cooldownSeconds = 300,
+            triggerStatuses = WarningStatus,
+            thresholdPercent = 90
+        });
+        var invalidResponse = await client.SendAsync(invalidRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidResponse.StatusCode);
+
+        using var outOfRangeRequest = AuthorizedPost("/api/v1/alert-rules", token, new
+        {
+            componentId = serverComponentId,
+            name = "Limite fora da faixa",
+            probeType = "ServerDisk",
+            severity = "Warning",
+            minimumConsecutiveFailures = 2,
+            cooldownSeconds = 300,
+            triggerStatuses = WarningStatus,
+            thresholdPercent = 140
+        });
+        var outOfRangeResponse = await client.SendAsync(outOfRangeRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, outOfRangeResponse.StatusCode);
+
+        using var deleteRequest = AuthorizedRequest(HttpMethod.Delete, $"/api/v1/alert-rules/{created.Id}", token);
+        var deleteResponse = await client.SendAsync(deleteRequest);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task NotificationChannelConfigurationIsProtectedAndNeverReturned()
     {
         var token = await AuthenticateDemoAdministratorAsync();
@@ -1103,6 +1310,22 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
         return cachedAdministratorToken;
     }
 
+    private async Task<AlertRuleResponse> ReadAlertRuleAsync(string token, Guid id)
+    {
+        var rules = await ReadAlertRulesAsync(token);
+        return Assert.Single(rules, item => item.Id == id);
+    }
+
+    private async Task<IReadOnlyList<AlertRuleResponse>> ReadAlertRulesAsync(string token)
+    {
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/v1/alert-rules", token);
+        var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var rules = await response.Content.ReadFromJsonAsync<List<AlertRuleResponse>>();
+        Assert.NotNull(rules);
+        return rules;
+    }
+
     private sealed record TokenResponse(string AccessToken);
     private sealed record AuthStatusResponse(string DemoUsername, string DemoPassword);
     private sealed record ComponentPayload(string Name, string Type, bool IsRequired = true);
@@ -1119,6 +1342,21 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record TcpCheckConfigurationResponse(string Host, int Port);
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
+    private sealed record AlertRuleResponse(
+        Guid Id,
+        Guid ComponentId,
+        Guid InstallationId,
+        string InstallationName,
+        string ComponentName,
+        string Name,
+        string ProbeType,
+        string Severity,
+        bool Enabled,
+        int MinimumConsecutiveFailures,
+        int CooldownSeconds,
+        List<string> TriggerStatuses,
+        double? ThresholdPercent,
+        bool IsAutomatic);
     private sealed record HeartbeatTokenResponse(Guid Id, string JobKey, string Token, bool TokenShownOnce);
     private sealed record ServerResourcesResponse(ServerSnapshotResponse Server, ServerThresholdsResponse Thresholds);
     private sealed record ServerSnapshotResponse(

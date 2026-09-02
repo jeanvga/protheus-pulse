@@ -26,6 +26,12 @@ public interface IDemoDataSeeder
     Task SeedAsync(CancellationToken cancellationToken);
 }
 
+/// <summary>Garante o alvo interno que representa a máquina onde o Pulse roda.</summary>
+public interface ISystemTargetSeeder
+{
+    Task SeedAsync(CancellationToken cancellationToken);
+}
+
 public interface IProbeCollector
 {
     ProbeType Type { get; }
