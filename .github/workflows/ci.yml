@@ -184,8 +184,16 @@ jobs:
               sc.exe stop ProtheusPulse | Out-Null
               sc.exe delete ProtheusPulse | Out-Null
             }
+            # A desinstalação preserva a pasta de dados de propósito, e o serviço recém-parado
+            # ainda pode segurar o SQLite. Esta limpeza é de um runner descartável: falhar aqui
+            # reprova a verificação do instalador, que já passou, e foi o que impediu a 1.9.3
+            # de publicar o setup.exe.
+            for ($attempt = 1; $attempt -le 10 -and (Test-Path -LiteralPath $dataRoot); $attempt++) {
+              Remove-Item -LiteralPath $dataRoot -Recurse -Force -ErrorAction SilentlyContinue
+              if (Test-Path -LiteralPath $dataRoot) { Start-Sleep -Seconds 2 }
+            }
             if (Test-Path -LiteralPath $dataRoot) {
-              Remove-Item -LiteralPath $dataRoot -Recurse -Force
+              Write-Warning "Não foi possível remover $dataRoot no runner; os arquivos ficam para trás sem afetar o resultado."
             }
           }
           if ($null -eq $uninstallExitCode -or $uninstallExitCode -ne 0) {
