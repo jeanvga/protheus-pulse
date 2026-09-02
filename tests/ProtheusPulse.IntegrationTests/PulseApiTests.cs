@@ -1027,6 +1027,68 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     }
 
     [Fact]
+    public async Task HttpsRefusesToSaveACertificateThatWouldNotServe()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+
+        // Ligar HTTPS sem certificado deixaria o serviço sem endpoint utilizável.
+        using var withoutCertificate = AuthorizedRequest(HttpMethod.Put, "/api/v1/settings/network", token, new
+        {
+            allowRemoteAccess = false,
+            port = 5058,
+            useHttps = true
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(withoutCertificate)).StatusCode);
+
+        using var missingFile = AuthorizedRequest(HttpMethod.Put, "/api/v1/settings/network", token, new
+        {
+            allowRemoteAccess = false,
+            port = 5058,
+            useHttps = true,
+            certificatePath = Path.Combine(Path.GetTempPath(), $"nao-existe-{Guid.NewGuid():N}.pfx")
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(missingFile)).StatusCode);
+    }
+
+    [Fact]
+    public async Task SelfSignedCertificateIsUsableForHttps()
+    {
+        var token = await AuthenticateDemoAdministratorAsync();
+        using var generateRequest = AuthorizedPost("/api/v1/settings/network/self-signed", token, new { });
+        var generateResponse = await client.SendAsync(generateRequest);
+        generateResponse.EnsureSuccessStatusCode();
+        var created = await generateResponse.Content.ReadFromJsonAsync<SelfSignedResponse>();
+        Assert.NotNull(created);
+        Assert.True(File.Exists(created.Path));
+        Assert.True(created.NotAfter > DateTime.UtcNow.AddYears(1));
+
+        // O que é gerado tem de passar na mesma conferência que a gravação faz.
+        using var saveRequest = AuthorizedRequest(HttpMethod.Put, "/api/v1/settings/network", token, new
+        {
+            allowRemoteAccess = false,
+            port = 5058,
+            useHttps = true,
+            certificatePath = created.Path
+        });
+        var saveResponse = await client.SendAsync(saveRequest);
+        saveResponse.EnsureSuccessStatusCode();
+        var settings = await saveResponse.Content.ReadFromJsonAsync<NetworkResponse>();
+        Assert.NotNull(settings);
+        Assert.True(settings.UseHttps);
+        Assert.True(settings.CertificateValid);
+        Assert.StartsWith("https://", settings.BoundUrl, StringComparison.Ordinal);
+
+        // Volta para HTTP para não afetar os demais testes desta coleção.
+        using var restore = AuthorizedRequest(HttpMethod.Put, "/api/v1/settings/network", token, new
+        {
+            allowRemoteAccess = false,
+            port = 5058,
+            useHttps = false
+        });
+        (await client.SendAsync(restore)).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task ServerThresholdsAreEditableAndTakeEffectWithoutRestart()
     {
         var token = await AuthenticateDemoAdministratorAsync();
@@ -1516,6 +1578,16 @@ public sealed class PulseApiTests : IClassFixture<PulseWebApplicationFactory>
     private sealed record TcpCheckConfigurationResponse(string Host, int Port);
     private sealed record HttpCheckConfigurationResponse(string Url);
     private sealed record IdResponse(Guid Id);
+    private sealed record SelfSignedResponse(string Path, string Subject, DateTime NotAfter);
+    private sealed record NetworkResponse(
+        bool AllowRemoteAccess,
+        int Port,
+        string BoundUrl,
+        List<string> LocalAddresses,
+        bool UseHttps,
+        string? CertificatePath,
+        bool HasCertificatePassword,
+        bool? CertificateValid);
     private sealed record ServerThresholdResponse(
         double CpuWarningPercent,
         double CpuCriticalPercent,

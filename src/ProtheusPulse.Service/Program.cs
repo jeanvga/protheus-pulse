@@ -106,7 +106,25 @@ if (networkOptions.Validate() is { Count: > 0 } networkErrors)
 // Sobrescreve a chave do Kestrel, não UseUrls: endpoint declarado em
 // Kestrel:Endpoints tem precedência sobre UseUrls, e o serviço continuaria preso
 // ao 127.0.0.1 do appsettings mesmo com o acesso remoto ligado na tela.
-builder.Configuration.AddInMemoryCollection(networkOptions.BuildOverrides());
+// O certificado é conferido antes de o Kestrel depender dele: um PFX ilegível ou sem
+// chave privada sobe o serviço e derruba todo handshake, deixando o painel inacessível
+// sem nenhum caminho de volta pela própria tela. Nesse caso cai para HTTP e registra.
+string? certificatePassword = null;
+if (networkOptions.UseHttps)
+{
+    var certificateProtector = TlsCertificates.CreateProtector(
+        DataProtectionProvider.Create(new DirectoryInfo(keysDirectory), configure => configure.SetApplicationName("ProtheusPulse")));
+    certificatePassword = TlsCertificates.ReadPassword(dataDirectory, certificateProtector);
+    var check = TlsCertificates.Inspect(networkOptions.CertificatePath, certificatePassword);
+    if (!check.Valid)
+    {
+        StartupTrace.Mark($"HTTPS desligado: {check.Message}");
+        networkOptions.UseHttps = false;
+        certificatePassword = null;
+    }
+}
+
+builder.Configuration.AddInMemoryCollection(networkOptions.BuildOverrides(certificatePassword));
 builder.Services.AddSingleton(new PulseDataDirectory(dataDirectory));
 
 builder.Host.UseWindowsService(options => options.ServiceName = "ProtheusPulse");

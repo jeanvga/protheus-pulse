@@ -4,6 +4,8 @@ using System.Net.Sockets;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using MimeKit;
 using ProtheusPulse.Application.Abstractions;
@@ -34,6 +36,7 @@ public static class SettingsEndpoints
         api.MapPut("/settings/retention", SaveRetentionAsync).RequireAuthorization("Administrator");
         api.MapGet("/settings/network", GetNetworkAsync).RequireAuthorization("Administrator");
         api.MapPut("/settings/network", SaveNetworkAsync).RequireAuthorization("Administrator");
+        api.MapPost("/settings/network/self-signed", CreateSelfSignedAsync).RequireAuthorization("Administrator");
         return api;
     }
 
@@ -41,25 +44,53 @@ public static class SettingsEndpoints
     /// Onde o painel escuta. O padrão é loopback; abrir para a rede é opt-in explícito
     /// porque o tráfego é HTTP puro e a tela administra serviços do Windows.
     /// </summary>
-    private static IResult GetNetworkAsync(IConfiguration configuration)
+    private static IResult GetNetworkAsync(
+        IConfiguration configuration,
+        PulseDataDirectory dataDirectory,
+        IDataProtectionProvider protectionProvider)
     {
         var options = configuration.GetSection(NetworkOptions.SectionName).Get<NetworkOptions>() ?? new NetworkOptions();
-        return Results.Ok(new NetworkSettingsResponse(
-            options.AllowRemoteAccess,
-            options.Port,
-            options.BuildUrl(),
-            LocalAddresses(options.Port)));
+        return Results.Ok(Describe(options, dataDirectory, protectionProvider));
     }
 
     private static async Task<IResult> SaveNetworkAsync(
         SaveNetworkRequest request,
         PulseDataDirectory dataDirectory,
+        IDataProtectionProvider protectionProvider,
+        IClock clock,
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        PulseDbContext dbContext,
         CancellationToken cancellationToken)
     {
-        var options = new NetworkOptions { AllowRemoteAccess = request.AllowRemoteAccess, Port = request.Port };
+        var options = new NetworkOptions
+        {
+            AllowRemoteAccess = request.AllowRemoteAccess,
+            Port = request.Port,
+            UseHttps = request.UseHttps,
+            CertificatePath = string.IsNullOrWhiteSpace(request.CertificatePath) ? null : request.CertificatePath.Trim()
+        };
         if (options.Validate() is { Count: > 0 } errors)
         {
             return Results.BadRequest(new { message = string.Join(" ", errors) });
+        }
+
+        var protector = TlsCertificates.CreateProtector(protectionProvider);
+        // Sem senha nova, vale a que já estava guardada: a tela nunca a recebe de volta.
+        var password = request.CertificatePassword ?? TlsCertificates.ReadPassword(dataDirectory.Path, protector);
+        if (options.UseHttps)
+        {
+            var check = TlsCertificates.Inspect(options.CertificatePath, password);
+            if (!check.Valid)
+            {
+                // Recusar aqui evita o pior caminho: salvar, reiniciar e o painel não subir.
+                return Results.BadRequest(new { message = check.Message });
+            }
+        }
+
+        if (request.CertificatePassword is not null)
+        {
+            await TlsCertificates.SavePasswordAsync(dataDirectory.Path, protector, request.CertificatePassword, cancellationToken);
         }
 
         var path = Path.Combine(dataDirectory.Path, "network.json");
@@ -71,15 +102,59 @@ public static class SettingsEndpoints
             path,
             JsonSerializer.Serialize(document, NetworkSerializerOptions),
             cancellationToken);
-        return Results.Ok(new NetworkSettingsResponse(
+        AddAudit(dbContext, clock, principal, httpContext, "NetworkSettingsUpdated", Guid.Empty, new
+        {
+            options.AllowRemoteAccess,
+            options.Port,
+            options.UseHttps
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.Ok(Describe(options, dataDirectory, protectionProvider));
+    }
+
+    /// <summary>
+    /// Gera um certificado para a própria máquina. O navegador avisa que não conhece quem
+    /// assinou, mas o tráfego deixa de ir em texto claro — que é o problema real quando o
+    /// painel é aberto de outro computador.
+    /// </summary>
+    private static IResult CreateSelfSignedAsync(PulseDataDirectory dataDirectory)
+    {
+        try
+        {
+            var created = TlsCertificates.CreateSelfSigned(dataDirectory.Path, password: null);
+            return Results.Ok(new SelfSignedResponse(created.Path, created.Subject, created.NotAfter));
+        }
+        catch (Exception exception) when (exception is CryptographicException or IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return Results.BadRequest(new { message = $"Não foi possível gerar o certificado: {exception.Message}" });
+        }
+    }
+
+    private static NetworkSettingsResponse Describe(
+        NetworkOptions options,
+        PulseDataDirectory dataDirectory,
+        IDataProtectionProvider protectionProvider)
+    {
+        var password = TlsCertificates.ReadPassword(dataDirectory.Path, TlsCertificates.CreateProtector(protectionProvider));
+        var check = options.UseHttps || !string.IsNullOrWhiteSpace(options.CertificatePath)
+            ? TlsCertificates.Inspect(options.CertificatePath, password)
+            : null;
+        return new NetworkSettingsResponse(
             options.AllowRemoteAccess,
             options.Port,
             options.BuildUrl(),
-            LocalAddresses(options.Port)));
+            LocalAddresses(options.Port, options.Scheme),
+            options.UseHttps,
+            options.CertificatePath,
+            password is not null,
+            check?.Valid,
+            check?.Message,
+            check?.Subject,
+            check?.NotAfter);
     }
 
     /// <summary>Endereços que o operador pode digitar em outra máquina.</summary>
-    private static string[] LocalAddresses(int port)
+    private static string[] LocalAddresses(int port, string scheme = "http")
     {
         try
         {
@@ -88,7 +163,7 @@ public static class SettingsEndpoints
                     && item.NetworkInterfaceType != NetworkInterfaceType.Loopback)
                 .SelectMany(item => item.GetIPProperties().UnicastAddresses)
                 .Where(item => item.Address.AddressFamily == AddressFamily.InterNetwork)
-                .Select(item => $"http://{item.Address}:{port}")
+                .Select(item => $"{scheme}://{item.Address}:{port}")
                 .Distinct(StringComparer.Ordinal)
                 .Take(8)
                 .ToArray();
@@ -101,7 +176,16 @@ public static class SettingsEndpoints
 
     private static readonly JsonSerializerOptions NetworkSerializerOptions = new() { WriteIndented = true };
 
-    public sealed record SaveNetworkRequest(bool AllowRemoteAccess, int Port);
+    /// <param name="CertificatePassword">
+    /// <c>null</c> mantém a senha guardada; string vazia apaga. A tela nunca recebe a
+    /// senha de volta, então não teria como reenviá-la a cada gravação.
+    /// </param>
+    public sealed record SaveNetworkRequest(
+        bool AllowRemoteAccess,
+        int Port,
+        bool UseHttps = false,
+        string? CertificatePath = null,
+        string? CertificatePassword = null);
 
     /// <summary>
     /// Aplica os limites gravados às opções que os coletores já têm em mãos, para o ajuste
@@ -222,11 +306,20 @@ public static class SettingsEndpoints
         double DiskFreeCriticalPercent,
         DateTimeOffset? UpdatedAt);
 
+    public sealed record SelfSignedResponse(string Path, string Subject, DateTime NotAfter);
+
     public sealed record NetworkSettingsResponse(
         bool AllowRemoteAccess,
         int Port,
         string BoundUrl,
-        IReadOnlyList<string> LocalAddresses);
+        IReadOnlyList<string> LocalAddresses,
+        bool UseHttps,
+        string? CertificatePath,
+        bool HasCertificatePassword,
+        bool? CertificateValid,
+        string? CertificateMessage,
+        string? CertificateSubject,
+        DateTime? CertificateNotAfter);
 
     /// <summary>
     /// Quanto tempo o histórico fica no SQLite. Sem isso o banco cresce sem teto no

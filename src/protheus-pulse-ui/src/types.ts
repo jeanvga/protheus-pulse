@@ -542,6 +542,28 @@ export interface NetworkSettings {
   port: number
   boundUrl: string
   localAddresses: string[]
+  useHttps: boolean
+  certificatePath?: string | null
+  hasCertificatePassword: boolean
+  certificateValid?: boolean | null
+  certificateMessage?: string | null
+  certificateSubject?: string | null
+  certificateNotAfter?: string | null
+}
+
+export interface SaveNetworkInput {
+  allowRemoteAccess: boolean
+  port: number
+  useHttps: boolean
+  certificatePath?: string
+  /// Ausente mantém a senha guardada; string vazia apaga.
+  certificatePassword?: string
+}
+
+export interface SelfSignedCertificate {
+  path: string
+  subject: string
+  notAfter: string
 }
 
 export interface ProposedCheck {

@@ -11,7 +11,7 @@ import {
   acknowledgeAlert, collectNow, connectLiveUpdates, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteAlertRule, deleteInstallation, deleteMaintenanceWindow, deleteNotificationChannel, discoverPaths,
   discoverServices, enterMaintenance, executeServiceAction, exitMaintenance, getAlertRules, getAuthStatus, getDashboard,
-  createHeartbeatDefinition, deleteHeartbeatDefinition, getAlerts, getServerThresholds, saveServerThresholds, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
+  createHeartbeatDefinition, createSelfSignedCertificate, deleteHeartbeatDefinition, getAlerts, getServerThresholds, saveServerThresholds, getAuditEvents, getDiagnostics, getEmailSettings, getHeartbeatDefinitions, rotateHeartbeatToken, getInstallationConfiguration, getLogEvents, getMaintenanceStatus, getMaintenanceWindows, getNotificationChannels, browseFolders, getNetworkSettings, getRetentionSettings, getServerResources, getUsers, createUser, updateUser, resetUserPassword, deleteUser, proposeComponent, saveNetworkSettings, saveRetentionSettings,
   login, saveEmailSettings, sendTestEmail, session, setAlertRuleEnabled, setAutoStart, setExclusiveInstallation, setNotificationChannelEnabled, setup,
   updateAlertRule, updateInstallation,
 } from './api'
@@ -2301,17 +2301,27 @@ function NetworkSettingsCard() {
   const [settings, setSettings] = useState<NetworkSettings | null>(null)
   const [allowRemote, setAllowRemote] = useState(false)
   const [port, setPort] = useState('5058')
+  const [useHttps, setUseHttps] = useState(false)
+  const [certificatePath, setCertificatePath] = useState('')
+  const [certificatePassword, setCertificatePassword] = useState('')
+  const [passwordTouched, setPasswordTouched] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const apply = (loaded: NetworkSettings) => {
+    setSettings(loaded)
+    setAllowRemote(loaded.allowRemoteAccess)
+    setPort(String(loaded.port))
+    setUseHttps(loaded.useHttps)
+    setCertificatePath(loaded.certificatePath ?? '')
+  }
 
   useEffect(() => {
     void (async () => {
       try {
-        const loaded = await getNetworkSettings()
-        setSettings(loaded)
-        setAllowRemote(loaded.allowRemoteAccess)
-        setPort(String(loaded.port))
+        apply(await getNetworkSettings())
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o acesso pela rede.')
       }
@@ -2323,7 +2333,16 @@ function NetworkSettingsCard() {
     setBusy(true)
     setMessage(null)
     try {
-      setSettings(await saveNetworkSettings({ allowRemoteAccess: allowRemote, port: Number(port) }))
+      apply(await saveNetworkSettings({
+        allowRemoteAccess: allowRemote,
+        port: Number(port),
+        useHttps,
+        certificatePath: certificatePath.trim() || undefined,
+        // Sem mexer no campo, a senha guardada continua valendo.
+        certificatePassword: passwordTouched ? certificatePassword : undefined,
+      }))
+      setPasswordTouched(false)
+      setCertificatePassword('')
       setMessage('Salvo. Reinicie o serviço ProtheusPulse para o novo endereço valer.')
       setError(null)
     } catch (reason) {
@@ -2331,11 +2350,55 @@ function NetworkSettingsCard() {
     } finally { setBusy(false) }
   }
 
+  async function generate() {
+    setGenerating(true)
+    setMessage(null)
+    try {
+      const created = await createSelfSignedCertificate()
+      setCertificatePath(created.path)
+      setUseHttps(true)
+      setPasswordTouched(true)
+      setCertificatePassword('')
+      setMessage(`Certificado gerado para ${created.subject}, válido até ${new Date(created.notAfter).toLocaleDateString('pt-BR')}. Salve para aplicar.`)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o certificado.')
+    } finally { setGenerating(false) }
+  }
+
+  const exposedWithoutTls = allowRemote && !useHttps
+
   return <form className="settings-form" onSubmit={event => void save(event)}>
-    <p className="field-hint">Por padrão o painel escuta apenas em <code>127.0.0.1</code> e só abre no próprio servidor. Liberar o acesso faz o serviço escutar em todas as interfaces, para abrir de outra máquina por <code>http://ip:porta</code>.</p>
-    <div className="network-warning"><ShieldCheck size={18} /><div><strong>O tráfego é HTTP, sem TLS.</strong> Senha e token trafegam legíveis na rede, e por esta tela se controla serviço do Windows. Use apenas em rede interna confiável; para acesso amplo, publique por um proxy HTTPS e mantenha esta opção desligada.</div></div>
+    <p className="field-hint">Por padrão o painel escuta apenas em <code>127.0.0.1</code> e só abre no próprio servidor. Liberar o acesso faz o serviço escutar em todas as interfaces, para abrir de outra máquina por <code>{useHttps ? 'https' : 'http'}://ip:porta</code>.</p>
+
+    {exposedWithoutTls && <div className="network-warning"><ShieldCheck size={18} /><div><strong>Sem TLS, o tráfego vai legível.</strong> Senha e token de sessão passam em texto claro na rede, e por esta tela se controla serviço do Windows. Ligue o HTTPS abaixo antes de abrir para outros computadores.</div></div>}
+
     <label className="switch-field"><input type="checkbox" checked={allowRemote} onChange={event => setAllowRemote(event.target.checked)} /> Permitir acesso de outros computadores</label>
-    <div className="form-grid"><label>Porta<input type="number" min={1024} max={65535} value={port} onChange={event => setPort(event.target.value)} /></label></div>
+    <label className="switch-field"><input type="checkbox" checked={useHttps} onChange={event => setUseHttps(event.target.checked)} /> Servir por HTTPS</label>
+
+    <div className="form-grid">
+      <label>Porta<input type="number" aria-label="Porta" min={1024} max={65535} value={port} onChange={event => setPort(event.target.value)} /></label>
+      {useHttps && <label>Senha do certificado
+        <input type="password" aria-label="Senha do certificado" value={certificatePassword} placeholder={settings?.hasCertificatePassword ? 'Guardada; deixe em branco para manter' : 'Deixe em branco se não houver'}
+          onChange={event => { setCertificatePassword(event.target.value); setPasswordTouched(true) }} />
+      </label>}
+      {useHttps && <label className="wide-field">Arquivo do certificado (.pfx)
+        <input aria-label="Caminho do certificado" value={certificatePath} onChange={event => setCertificatePath(event.target.value)} placeholder="C:\\ProgramData\\ProtheusPulse\\certs\\pulse.pfx" />
+      </label>}
+    </div>
+
+    {useHttps && <>
+      <p className="field-hint">O arquivo precisa trazer a chave privada. O certificado é conferido ao salvar: se não abrir, a gravação é recusada em vez de deixar o serviço subir sem conseguir atender ninguém. A senha fica cifrada com Data Protection, fora do <code>network.json</code>.</p>
+      {settings?.certificateValid === false && <div className="inline-warning"><AlertTriangle size={15} /> {settings.certificateMessage}</div>}
+      {settings?.certificateValid && settings.certificateSubject && <div className="success-banner"><ShieldCheck size={16} /> {settings.certificateSubject} · válido até {new Date(settings.certificateNotAfter ?? '').toLocaleDateString('pt-BR')}</div>}
+      <div className="form-actions">
+        <button type="button" className="secondary-button" disabled={generating} onClick={() => void generate()}>
+          {generating ? 'Gerando…' : 'Gerar certificado para esta máquina'}
+        </button>
+      </div>
+      <p className="field-hint">O certificado gerado aqui é assinado pelo próprio servidor: o navegador avisa que não conhece quem assinou, e o tráfego deixa de ir em texto claro. Para não ter o aviso, use um certificado emitido pela autoridade da sua rede.</p>
+    </>}
+
     {settings && <div className="network-addresses">
       <span>Escutando agora em <code>{settings.boundUrl}</code></span>
       {allowRemote && settings.localAddresses.length > 0 && <ul>{settings.localAddresses.map(address => <li key={address}><code>{address}</code></li>)}</ul>}

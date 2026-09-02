@@ -4,7 +4,7 @@ import type {
   AlertOccurrencePage, AlertQuery, AlertRule, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
   CreateHeartbeatInput, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken, ServerThresholdSettings,
   CreateNotificationChannelInput, DashboardSummary, EmailSettings, EmailTestResult,
-  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, MaintenanceWindow, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, NotificationChannel, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
+  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, MaintenanceWindow, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, NotificationChannel, SaveNetworkInput, SelfSignedCertificate, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
   PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
   ServiceActionResponse, ServiceDiscoveryResult, UpdateAlertRuleInput,
 } from './types'
@@ -118,12 +118,17 @@ export async function deleteUser(id: string): Promise<void> {
 }
 
 export async function getNetworkSettings(): Promise<NetworkSettings> {
-  if (staticDemo) return { allowRemoteAccess: false, port: 5058, boundUrl: 'http://127.0.0.1:5058', localAddresses: [] }
+  if (staticDemo) return { allowRemoteAccess: false, port: 5058, boundUrl: 'http://127.0.0.1:5058', localAddresses: [], useHttps: false, hasCertificatePassword: false }
   return request<NetworkSettings>('/api/v1/settings/network')
 }
 
-export async function saveNetworkSettings(payload: { allowRemoteAccess: boolean; port: number }): Promise<NetworkSettings> {
+export async function saveNetworkSettings(payload: SaveNetworkInput): Promise<NetworkSettings> {
   return request<NetworkSettings>('/api/v1/settings/network', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function createSelfSignedCertificate(): Promise<SelfSignedCertificate> {
+  if (staticDemo) throw new Error('O certificado não pode ser gerado na demonstração estática.')
+  return request<SelfSignedCertificate>('/api/v1/settings/network/self-signed', { method: 'POST', body: '{}' })
 }
 
 export async function browseFolders(path?: string): Promise<BrowseResult> {
