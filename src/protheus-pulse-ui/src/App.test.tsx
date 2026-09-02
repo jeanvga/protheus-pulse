@@ -70,7 +70,8 @@ import {
   applyInstallationImport, createHeartbeatDefinition, getAlerts, previewInstallationImport, getAuditEvents, getDiagnostics, getHeartbeatDefinitions, getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
   setAutoStart, setExclusiveInstallation, updateInstallation,
 } from './api'
-import App, { serviceActionAllowed } from './App'
+import App from './App'
+import { serviceActionAllowed } from './lib/services'
 
 const emailSettings = {
   configured: true,

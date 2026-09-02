@@ -2,7 +2,7 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
-## [Não lançado]
+## [1.11.0] - 2026-09-02
 
 ### Added
 
@@ -17,6 +17,10 @@ O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a C
 - Importação em massa na aba Instalações: as duas rotas existiam e eram testadas, mas quem tinha dez ambientes para cadastrar continuava clicando um a um. O arquivo é conferido antes de gravar — erro aparecendo depois de metade importada seria pior que não ter a importação.
 
 - Renovação silenciosa da sessão. O token valia oito horas e não se renovava: expirava sem aviso e mandava para o login no meio de um cadastro, levando junto o formulário preenchido. A tela agora renova com dez minutos de folga enquanto a pessoa está usando; conta desativada no meio do caminho não ganha token novo e volta ao login.
+
+### Changed
+
+- A interface saiu de um `App.tsx` de 3 085 linhas para quinze módulos: uma página por arquivo, os componentes comuns em um lugar e os utilitários puros — formatação, estado de serviço, agrupamento — em `lib/`. O arquivo único ainda era navegável, mas cada aba nova aumentava o custo de mexer em qualquer outra, e esta versão acrescentou cinco telas. A casca ficou com 222 linhas: sessão, navegação, login e o roteador de páginas. Nenhum comportamento muda — o pacote gerado tem o mesmo tamanho, e os 31 testes de interface passam sem alteração.
 
 ### Fixed
 
