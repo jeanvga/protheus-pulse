@@ -16,7 +16,7 @@ import {
 } from './api'
 import type {
   AlertSnapshot, AuthStatus, AuthToken, ComponentSnapshot, ComponentType, DashboardSummary, EmailSettings,
-  ComponentProposal, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, NetworkSettings, PathCandidate, PulseUser, RetentionSettings,
+  ComponentProposal, ComponentProposalResult, EnvironmentKind, HealthStatus, HttpCheckConfiguration, LogEventItem, LogEventPage, MaintenanceStatus, NetworkSettings, PathCandidate, PulseUser, RetentionSettings,
   SaveInstallationInput, ServerDiskUsage, ServerResources, ServiceAction, ServiceCandidate, SmtpSecurity,
   TcpCheckConfiguration,
 } from './types'
@@ -688,31 +688,21 @@ export function serviceStatusLabel(status: string | undefined) {
   return labels[status ?? ''] ?? 'Estado desconhecido'
 }
 
-/// Aponte a pasta do Protheus e o Pulse classifica sozinho pelo nome e pela extensão:
-/// appserver.exe, appserver.ini, console.log e as portas declaradas no INI. Preencher
-/// campo por campo era o passo mais lento do cadastro.
+/// Aponte a pasta do Protheus e o Pulse propõe um componente por appserver.ini que achar,
+/// com ambiente, executável, console.log, serviço do Windows e os alvos de rede que o
+/// próprio INI declara. Preencher campo por campo era o passo mais lento do cadastro.
 function FolderAutoDetect({ onDetected }: { onDetected: (proposal: ComponentProposal) => void }) {
   const [folder, setFolder] = useState('')
   const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState<string | null>(null)
+  const [result, setResult] = useState<ComponentProposalResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function detect() {
     if (folder.trim() === '') return
     setBusy(true)
-    setNote(null)
+    setResult(null)
     try {
-      const proposal = await proposeComponent(folder.trim())
-      onDetected(proposal)
-      const found = [
-        proposal.executablePath ? 'executável' : null,
-        proposal.iniPath ? 'INI' : null,
-        proposal.logPaths.length > 0 ? `${proposal.logPaths.length} log(s)` : null,
-        proposal.ports.length > 0 ? `${proposal.ports.length} porta(s)` : null
-      ].filter(Boolean)
-      setNote(found.length > 0
-        ? `Encontrado em ${proposal.filesInspected} arquivos: ${found.join(', ')}.`
-        : `Nada reconhecido em ${proposal.filesInspected} arquivos. Confira a pasta ou preencha manualmente.`)
+      setResult(await proposeComponent(folder.trim()))
       setError(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível varrer a pasta.')
@@ -727,11 +717,23 @@ function FolderAutoDetect({ onDetected }: { onDetected: (proposal: ComponentProp
           value={folder}
           onChange={event => setFolder(event.target.value)}
           onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void detect() } }}
-          placeholder={'D:\\TOTVS\\Protheus'} />
+          placeholder={'D:\\Protheus\\Protheus'} />
       </label>
       <button type="button" className="primary-button" disabled={busy || folder.trim() === ''} onClick={() => void detect()}><FolderSearch size={15} /> {busy ? 'Procurando…' : 'Detectar'}</button>
     </div>
-    {note && <p className="field-hint">{note}</p>}
+    {result && result.proposals.length === 0 && <p className="field-hint">Nenhum appserver.ini reconhecido em {result.filesInspected} arquivos. Confira a pasta ou preencha manualmente.</p>}
+    {result && result.proposals.length > 0 && <>
+      <p className="field-hint">{result.proposals.length} encontrado(s) em {result.filesInspected} arquivos. Clique para preencher o formulário — nada é gravado antes de você revisar e salvar.</p>
+      <ul className="proposal-list">{result.proposals.map(proposal => <li key={proposal.iniPath ?? proposal.suggestedName}>
+        <button type="button" onClick={() => onDetected(proposal)}>
+          <div className="proposal-identity">
+            <strong>{proposal.suggestedName}</strong>
+            <span>{[proposal.environmentName, proposal.databaseKind, proposal.windowsServiceName].filter(Boolean).join(' · ') || proposal.iniPath}</span>
+          </div>
+          <ul className="proposal-checks">{proposal.checks.map(check => <li key={`${check.host}:${check.port}`} className={check.isRequired ? 'required' : ''}>{check.label} <strong>{check.port}</strong></li>)}</ul>
+        </button>
+      </li>)}</ul>
+    </>}
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
   </div>
 }
@@ -904,12 +906,13 @@ function ComponentConfigurationEditor({ component, index, update, remove, canRem
 
     <section className="target-section"><div className="target-section-heading"><div><h4>Arquivos e logs</h4><p>Informe caminhos absolutos locais ou UNC. Nenhuma unidade mapeada é usada.</p></div><FolderSearch size={17} /></div>
       <FolderAutoDetect onDetected={proposal => update({
-        name: component.name || proposal.suggestedName,
+        name: proposal.suggestedName,
+        windowsServiceName: proposal.windowsServiceName ?? component.windowsServiceName,
         executablePath: proposal.executablePath ?? component.executablePath,
         iniPath: proposal.iniPath ?? component.iniPath,
         logPaths: proposal.logPaths.length > 0 ? proposal.logPaths : component.logPaths,
-        tcpChecks: proposal.ports.length > 0
-          ? proposal.ports.map(port => ({ key: nextDraftKey(), host: '127.0.0.1', port, timeoutMs: 3_000, isRequired: true }))
+        tcpChecks: proposal.checks.length > 0
+          ? proposal.checks.map(check => ({ key: nextDraftKey(), host: check.host, port: check.port, timeoutMs: 3_000, isRequired: check.isRequired }))
           : component.tcpChecks
       })} />
       <div className="path-discovery-grid"><label>Pasta inicial<input aria-label={`Pasta para descoberta ${index + 1}`} value={pathRoot} onChange={event => setPathRoot(event.target.value)} placeholder="D:\TOTVS\Protheus" /></label><label>Nomes exatos<input aria-label={`Arquivos para descoberta ${index + 1}`} value={fileNames} onChange={event => setFileNames(event.target.value)} /></label><button type="button" className="secondary-button" disabled={discoveryBusy} onClick={() => void findPaths()}><FolderSearch size={14} /> Localizar</button></div>

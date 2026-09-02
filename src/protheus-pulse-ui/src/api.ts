@@ -2,7 +2,7 @@ import * as signalR from '@microsoft/signalr'
 import { demoServerResources, demoSummary } from './demoData'
 import type {
   AuthStatus, AuthToken, AutomationFlag, CollectionResult, DashboardSummary, EmailSettings, EmailTestResult,
-  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, ComponentProposal, NetworkSettings, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
+  InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, ComponentProposal, ComponentProposalResult, NetworkSettings, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
   PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
   ServiceActionResponse, ServiceDiscoveryResult,
 } from './types'
@@ -124,8 +124,8 @@ export async function saveNetworkSettings(payload: { allowRemoteAccess: boolean;
   return request<NetworkSettings>('/api/v1/settings/network', { method: 'PUT', body: JSON.stringify(payload) })
 }
 
-export async function proposeComponent(root: string): Promise<ComponentProposal> {
-  return request<ComponentProposal>('/api/v1/discovery/component', { method: 'POST', body: JSON.stringify({ root }) })
+export async function proposeComponent(root: string): Promise<ComponentProposalResult> {
+  return request<ComponentProposalResult>('/api/v1/discovery/component', { method: 'POST', body: JSON.stringify({ root }) })
 }
 
 export async function getRetentionSettings(): Promise<RetentionSettings> {

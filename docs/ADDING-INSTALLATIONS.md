@@ -115,7 +115,27 @@ Não substitua os exemplos versionados por caminhos, IPs ou nomes reais de clien
 
 ## Detecção automática pela pasta
 
-No editor de componente, o campo **Pasta do Protheus** varre o diretório informado até três níveis e classifica o que achou
-pelo nome e pela extensão: `appserver.exe` vira o executável, `appserver.ini` vira o INI, `console.log` entra como origem de
-log e as chaves de porta do INI viram verificações TCP em `127.0.0.1`. O resultado preenche o formulário, que continua
-editável — nada é gravado antes de você revisar e salvar. A varredura é somente leitura e ignora pasta sem permissão.
+No editor de componente, o campo **Pasta do Protheus** varre o diretório informado até três níveis e propõe **um componente
+por `appserver.ini` encontrado**. O nome do arquivo não serve de filtro — na prática ele se chama `BIN1.ini`, `WORKFLOW.ini`,
+`SMARTVIEW.ini`, `BROKER.ini` —, o que identifica é o conteúdo.
+
+De cada INI saem, por seção:
+
+| Seção | O que vira monitoramento |
+| --- | --- |
+| `[TCP] Port` | porta de conexão do AppServer, obrigatória |
+| `[WEBAPP] Port` | portal web |
+| `[HTTPREST*] Port` | serviços REST |
+| `[LICENSECLIENT] server` + `port` | License Server, obrigatório |
+| `TopServer` do ambiente | DBAccess (porta 7890 quando o INI não declara outra) |
+| `[BALANCE_HTTP] LOCAL_SERVER_PORT` | Broker/WebMonitor, e `REMOTE_SERVER_nn` vira um alvo por instância balanceada |
+| `[BALANCE_HTTP] SERVICE_NAME` | nome do serviço Windows do Broker |
+| `[GENERAL] ConsoleFile` | caminho do `console.log`; sem a chave, procura o arquivo ao lado do executável |
+| `[GENERAL] App_Environment` e a seção do ambiente | nome do ambiente, RootPath, RpoVersion e o banco |
+| `[ONSTART] Jobs` | jobs que sobem com o servidor, candidatos a heartbeat |
+
+Chave com "port" no nome não é lida como porta por si só: `MultiProtocolPort=1` é liga-desliga, e tratá-la como porta criaria
+uma verificação para a porta 1. Cada alvo sai de uma seção conhecida, com o rótulo do que ele é.
+
+O resultado preenche o formulário, que continua editável — nada é gravado antes de você revisar e salvar. A varredura é
+somente leitura, ignora pasta sem permissão e lê o INI em CP1252 quando ele não é UTF-8 válido.

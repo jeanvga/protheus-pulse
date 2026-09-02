@@ -2,6 +2,18 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.8.0] - 2026-09-02
+
+### Added
+
+- A detecção por pasta passou a ler o `appserver.ini` por seção e a propor **um componente por INI encontrado**, com ambiente, banco, executável, `console.log`, serviço do Windows e os alvos de rede que o próprio arquivo declara: porta do AppServer em `[TCP]`, portal em `[WEBAPP]`, REST em `[HTTPREST]`, License Server em `[LICENSECLIENT]`, DBAccess a partir do `TopServer` do ambiente, e o Broker em `[BALANCE_HTTP]` junto das instâncias que ele balanceia. Jobs de `[ONSTART]` são listados como candidatos a heartbeat.
+
+### Fixed
+
+- A varredura procurava arquivos com "appserver" no nome. Em instalação real o INI se chama `BIN1.ini`, `WORKFLOW.ini`, `SMARTVIEW.ini` ou `BROKER.ini`, então a detecção não encontrava nada; agora o que identifica é o conteúdo.
+- Qualquer chave com "port" no nome virava uma porta a monitorar. `MultiProtocolPort=1` é liga-desliga e produzia uma verificação para a porta 1.
+- O INI do Broker e do WebMonitor começa com BOM, o que escondia a primeira seção do arquivo e fazia `ConsoleFile`, `ConsoleLog` e `ConsoleMaxSize` passarem despercebidos.
+
 ## [1.7.0] - 2026-09-02
 
 ### Added

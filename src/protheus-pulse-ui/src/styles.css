@@ -330,3 +330,15 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .auto-detect-row { display: flex; align-items: flex-end; gap: 10px; }
 .auto-detect-row .wide-field { flex: 1; }
 .auto-detect-row button { flex: none; height: 38px; }
+
+/* Componentes propostos pela varredura da pasta. */
+.proposal-list { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.proposal-list > li > button { width: 100%; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--surface); color: inherit; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 12px; }
+.proposal-list > li > button:hover { border-color: var(--accent); background: var(--surface-raised); }
+.proposal-identity { flex: none; min-width: 150px; display: flex; flex-direction: column; gap: 2px; }
+.proposal-identity strong { font-size: 10px; }
+.proposal-identity span { color: var(--text-muted); font-size: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.proposal-checks { flex: 1; margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 5px; }
+.proposal-checks li { padding: 2px 7px; border-radius: 999px; background: var(--surface-soft); color: var(--text-muted); font-size: 8px; }
+.proposal-checks li.required { color: var(--accent); background: rgba(38, 217, 242, .1); }
+.proposal-checks strong { color: var(--text-soft); }

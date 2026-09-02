@@ -374,11 +374,26 @@ export interface NetworkSettings {
   localAddresses: string[]
 }
 
+export interface ProposedCheck {
+  label: string
+  host: string
+  port: number
+  isRequired: boolean
+}
+
 export interface ComponentProposal {
   suggestedName: string
   executablePath: string | null
   iniPath: string | null
   logPaths: string[]
-  ports: number[]
+  checks: ProposedCheck[]
+  environmentName: string | null
+  databaseKind: string | null
+  jobs: string[]
+  windowsServiceName: string | null
+}
+
+export interface ComponentProposalResult {
+  proposals: ComponentProposal[]
   filesInspected: number
 }

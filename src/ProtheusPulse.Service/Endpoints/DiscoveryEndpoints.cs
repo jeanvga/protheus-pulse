@@ -6,6 +6,7 @@ using System.ServiceProcess;
 using System.Text.Json;
 using ProtheusPulse.Application.Abstractions;
 using ProtheusPulse.Domain.Monitoring;
+using ProtheusPulse.Infrastructure.Monitoring;
 using ProtheusPulse.Infrastructure.Persistence;
 using ProtheusPulse.Service.Configuration;
 
@@ -26,9 +27,10 @@ public static class DiscoveryEndpoints
     }
 
     /// <summary>
-    /// Aponta uma pasta e o Pulse classifica sozinho o que achou: executável, INI, logs e
-    /// as portas declaradas no INI. Antes era preciso localizar arquivo por arquivo e dizer
-    /// manualmente o que cada um era.
+    /// Aponta a pasta do Protheus e o Pulse propõe um componente por <c>appserver.ini</c>
+    /// encontrado, com o ambiente, o executável, o console.log e os alvos de rede que o
+    /// próprio INI declara. O nome do arquivo não serve de filtro: na prática ele se chama
+    /// BIN1.ini, WORKFLOW.ini, SMARTVIEW.ini — o que identifica é o conteúdo.
     /// </summary>
     private static async Task<IResult> ProposeComponentAsync(
         ComponentProposalRequest request,
@@ -39,8 +41,8 @@ public static class DiscoveryEndpoints
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["root"] = [rootError] });
         }
 
-        var executables = new List<string>();
         var inis = new List<string>();
+        var executables = new List<string>();
         var logs = new List<string>();
         var inspected = 0;
         foreach (var file in EnumerateBounded(root, MaximumProposalDepth))
@@ -51,56 +53,84 @@ public static class DiscoveryEndpoints
                 break;
             }
 
-            var name = Path.GetFileName(file);
             var extension = Path.GetExtension(file);
-            if (extension.Equals(".exe", StringComparison.OrdinalIgnoreCase))
+            if (extension.Equals(".ini", StringComparison.OrdinalIgnoreCase))
             {
-                if (name.Contains("appserver", StringComparison.OrdinalIgnoreCase))
-                {
-                    executables.Add(file);
-                }
-            }
-            else if (extension.Equals(".ini", StringComparison.OrdinalIgnoreCase))
-            {
-                if (name.Contains("appserver", StringComparison.OrdinalIgnoreCase))
+                if (inis.Count < MaximumProposals * 4)
                 {
                     inis.Add(file);
                 }
             }
+            else if (extension.Equals(".exe", StringComparison.OrdinalIgnoreCase)
+                && Path.GetFileName(file).Contains("appserver", StringComparison.OrdinalIgnoreCase))
+            {
+                executables.Add(file);
+            }
             else if (extension.Equals(".log", StringComparison.OrdinalIgnoreCase)
-                && name.Contains("console", StringComparison.OrdinalIgnoreCase))
+                && Path.GetFileName(file).Contains("console", StringComparison.OrdinalIgnoreCase))
             {
                 logs.Add(file);
             }
         }
 
-        var ports = new List<int>();
-        var iniPath = inis.OrderBy(item => item.Length).FirstOrDefault();
-        if (iniPath is not null)
+        var proposals = new List<ComponentProposal>();
+        foreach (var iniPath in inis.OrderBy(item => item.Length))
         {
-            var ini = await SanitizedIniReader.ReadAsync(iniPath, cancellationToken);
-            if (ini.Valid)
+            if (proposals.Count >= MaximumProposals)
             {
-                foreach (var entry in ini.Entries)
-                {
-                    if (entry.Key.Contains("port", StringComparison.OrdinalIgnoreCase)
-                        && int.TryParse(entry.Value, CultureInfo.InvariantCulture, out var port)
-                        && port is > 0 and <= 65_535
-                        && !ports.Contains(port))
-                    {
-                        ports.Add(port);
-                    }
-                }
+                break;
             }
+
+            AppServerIniSummary summary;
+            try
+            {
+                var bytes = await File.ReadAllBytesAsync(iniPath, cancellationToken);
+                if (bytes.Length > MaximumIniBytes)
+                {
+                    continue;
+                }
+
+                summary = ProtheusAppServerIni.ParseBytes(bytes);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            // Sem ambiente e sem alvo declarado, é um .ini qualquer e não um AppServer.
+            if (summary.EnvironmentName is null && summary.Targets.Count == 0 && summary.WindowsServiceName is null)
+            {
+                continue;
+            }
+
+            var directory = Path.GetDirectoryName(iniPath) ?? root;
+            var executable = executables.FirstOrDefault(item =>
+                string.Equals(Path.GetDirectoryName(item), directory, StringComparison.OrdinalIgnoreCase));
+            var componentLogs = new List<string>();
+            if (summary.ConsoleFile is { Length: > 0 } consoleFile)
+            {
+                componentLogs.Add(consoleFile);
+            }
+
+            componentLogs.AddRange(logs
+                .Where(item => string.Equals(Path.GetDirectoryName(item), directory, StringComparison.OrdinalIgnoreCase))
+                .Where(item => !componentLogs.Contains(item, StringComparer.OrdinalIgnoreCase)));
+
+            proposals.Add(new ComponentProposal(
+                Path.GetFileNameWithoutExtension(iniPath),
+                executable,
+                iniPath,
+                componentLogs.Take(MaximumProposalLogs).ToArray(),
+                summary.Targets
+                    .Select(target => new ProposedCheck(target.Label, target.Host, target.Port, target.IsRequired))
+                    .ToArray(),
+                summary.EnvironmentName,
+                summary.DatabaseKind,
+                summary.Jobs,
+                summary.WindowsServiceName));
         }
 
-        return Results.Ok(new ComponentProposal(
-            Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar)),
-            executables.OrderBy(item => item.Length).FirstOrDefault(),
-            iniPath,
-            logs.OrderBy(item => item.Length).Take(MaximumProposalLogs).ToArray(),
-            ports.Take(MaximumProposalPorts).ToArray(),
-            inspected));
+        return Results.Ok(new ComponentProposalResult(proposals, inspected));
     }
 
     /// <summary>Varredura limitada em profundidade, ignorando pasta sem permissão.</summary>
@@ -408,7 +438,8 @@ public static class DiscoveryEndpoints
     private const int MaximumProposalDepth = 3;
     private const int MaximumProposalFiles = 6_000;
     private const int MaximumProposalLogs = 5;
-    private const int MaximumProposalPorts = 6;
+    private const int MaximumProposals = 20;
+    private const int MaximumIniBytes = 512 * 1024;
 
     private static Guid? GetUserId(ClaimsPrincipal principal)
     {
@@ -428,13 +459,20 @@ public static class DiscoveryEndpoints
 
     public sealed record ComponentProposalRequest(string? Root);
 
+    public sealed record ProposedCheck(string Label, string Host, int Port, bool IsRequired);
+
     public sealed record ComponentProposal(
         string SuggestedName,
         string? ExecutablePath,
         string? IniPath,
         IReadOnlyList<string> LogPaths,
-        IReadOnlyList<int> Ports,
-        int FilesInspected);
+        IReadOnlyList<ProposedCheck> Checks,
+        string? EnvironmentName,
+        string? DatabaseKind,
+        IReadOnlyList<string> Jobs,
+        string? WindowsServiceName);
+
+    public sealed record ComponentProposalResult(IReadOnlyList<ComponentProposal> Proposals, int FilesInspected);
     public sealed record ServiceCandidate(string ServiceName, string DisplayName, string Status);
     public sealed record PathCandidate(string Path, string FileName);
 }
