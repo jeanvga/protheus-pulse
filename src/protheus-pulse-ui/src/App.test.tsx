@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { demoAlertRules, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
+import { demoAlertRules, demoHeartbeats, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
 
 vi.mock('./api', () => ({
   session: {
@@ -48,13 +48,17 @@ vi.mock('./api', () => ({
   getAuditEvents: vi.fn(),
   getDiagnostics: vi.fn(),
   getAlerts: vi.fn(),
+  getHeartbeatDefinitions: vi.fn(),
+  createHeartbeatDefinition: vi.fn(),
+  rotateHeartbeatToken: vi.fn(),
+  deleteHeartbeatDefinition: vi.fn(),
 }))
 
 import {
   acknowledgeAlert, collectNow, createAlertRule, createInstallation, createMaintenanceWindow,
   createNotificationChannel, deleteInstallation, discoverPaths,
   discoverServices, executeServiceAction, getAlertRules, getDashboard, getEmailSettings, getInstallationConfiguration,
-  getAlerts, getAuditEvents, getDiagnostics, getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
+  createHeartbeatDefinition, getAlerts, getAuditEvents, getDiagnostics, getHeartbeatDefinitions, getMaintenanceWindows, getNotificationChannels, getServerResources, saveEmailSettings, sendTestEmail, setAlertRuleEnabled,
   setAutoStart, setExclusiveInstallation, updateInstallation,
 } from './api'
 import App, { serviceActionAllowed } from './App'
@@ -146,6 +150,11 @@ describe('App', () => {
           details: null, userDisplayName: 'Jean Mendes', username: 'jean',
         },
       ],
+    })
+    vi.mocked(getHeartbeatDefinitions).mockReset().mockResolvedValue(demoHeartbeats)
+    vi.mocked(createHeartbeatDefinition).mockReset().mockResolvedValue({
+      id: 'hb-novo', jobKey: 'carga-noturna', token: 'hbt_exemplo_para_teste',
+      tokenShownOnce: true, warning: 'Armazene o token agora; ele não poderá ser consultado novamente.',
     })
     vi.mocked(getAlerts).mockReset().mockImplementation(async ({ state } = {}) => {
       const items = state && state !== 'all' ? demoSummary.alerts.filter(item => item.state === state) : demoSummary.alerts
@@ -477,6 +486,46 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
     expect(screen.getByText(/Protheus Pulse 1\.10\.0 · produto independente/)).toBeInTheDocument()
+  })
+
+  it('mostra a tolerância cadastrada de cada heartbeat, não um valor fixo', async () => {
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jobs' }))
+
+    expect(await screen.findByText('Fechamento contábil')).toBeInTheDocument()
+    // A tela antiga escrevia "5 min" para todo job; estes são 10 min e 2 min.
+    expect(screen.getByText('10 min')).toBeInTheDocument()
+    expect(screen.getByText('2 min')).toBeInTheDocument()
+    expect(screen.getByText('fila-integracao')).toBeInTheDocument()
+    expect(getHeartbeatDefinitions).toHaveBeenCalled()
+  })
+
+  it('cadastra um heartbeat e mostra o token uma única vez', async () => {
+    sessionStorage.setItem('pulse.test.role', 'Administrator')
+    render(<App />)
+    expect(await screen.findByText('Panorama dos ambientes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jobs' }))
+    expect(await screen.findByText('Fechamento contábil')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Componente do heartbeat'), { target: { value: 'job' } })
+    fireEvent.change(screen.getByLabelText('Nome do heartbeat'), { target: { value: 'Carga noturna' } })
+    fireEvent.change(screen.getByLabelText('Chave pública do job'), { target: { value: 'carga-noturna' } })
+    fireEvent.change(screen.getByLabelText('Intervalo esperado'), { target: { value: '7200' } })
+    fireEvent.change(screen.getByLabelText('Tolerância'), { target: { value: '900' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cadastrar heartbeat' }))
+
+    await waitFor(() => expect(createHeartbeatDefinition).toHaveBeenCalledWith({
+      componentId: 'job',
+      name: 'Carga noturna',
+      jobKey: 'carga-noturna',
+      expectedIntervalSeconds: 7200,
+      toleranceSeconds: 900,
+    }))
+    expect(await screen.findByText('hbt_exemplo_para_teste')).toBeInTheDocument()
+    expect(screen.getByText(/não poderá ser consultado novamente/)).toBeInTheDocument()
   })
 
   it('abre a aba Servidor com processador, memória e discos', async () => {

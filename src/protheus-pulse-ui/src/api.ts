@@ -1,8 +1,8 @@
 import * as signalR from '@microsoft/signalr'
-import { demoAlertRules, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
+import { demoAlertRules, demoHeartbeats, demoMaintenanceWindows, demoNotificationChannels, demoServerResources, demoSummary } from './demoData'
 import type {
   AlertOccurrencePage, AlertQuery, AlertRule, AuditEventPage, AuditQuery, AuthStatus, AuthToken, AutomationFlag, CollectionResult, CreateAlertRuleInput, CreateMaintenanceWindowInput,
-  DiagnosticsInfo,
+  CreateHeartbeatInput, DiagnosticsInfo, HeartbeatDefinition, HeartbeatToken,
   CreateNotificationChannelInput, DashboardSummary, EmailSettings, EmailTestResult,
   InstallationConfiguration, InstallationCreated, LogEventItem, LogEventPage, LogEventQuery, MaintenanceChangeResult, MaintenanceStatus, MaintenanceWindow, BrowseResult, ComponentProposal, ComponentProposalResult, NetworkSettings, NotificationChannel, PulseUser, RetentionSettings, SaveRetentionRequest, SaveUserRequest,
   PathDiscoveryResult, SaveEmailSettingsInput, SaveInstallationInput, ServerResources, ServiceAction,
@@ -268,6 +268,26 @@ export async function getAlerts(query: AlertQuery = {}): Promise<AlertOccurrence
   if (query.skip) parameters.set('skip', String(query.skip))
   const suffix = parameters.toString()
   return request<AlertOccurrencePage>(`/api/v1/alerts${suffix ? `?${suffix}` : ''}`)
+}
+
+export async function getHeartbeatDefinitions(): Promise<HeartbeatDefinition[]> {
+  if (staticDemo) return demoHeartbeats
+  return request<HeartbeatDefinition[]>('/api/v1/heartbeat-definitions')
+}
+
+export async function createHeartbeatDefinition(input: CreateHeartbeatInput): Promise<HeartbeatToken> {
+  if (staticDemo) throw new Error('Os heartbeats não podem ser criados na demonstração estática.')
+  return request<HeartbeatToken>('/api/v1/heartbeat-definitions', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export async function rotateHeartbeatToken(id: string): Promise<HeartbeatToken> {
+  if (staticDemo) throw new Error('O token não pode ser rotacionado na demonstração estática.')
+  return request<HeartbeatToken>(`/api/v1/heartbeat-definitions/${id}/rotate`, { method: 'POST', body: '{}' })
+}
+
+export async function deleteHeartbeatDefinition(id: string): Promise<void> {
+  if (staticDemo) throw new Error('Os heartbeats não podem ser removidos na demonstração estática.')
+  await request<void>(`/api/v1/heartbeat-definitions/${id}`, { method: 'DELETE' })
 }
 
 export async function getAuditEvents(query: AuditQuery = {}): Promise<AuditEventPage> {

@@ -1,4 +1,4 @@
-import type { AlertRule, DashboardSummary, MaintenanceWindow, NotificationChannel, ServerResources } from './types'
+import type { AlertRule, DashboardSummary, HeartbeatDefinition, MaintenanceWindow, NotificationChannel, ServerResources } from './types'
 
 const now = Date.now()
 
@@ -145,5 +145,18 @@ export const demoMaintenanceWindows: MaintenanceWindow[] = [
     id: 'window-virada', installationId: 'prod', componentId: null, installationName: 'ERP Produção · DEMO', componentName: null,
     name: 'Virada de mês', startsAt: new Date(now + 3 * 86400000).toISOString(), endsAt: new Date(now + 3 * 86400000 + 4 * 3600000).toISOString(),
     reason: 'Fechamento contábil com o ERP parado.',
+  },
+]
+
+export const demoHeartbeats: HeartbeatDefinition[] = [
+  {
+    id: 'hb-fechamento', componentId: 'job', installationName: 'ERP Produção · DEMO', componentName: 'Job Fechamento',
+    name: 'Fechamento contábil', jobKey: 'fechamento-contabil', expectedIntervalSeconds: 3_600, toleranceSeconds: 600,
+    windowStart: '22:00:00', windowEnd: '06:00:00', lastHeartbeatAt: new Date(now - 18 * 60000).toISOString(),
+  },
+  {
+    id: 'hb-integracao', componentId: 'broker', installationName: 'Integrações Homologação · DEMO', componentName: 'Broker de Integrações',
+    name: 'Fila de integração', jobKey: 'fila-integracao', expectedIntervalSeconds: 300, toleranceSeconds: 120,
+    windowStart: null, windowEnd: null, lastHeartbeatAt: new Date(now - 2 * 60000).toISOString(),
   },
 ]

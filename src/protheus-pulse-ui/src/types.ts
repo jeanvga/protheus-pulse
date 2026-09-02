@@ -279,6 +279,39 @@ export interface AuditQuery {
   skip?: number
 }
 
+export interface HeartbeatDefinition {
+  id: string
+  componentId: string
+  installationName: string
+  componentName: string
+  name: string
+  jobKey: string
+  expectedIntervalSeconds: number
+  toleranceSeconds: number
+  windowStart?: string | null
+  windowEnd?: string | null
+  lastHeartbeatAt?: string | null
+}
+
+export interface CreateHeartbeatInput {
+  componentId: string
+  name: string
+  jobKey: string
+  expectedIntervalSeconds: number
+  toleranceSeconds: number
+  windowStart?: string
+  windowEnd?: string
+}
+
+/// O token só volta na criação e na rotação; depois disso só existe o hash.
+export interface HeartbeatToken {
+  id: string
+  jobKey: string
+  token: string
+  tokenShownOnce: boolean
+  warning: string
+}
+
 export interface DiagnosticsInfo {
   service: string
   status: HealthStatus

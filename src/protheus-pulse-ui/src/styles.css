@@ -453,3 +453,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .toolbar .refresh-hint { margin-right: auto; align-self: center; }
 .summary-chips .chip-period { margin-left: auto; }
 .summary-chips .chip-period select { height: 34px; }
+.token-reveal { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 14px; align-items: center; padding: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.token-reveal span { color: var(--text-muted); font-size: 8px; text-transform: uppercase; letter-spacing: .7px; font-weight: 700; }
+.token-reveal code { font: 10px ui-monospace, monospace; color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.job-card p code { font: 8px ui-monospace, monospace; color: var(--text-soft); }
+.job-metrics .mini-component-actions { margin-left: 4px; }
