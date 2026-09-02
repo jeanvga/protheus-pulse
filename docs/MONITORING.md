@@ -47,8 +47,9 @@ Cada componente recebe um escopo isolado do SQLite. Mudanças de estado são per
   No `console.log` do AppServer, o coletor entende o formato de registro do Protheus: a linha de cabeçalho
   `2026-01-15T09:12:33.400000-03:00 4321|` abre o registro e as linhas seguintes fazem parte dele. O horário guardado
   é o que o AppServer gravou, não o da leitura, e um bloco `THREAD ERROR` vira um evento só, com usuário, máquina e o
-  fonte ADVPL onde o erro estourou — em vez de um evento por linha da pilha. Arquivo sem esse cabeçalho continua sendo
-  lido linha a linha.
+  fonte ADVPL onde o erro estourou — em vez de um evento por linha da pilha. O evento guarda ainda um detalhe com a pilha
+  de chamada, o SQL e os parâmetros do erro de banco, saneado e limitado a 4 000 caracteres, que a página de Logs abre sob
+  demanda. Arquivo sem esse cabeçalho continua sendo lido linha a linha.
 - **Encoding do log:** `auto` tenta UTF-8 estrito e cai para CP1252 quando ele falha, que é como o AppServer grava em
   Windows pt-BR; ler CP1252 como UTF-8 substituiria todo acento e degradaria o agrupamento por assinatura. Também são
   aceitos `utf-8`, `cp1252`, `latin1`, `unicode`, `utf-16be` e `ascii`.

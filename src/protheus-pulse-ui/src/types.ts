@@ -55,6 +55,7 @@ export interface LogEventItem {
   company?: string | null
   module?: string | null
   routine?: string | null
+  detail?: string | null
 }
 
 export interface RetentionCounts {

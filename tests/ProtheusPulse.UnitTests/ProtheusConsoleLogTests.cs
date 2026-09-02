@@ -12,6 +12,8 @@ namespace ProtheusPulse.UnitTests;
 public sealed class ProtheusConsoleLogTests
 {
     private static readonly FixedClock Clock = new(new DateTimeOffset(2026, 7, 17, 22, 0, 0, TimeSpan.Zero));
+    private static readonly string[] EmptyBody = ["", "   "];
+    private static readonly string[] SecretFirstLine = ["Password=super-secreto-sintetico"];
 
     [Fact]
     public void HeaderCarriesTimestampThreadAndRemainder()
@@ -150,6 +152,51 @@ public sealed class ProtheusConsoleLogTests
         Assert.Equal("AMBIENTEP", context.Environment);
         Assert.Equal("SIGAFAT", context.Module);
         Assert.Equal("MVC_SZ1", context.Routine);
+    }
+
+    [Fact]
+    public void TheDetailKeepsTheAdvplStackAndTheFailingSql()
+    {
+        string[] body =
+        [
+            "/*-------------------------------------------------------",
+            "THREAD ERROR ([332], usuario.teste, P0001234)   17/07/2026   18:55:11",
+            "TAB010: DB error (Update): -29 File: TAB010 - Error : 2601",
+            "UPDATE dbo.TAB010 SET CAMPO = ? WHERE R_E_C_N_O_ = ?",
+            "-- Binded Parameters List --",
+            "#1 [C] [VALOR]",
+            "Called from ENDTRAN(APLIB060.PRW) 01/01/2026 08:00:00 line : 183",
+            "Called from U_MEUFONTE(MEUFONTE.PRW) 01/01/2026 08:00:00 line : 122"
+        ];
+
+        var detail = ProtheusConsoleLog.BuildDetail(body, 4_000);
+
+        Assert.NotNull(detail);
+        Assert.DoesNotContain("/*---", detail, StringComparison.Ordinal);
+        Assert.Contains("UPDATE dbo.TAB010", detail, StringComparison.Ordinal);
+        Assert.Contains("Called from ENDTRAN(APLIB060.PRW)", detail, StringComparison.Ordinal);
+        Assert.Contains("Called from U_MEUFONTE(MEUFONTE.PRW)", detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheDetailIsBoundedAndKeepsSecretsOut()
+    {
+        var body = SecretFirstLine
+            .Concat(Enumerable.Range(1, 500).Select(index => $"Called from U_FONTE{index}(FONTE{index}.PRW) line : {index}"))
+            .ToArray();
+
+        var detail = ProtheusConsoleLog.BuildDetail(body, 4_000);
+
+        Assert.NotNull(detail);
+        Assert.True(detail.Length <= 4_000);
+        Assert.DoesNotContain("super-secreto-sintetico", detail, StringComparison.Ordinal);
+        Assert.Contains("[REDACTED]", detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ARecordWithNothingToShowHasNoDetail()
+    {
+        Assert.Null(ProtheusConsoleLog.BuildDetail(EmptyBody, 4_000));
     }
 
     [Fact]

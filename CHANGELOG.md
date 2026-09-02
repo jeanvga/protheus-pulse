@@ -2,6 +2,19 @@
 
 O projeto segue [Semantic Versioning](https://semver.org/) e o formato [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.9.0] - 2026-09-02
+
+### Added
+
+- O evento de erro passou a guardar a **pilha de chamada ADVPL**, o SQL e os parâmetros do erro de banco, saneados e limitados a 4 000 caracteres, abertos sob demanda na página de Logs. A mensagem diz que o erro aconteceu; a pilha diz onde ele nasceu, e era justamente ela que o coletor descartava.
+- Camada de espera nas ações do painel. Iniciar, parar ou reiniciar um serviço leva segundos e a tela não dava sinal nenhum: dava para clicar de novo ou clicar em outra coisa no meio da chamada. Agora a página fica bloqueada com o aviso do que está sendo aplicado até o servidor confirmar.
+
+### Changed
+
+- Compressão de resposta (brotli e gzip) para o painel e a API: o pacote do frontend cai de 296 KB para 112 KB, o que pesa quando o acesso vem de outra máquina pela rede do cliente.
+- Arquivos de `/assets` passam a ser servidos com cache imutável de um ano — o nome deles já carrega o hash do conteúdo — enquanto o `index.html` continua sem cache, inclusive na rota de fallback do painel, que tem opções próprias e ficaria sem cabeçalho: sem isso o navegador poderia servir a página antiga apontando para um asset que já não existe.
+- Índice por data nos eventos de log, que é como a página ordena quando não há filtro de componente.
+
 ## [1.8.1] - 2026-09-02
 
 ### Fixed

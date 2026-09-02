@@ -142,6 +142,8 @@ public sealed class LogEvent : Entity
     public string? Company { get; set; }
     public string? Module { get; set; }
     public string? Routine { get; set; }
+    /// <summary>Pilha ADVPL, SQL e parâmetros do bloco de erro, saneados e limitados.</summary>
+    public string? Detail { get; set; }
     public Component Component { get; set; } = null!;
     public LogSource LogSource { get; set; } = null!;
 }

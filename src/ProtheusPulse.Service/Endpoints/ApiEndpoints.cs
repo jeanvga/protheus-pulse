@@ -142,7 +142,8 @@ public static class ApiEndpoints
                     item.Environment,
                     item.Company,
                     item.Module,
-                    item.Routine
+                    item.Routine,
+                    item.Detail
                 })
                 .ToListAsync(cancellationToken);
             return Results.Ok(new

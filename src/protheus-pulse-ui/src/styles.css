@@ -351,3 +351,16 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .folder-list svg { flex: none; color: var(--text-muted); }
 .folder-empty { padding: 14px 11px; color: var(--text-muted); font-size: 9px; }
 .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border-soft); display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Camada de espera: bloqueia a tela enquanto o servidor confirma a ação. */
+.busy-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(2, 8, 16, .6); backdrop-filter: blur(3px); }
+.busy-card { padding: 22px 28px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 24px 70px rgba(0, 0, 0, .45); display: flex; flex-direction: column; align-items: center; gap: 9px; }
+.busy-card svg { color: var(--accent); }
+.busy-card strong { font-size: 11px; }
+.busy-card span { color: var(--text-muted); font-size: 9px; }
+
+/* Pilha ADVPL e SQL do erro, sob demanda. */
+.log-detail { margin-top: 8px; }
+.log-detail summary { color: var(--accent); font-size: 9px; cursor: pointer; user-select: none; }
+.log-detail summary:hover { color: var(--accent-bright); }
+.log-detail pre { margin: 8px 0 0; padding: 11px 13px; max-height: 320px; overflow: auto; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); color: var(--text-soft); font: 400 9px/1.6 'Cascadia Mono', 'Consolas', monospace; white-space: pre-wrap; word-break: break-word; }

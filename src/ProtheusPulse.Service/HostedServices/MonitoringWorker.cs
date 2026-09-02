@@ -151,7 +151,8 @@ public sealed partial class MonitoringWorker(
                 Environment = item.Context?.Environment,
                 Company = item.Context?.Company,
                 Module = item.Context?.Module,
-                Routine = item.Context?.Routine
+                Routine = item.Context?.Routine,
+                Detail = item.Context?.Detail
             }));
             foreach (var item in logResult.Events)
             {

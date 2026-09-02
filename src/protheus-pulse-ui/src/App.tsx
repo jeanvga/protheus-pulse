@@ -459,6 +459,14 @@ interface InstallationGroup {
   components: ComponentSnapshot[]
 }
 
+/// Ação de serviço leva segundos e a tela não dizia nada: o operador clicava de novo,
+/// ou clicava em outra coisa no meio. A camada cobre a página enquanto a chamada corre.
+function BusyOverlay({ label }: { label: string }) {
+  return <div className="busy-overlay" role="alert" aria-busy="true" aria-live="assertive">
+    <div className="busy-card"><RefreshCw className="spin" size={22} /><strong>{label}</strong><span>Aguarde o servidor confirmar antes de continuar.</span></div>
+  </div>
+}
+
 function Installations({ summary, refresh, addInstallation, editInstallation }: { summary: DashboardSummary; refresh: () => Promise<void>; addInstallation: () => void; editInstallation: (id: string) => void }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -579,7 +587,14 @@ function Installations({ summary, refresh, addInstallation, editInstallation }: 
     } finally { setBusy(false) }
   }
 
+  const busyLabel = serviceBusyId !== null
+    ? 'Aplicando ação no serviço…'
+    : automationBusyId !== null
+      ? 'Aplicando automação…'
+      : busy ? 'Aplicando alteração…' : null
+
   return <div className="page-body">
+    {busyLabel && <BusyOverlay label={busyLabel} />}
     <section className="intro-row"><div><h2>Ambientes cadastrados</h2><p>Configure serviços, arquivos, portas e URLs sem sair do painel.</p></div><div className="intro-actions">{isAdministrator && <button className={maintenance?.active ? 'primary-button' : 'danger-button'} disabled={busy || summary.demoMode} onClick={() => void toggleMaintenance()}><Wrench size={16} /> {maintenance?.active ? 'Encerrar manutenção' : 'Modo manutenção'}</button>}<button className="secondary-button" disabled={busy || summary.demoMode} onClick={() => void runCollection()}><Play size={16} /> {busy ? 'Executando…' : 'Coletar agora'}</button><button className="primary-button" onClick={addInstallation}><Plus size={16} /> Adicionar instalação</button></div></section>
     {maintenance?.active && <div className="maintenance-banner"><Wrench size={16} /> Modo manutenção ativo{maintenance.endsAt ? ` até ${new Date(maintenance.endsAt).toLocaleString('pt-BR')}` : ''}: serviços monitorados parados e alertas suspensos.{maintenance.exclusiveInstallation ? ` Somente “${maintenance.exclusiveInstallation.name}” segue no ar, reiniciado no início da janela para compilar e salvar configurações sem sessões antigas.` : ''}</div>}
     {error && <div className="form-error"><AlertTriangle size={16} /> {error}</div>}
@@ -1023,8 +1038,14 @@ function LogEventFacts({ item }: { item: LogEventItem }) {
   if (item.computer) facts.push(['Máquina', item.computer])
   if (item.environment) facts.push(['Ambiente', item.environment])
   if (item.threadId) facts.push(['Thread', item.threadId])
-  if (facts.length === 0) return null
-  return <ul className="log-facts">{facts.map(([label, value]) => <li key={label}><span>{label}</span><strong>{value}</strong></li>)}</ul>
+  if (facts.length === 0 && !item.detail) return null
+  return <>
+    {facts.length > 0 && <ul className="log-facts">{facts.map(([label, value]) => <li key={label}><span>{label}</span><strong>{value}</strong></li>)}</ul>}
+    {item.detail && <details className="log-detail">
+      <summary>Pilha e detalhes do erro</summary>
+      <pre>{item.detail}</pre>
+    </details>}
+  </>
 }
 
 function LogsPage({ components }: { components: ComponentSnapshot[] }) {

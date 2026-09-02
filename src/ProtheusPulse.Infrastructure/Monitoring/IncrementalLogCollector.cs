@@ -9,6 +9,7 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
 {
     private const int MaximumEventsPerCycle = 200;
     private const int MaximumUtf8CharacterBytes = 4;
+    private const int MaximumDetailLength = 4_000;
 
     private static readonly Encoding LenientUtf8 =
         new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false);
@@ -278,7 +279,8 @@ public sealed class IncrementalLogCollector(IClock clock, ProbeCollectorOptions 
                 threadError.Environment,
                 threadError.Company,
                 threadError.Module,
-                threadError.Routine);
+                threadError.Routine,
+                ProtheusConsoleLog.BuildDetail(record.Body, MaximumDetailLength));
             return described.Length == 0 ? null : (severity, described, context);
         }
 

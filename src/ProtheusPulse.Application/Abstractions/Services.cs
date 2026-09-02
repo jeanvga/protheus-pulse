@@ -60,7 +60,8 @@ public sealed record LogEventContext(
     string? Environment = null,
     string? Company = null,
     string? Module = null,
-    string? Routine = null);
+    string? Routine = null,
+    string? Detail = null);
 
 public sealed record LogEventObservation(
     Guid LogSourceId,

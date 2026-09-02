@@ -214,6 +214,33 @@ public static partial class ProtheusConsoleLog
         return text;
     }
 
+    /// <summary>
+    /// O que sobra do bloco depois da mensagem: a pilha ADVPL, o SQL e os parâmetros do
+    /// erro de banco. É isso que diz onde o erro nasceu — a mensagem sozinha diz apenas
+    /// que ele aconteceu. Cada linha passa pelo saneamento e o total é limitado.
+    /// </summary>
+    public static string? BuildDetail(IReadOnlyList<string> body, int maximumLength)
+    {
+        var builder = new System.Text.StringBuilder();
+        foreach (var line in body)
+        {
+            var clean = LogTextSanitizer.Sanitize(line);
+            if (clean.Length == 0 || clean.StartsWith("/*---", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (builder.Length + clean.Length + 1 > maximumLength)
+            {
+                break;
+            }
+
+            builder.Append(clean).Append('\n');
+        }
+
+        return builder.Length == 0 ? null : builder.ToString().TrimEnd('\n');
+    }
+
     /// <summary>Primeira ocorrência do grupo <c>value</c> no corpo do registro.</summary>
     private static string? FirstCapture(IReadOnlyList<string> body, Regex expression)
     {

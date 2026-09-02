@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.ResponseCompression;
+using System.IO.Compression;
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -230,6 +232,16 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("Operator", policy => policy.RequireRole(UserRole.Operator.ToString(), UserRole.Administrator.ToString()))
     .AddPolicy("Administrator", policy => policy.RequireRole(UserRole.Administrator.ToString()));
 
+// Compressão: o painel é servido pelo próprio serviço e, com acesso remoto ligado,
+// o pacote atravessa a rede do cliente. O JS passa de ~290 KB para ~85 KB.
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/json", "image/svg+xml"]);
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -347,6 +359,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Permitted-Cross-Domain-Policies"] = "none";
     await next();
 });
+app.UseResponseCompression();
 app.UseSerilogRequestLogging();
 app.UseRateLimiter();
 app.UseAuthentication();
@@ -362,9 +375,23 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = registration => registration.Tags.Contains("ready") }).AllowAnonymous();
 app.MapPulseApi(demoMode);
 app.MapHub<PulseHub>("/hubs/pulse");
+// O build do frontend carimba o hash no nome do arquivo, então o conteúdo de /assets
+// nunca muda para uma mesma URL e pode ficar no cache do navegador. O index.html
+// continua sem cache — inclusive na rota de fallback, que tem opções próprias: sem
+// isso o navegador serviria a página antiga apontando para um asset que já não existe.
+var staticFileOptions = new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        var path = context.Context.Request.Path.Value ?? string.Empty;
+        context.Context.Response.Headers.CacheControl = path.StartsWith("/assets/", StringComparison.Ordinal)
+            ? "public, max-age=31536000, immutable"
+            : "no-cache";
+    }
+};
 app.UseDefaultFiles();
-app.UseStaticFiles();
-app.MapFallbackToFile("index.html").AllowAnonymous();
+app.UseStaticFiles(staticFileOptions);
+app.MapFallbackToFile("index.html", staticFileOptions).AllowAnonymous();
 
 await app.RunAsync();
 
